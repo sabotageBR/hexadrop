@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Hexa Drop - os 5 modelos</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
+  body {
+    background: radial-gradient(120% 90% at 50% 0%, #241046 0%, #0a0518 55%, #05030f 100%);
+    color: #f4ecff;
+    font: 400 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    padding: 36px 20px 60px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header { max-width: 1040px; margin: 0 auto 30px; text-align: center; }
+  h1 {
+    margin: 0 0 8px;
+    font-size: clamp(28px, 6vw, 44px);
+    letter-spacing: -0.02em;
+    background: linear-gradient(92deg, #ff43b8, #ffd23c 45%, #33e1ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  header p { margin: 0 auto; max-width: 62ch; color: rgba(244,236,255,0.66); font-size: 15px; }
+  .grid {
+    max-width: 1040px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.12);
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    background: rgba(255,255,255,0.03);
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  }
+  .card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.3); box-shadow: 0 16px 40px rgba(0,0,0,0.45); }
+  .thumb { position: relative; aspect-ratio: 4 / 3; display: grid; place-items: center; overflow: hidden; }
+  .thumb svg { width: 56%; height: 56%; }
+  .meta { padding: 13px 15px 16px; }
+  .meta h2 { margin: 0 0 3px; font-size: 17px; letter-spacing: 0.01em; }
+  .meta p { margin: 0; font-size: 13px; color: rgba(244,236,255,0.6); }
+  .tag {
+    position: absolute; top: 10px; left: 10px;
+    padding: 4px 9px; border-radius: 999px;
+    background: rgba(0,0,0,0.42); border: 1px solid rgba(255,255,255,0.22);
+    font: 600 10px/1 system-ui; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  footer { max-width: 1040px; margin: 34px auto 0; color: rgba(244,236,255,0.5); font-size: 13px; text-align: center; }
+  footer a { color: #33e1ff; }
+  .note { max-width: 1040px; margin: 26px auto 0; padding: 14px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); font-size: 13.5px; color: rgba(244,236,255,0.72); }
+  .note b { color: #f4ecff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Hexa Drop</h1>
+  <p>Cinco modelos jogaveis do mesmo jogo. A fisica, o laco de simulacao e os controles
+     sao identicos nos cinco: o que muda e a arte. Dentro de cada modelo voce pode trocar
+     o estilo entre os oito temas, escolher a fase e a skin, e rodar o teste de tortura da pilha.</p>
+</header>
+
+<div class="grid" id="grid"></div>
+
+<div class="note">
+  <b>Como jogar.</b> Toque nas pecas para destrui-las e levar o hexagono ate a plataforma roxa da base.
+  Cada linha tracejada que ele cruza acende uma estrela. Se cair para fora da torre, acabou.
+  Pecas escuras de obsidiana estao ancoradas e nao quebram. Cada material tem fisica propria:
+  gelo escorrega, borracha quica, metal esmaga, vidro estilhaca com impacto forte, bomba leva as vizinhas.
+</div>
+
+<footer>Teclas: <b>R</b> reinicia, <b>Esc</b> fecha o painel.</footer>
+
+<script type="module">
+  const MODELS = [
+    { id: 'neon', name: 'Neon', desc: 'Synthwave com grade em perspectiva, sol listrado e traco luminoso.',
+      sky: ['#05030f', '#2b0f47'], glow: '#ff2d95', stroke: '#4fc8ff', core: '#ffffff', tag: 'referencia' },
+    { id: 'futuristic', name: 'Futurista', desc: 'Placas metalicas, linhas de circuito e acento turquesa.',
+      sky: ['#04080f', '#13293d'], glow: '#2ee6c4', stroke: '#5ff0d8', core: '#d8fff6', tag: 'modelo 2' },
+    { id: 'rustic', name: 'Rustico', desc: 'Madeira com veio, pedra e ceu de fim de tarde.',
+      sky: ['#3b2a1d', '#a9764a'], glow: '#e8b26a', stroke: '#7a5a2c', core: '#fff3d4', tag: 'modelo 3' },
+    { id: 'classic', name: 'Classico', desc: 'Minimalista e claro, cores chapadas e leitura imediata.',
+      sky: ['#eef2f7', '#c6d3e2'], glow: '#2f6df0', stroke: '#2f6df0', core: '#e8f1ff', tag: 'modelo 4' },
+    { id: 'candy', name: 'Doce', desc: 'Pastel, pecas brilhantes de gelatina e confete no fundo.',
+      sky: ['#ffd9ec', '#b8a4f0'], glow: '#ff5fa2', stroke: '#ff5fa2', core: '#ffe2f0', tag: 'modelo 5' },
+  ];
+
+  const hexPath = (() => {
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      pts.push(`${(50 + 42 * Math.cos(a)).toFixed(2)},${(50 - 42 * Math.sin(a)).toFixed(2)}`);
+    }
+    return pts.join(' ');
+  })();
+
+  const grid = document.getElementById('grid');
+  for (const m of MODELS) {
+    const a = document.createElement('a');
+    a.className = 'card';
+    a.href = `./${m.id}.html`;
+    a.innerHTML = `
+      <div class="thumb" style="background: linear-gradient(180deg, ${m.sky[0]}, ${m.sky[1]});">
+        <span class="tag">${m.tag}</span>
+        <div style="position:absolute; inset:0; background: radial-gradient(60% 50% at 50% 70%, ${m.glow}55, transparent 70%);"></div>
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <polygon points="${hexPath}" fill="${m.core}33" stroke="${m.stroke}" stroke-width="5"
+                   stroke-linejoin="round" style="filter: drop-shadow(0 0 8px ${m.stroke});" />
+          <circle cx="50" cy="50" r="19" fill="${m.core}" opacity="0.85" />
+        </svg>
+      </div>
+      <div class="meta"><h2>${m.name}</h2><p>${m.desc}</p></div>`;
+    grid.appendChild(a);
+  }
+</script>
+</body>
+</html>

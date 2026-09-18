@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="description" content="Hexa Drop - break the tower and bring the hexagon down to the platform." />
+<title>Hexa Drop</title>
+<!-- Unico script externo permitido pela Poki. -->
+<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='30,16 23,28 9,28 2,16 9,4 23,4' fill='%231a0b2e' stroke='%234fc8ff' stroke-width='3' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23ffffff'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="./src/ui/game.css" />
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="ui">
+
+  <!-- ---------------------------------------------------------- inicio -->
+  <section class="screen" id="s-home">
+    <div class="hud-top">
+      <div class="badge hearts"><span class="ico">&#10084;</span><span id="homeHearts">5</span></div>
+      <div class="grow"></div>
+      <div class="badge coins"><span class="ico">&#9679;</span><span id="homeCoins">0</span></div>
+    </div>
+    <div class="home-mid">
+      <h1 class="logo"><span>HEXA DROP</span></h1>
+      <p class="tagline" id="tagline"></p>
+      <div class="home-actions">
+        <button class="btn primary big wide" id="btnPlay"></button>
+        <button class="btn wide" id="btnMap"></button>
+        <div class="row" style="display:flex; gap:10px;">
+          <button class="btn" style="flex:1" id="btnShop"></button>
+          <button class="btn" style="flex:1" id="btnSettings"></button>
+        </div>
+      </div>
+    </div>
+    <div class="hud-bottom">
+      <div class="badge"><small id="rankLabel">Rank</small>&nbsp;<span id="homeRank">0</span></div>
+      <div class="grow"></div>
+      <div class="badge"><span class="ico" style="color:var(--gold)">&#9733;</span><span id="homeStars">0</span>/300</div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------ mapa -->
+  <section class="screen" id="s-map">
+    <div class="hud-top">
+      <button class="btn icon" id="mapBack">&#8592;</button>
+      <div class="level-pill" id="mapTitle"></div>
+      <div class="badge coins"><span class="ico">&#9679;</span><span id="mapCoins">0</span></div>
+    </div>
+    <div class="map-scroll" id="mapScroll"></div>
+    <div class="hud-bottom">
+      <button class="btn ad" id="btnDaily"></button>
+      <div class="grow"></div>
+      <div class="badge hearts"><span class="ico">&#10084;</span><span id="mapHearts">5</span></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------ jogo -->
+  <section class="screen pass" id="s-game">
+    <div class="hud-top">
+      <button class="btn icon" id="gameBack">&#8592;</button>
+      <div class="level-pill" id="gameLevel"></div>
+      <div class="badge hearts"><span class="ico">&#10084;</span><span id="gameHearts">5</span></div>
+      <button class="btn icon" id="gamePause">&#9208;</button>
+    </div>
+    <div class="starrow" id="gameStars"><i></i><i></i><i></i></div>
+    <div class="grow"></div>
+    <div class="hud-bottom">
+      <div class="grow"></div>
+      <!-- O botao padrao acompanha o de video, do mesmo tamanho e ao lado. -->
+      <button class="btn" id="gameRestart" hidden></button>
+      <button class="btn ad" id="gameHint" hidden></button>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------- vitoria -->
+  <section class="screen" id="s-win">
+    <div class="veil"></div>
+    <div class="card">
+      <div class="crown">&#9819;</div>
+      <h2 id="winTitle"></h2>
+      <div class="starrow" id="winStars"><i></i><i></i><i></i></div>
+      <div class="rewards">
+        <div class="reward"><b id="winCoins">0</b><span id="winCoinsLbl"></span></div>
+        <div class="reward"><b id="winXp">0</b><span id="winXpLbl"></span></div>
+      </div>
+      <p id="winNote"></p>
+      <div class="row">
+        <button class="btn primary big" id="winNext"></button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="winHome"></button>
+        <button class="btn ad" id="winDouble"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------- derrota -->
+  <section class="screen" id="s-lose">
+    <div class="veil"></div>
+    <div class="card">
+      <h2 id="loseTitle"></h2>
+      <p id="loseNote"></p>
+      <div class="row">
+        <button class="btn primary big" id="loseRetry"></button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="loseHome"></button>
+        <button class="btn ad" id="loseAd"></button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ad wide" id="loseSkip" hidden></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- pausa -->
+  <section class="screen" id="s-pause">
+    <div class="veil"></div>
+    <div class="card">
+      <h2 id="pauseTitle"></h2>
+      <div class="row" style="flex-direction:column">
+        <button class="btn primary big wide" id="pauseResume"></button>
+        <button class="btn wide" id="pauseRestart"></button>
+        <button class="btn wide" id="pauseHome"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------ loja -->
+  <section class="screen" id="s-shop">
+    <div class="hud-top">
+      <button class="btn icon" id="shopBack">&#8592;</button>
+      <div class="level-pill" id="shopTitle"></div>
+      <div class="badge coins"><span class="ico">&#9679;</span><span id="shopCoins">0</span></div>
+    </div>
+    <div class="tabs" style="margin-top:12px">
+      <button class="tab on" id="tabSkins"></button>
+      <button class="tab" id="tabUpgrades"></button>
+    </div>
+    <div class="map-scroll"><div class="shop-list" id="shopList"></div></div>
+  </section>
+
+  <!-- --------------------------------------------------------- ajustes -->
+  <section class="screen" id="s-settings">
+    <div class="veil"></div>
+    <div class="card" style="text-align:left">
+      <h2 id="setTitle" style="text-align:center"></h2>
+      <div class="settings-row"><label id="lblSound"></label><div class="seg" id="segSound"></div></div>
+      <div class="settings-row"><label id="lblMusic"></label><div class="seg" id="segMusic"></div></div>
+      <div class="settings-row"><label id="lblQuality"></label><div class="seg" id="segQuality"></div></div>
+      <div class="settings-row"><label id="lblLang"></label><div class="seg" id="segLang"></div></div>
+      <p id="setStorage" style="margin:12px 0 0; font-size:12px"></p>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="setReset"></button>
+        <button class="btn primary" id="setClose"></button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="tut hide" id="tut"></div>
+<div class="toast" id="toast"></div>
+
+<div id="loader">
+  <div class="loader-inner">
+    <h1 class="logo" style="font-size:40px"><span>HEXA DROP</span></h1>
+    <div class="loader-bar"><i id="loaderBar"></i></div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

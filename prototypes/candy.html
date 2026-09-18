@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Hexa Drop - modelo Doce</title>
+<link rel="stylesheet" href="./proto.css" />
+</head>
+<body>
+<canvas id="game"></canvas>
+<div class="layer">
+  <div class="topbar">
+    <a class="pill square" href="./index.html" title="Voltar">&#8592;</a>
+    <div class="title" id="title">Doce</div>
+    <button class="pill square" id="sound" title="Som">&#9834;</button>
+    <button class="pill square" id="restart" title="Reiniciar">&#8635;</button>
+    <button class="pill square" id="options" title="Opcoes">&#9881;</button>
+  </div>
+  <div class="stars" id="stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
+  <div class="spacer"></div>
+  <div class="bottom">
+    <div class="stat">toques<b id="taps">0</b></div>
+    <div class="stat tech" style="text-align:right">cena<b id="info">-</b></div>
+  </div>
+</div>
+<div class="hint" id="hint"></div>
+<div class="banner" id="banner"><h2 id="bannerTitle"></h2><p id="bannerText"></p></div>
+<div class="drawer" id="drawer">
+  <h3>Estilo visual</h3>
+  <div class="chips" id="themeChips"></div>
+  <h3>Fase</h3>
+  <div class="chips" id="levelChips"></div>
+  <h3>Skin do hexagono</h3>
+  <div class="chips" id="skinChips"></div>
+</div>
+<script type="module">
+  import { startPrototype } from './proto.js';
+  startPrototype('candy');
+</script>
+</body>
+</html>

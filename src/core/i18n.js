@@ -1,0 +1,371 @@
+/**
+ * Localizacao em ingles, portugues e espanhol.
+ * O idioma vem de navigator.language e pode ser trocado nas opcoes.
+ */
+
+import { load, save } from './storage.js';
+
+export const LANGS = ['en', 'pt', 'es'];
+
+export const LANG_NAMES = { en: 'English', pt: 'Portugues', es: 'Espanol' };
+
+const STRINGS = {
+  en: {
+    play: 'Play',
+    levels: 'Levels',
+    level: 'Level',
+    shop: 'Shop',
+    settings: 'Settings',
+    back: 'Back',
+    close: 'Close',
+    resume: 'Resume',
+    restart: 'Restart',
+    retry: 'Try again',
+    next: 'Next',
+    home: 'Home',
+    quit: 'Quit level',
+    victory: 'Victory',
+    gameOver: 'Game over',
+    paused: 'Paused',
+    locked: 'Locked',
+    coins: 'Coins',
+    hearts: 'Hearts',
+    xp: 'XP',
+    playerLevel: 'Rank',
+    tapToStart: 'Tap a block to start',
+    tutorialTap: 'Tap the blocks to break them',
+    tutorialGoal: 'Bring the hexagon down to the platform',
+    tutorialStars: 'Cross each dashed line to earn a star',
+    skipTutorial: 'Skip',
+    watchAd: 'Watch',
+    doubleReward: 'Double reward',
+    refillHearts: 'Refill hearts',
+    dailyBonus: 'Daily bonus',
+    dailyBonusReady: 'Free coins ready',
+    comeBackTomorrow: 'Come back tomorrow',
+    skipLevel: 'Skip level',
+    hint: 'Hint',
+    hintUsed: 'Safe block highlighted',
+    stuckTitle: 'Having trouble?',
+    noHearts: 'Out of hearts',
+    noHeartsBody: 'You can keep playing, but rewards are halved until they refill.',
+    heartsIn: 'Next heart in',
+    heartsFull: 'All hearts full',
+    bestStars: 'Best',
+    taps: 'Taps',
+    par: 'Par',
+    newRecord: 'New record',
+    rewardCoins: 'Coins',
+    rewardXp: 'XP',
+    skins: 'Skins',
+    upgrades: 'Upgrades',
+    equipped: 'Equipped',
+    equip: 'Equip',
+    buy: 'Buy',
+    owned: 'Owned',
+    unlockAt: 'Rank {0}',
+    notEnoughCoins: 'Not enough coins',
+    maxLevel: 'Max',
+    upgStability: 'Stability',
+    upgStabilityDesc: 'The hexagon wobbles less when it lands.',
+    upgGrip: 'Grip',
+    upgGripDesc: 'The hexagon slides less on ice and slopes.',
+    upgFortune: 'Fortune',
+    upgFortuneDesc: 'Earn more coins from every level.',
+    upgHeart: 'Extra heart',
+    upgHeartDesc: 'Raises your maximum hearts.',
+    sound: 'Sound',
+    music: 'Music',
+    language: 'Language',
+    quality: 'Quality',
+    qualityAuto: 'Auto',
+    qualityHigh: 'High',
+    qualityLow: 'Low',
+    reset: 'Reset progress',
+    resetConfirm: 'Erase all progress?',
+    yes: 'Yes',
+    no: 'No',
+    progressNotSaved: 'Progress will not be saved in this window.',
+    credits: 'A physics puzzle about patience.',
+    world: 'World',
+    complete: 'Complete',
+    materialWood: 'Wood',
+    materialStone: 'Stone',
+    materialIce: 'Ice',
+    materialRubber: 'Rubber',
+    materialMetal: 'Metal',
+    materialGlass: 'Glass',
+    materialObsidian: 'Obsidian',
+    materialFoam: 'Foam',
+    materialBomb: 'Bomb',
+    newMaterial: 'New material',
+    hintWood: 'Plain and predictable.',
+    hintStone: 'Heavy. Falls hard.',
+    hintIce: 'Almost no friction. Everything slides.',
+    hintRubber: 'Bouncy and grippy.',
+    hintMetal: 'Very heavy. Crushes what is below.',
+    hintGlass: 'Shatters on a strong impact.',
+    hintObsidian: 'Cannot be broken.',
+    hintFoam: 'Too light to hold weight.',
+    hintBomb: 'Takes its neighbours with it.',
+  },
+  pt: {
+    play: 'Jogar',
+    levels: 'Fases',
+    level: 'Nivel',
+    shop: 'Loja',
+    settings: 'Ajustes',
+    back: 'Voltar',
+    close: 'Fechar',
+    resume: 'Continuar',
+    restart: 'Reiniciar',
+    retry: 'Tentar de novo',
+    next: 'Proxima',
+    home: 'Inicio',
+    quit: 'Sair da fase',
+    victory: 'Vitoria',
+    gameOver: 'Game over',
+    paused: 'Pausado',
+    locked: 'Bloqueado',
+    coins: 'Moedas',
+    hearts: 'Coracoes',
+    xp: 'XP',
+    playerLevel: 'Patente',
+    tapToStart: 'Toque numa peca para comecar',
+    tutorialTap: 'Toque nas pecas para quebra-las',
+    tutorialGoal: 'Leve o hexagono ate a plataforma',
+    tutorialStars: 'Cruze cada linha tracejada para ganhar uma estrela',
+    skipTutorial: 'Pular',
+    watchAd: 'Assistir',
+    doubleReward: 'Dobrar premio',
+    refillHearts: 'Encher coracoes',
+    dailyBonus: 'Bonus diario',
+    dailyBonusReady: 'Moedas gratis disponiveis',
+    comeBackTomorrow: 'Volte amanha',
+    skipLevel: 'Pular fase',
+    hint: 'Dica',
+    hintUsed: 'Peca segura destacada',
+    stuckTitle: 'Travou?',
+    noHearts: 'Sem coracoes',
+    noHeartsBody: 'Voce continua jogando, mas os premios caem pela metade ate encherem.',
+    heartsIn: 'Proximo coracao em',
+    heartsFull: 'Coracoes cheios',
+    bestStars: 'Melhor',
+    taps: 'Toques',
+    par: 'Meta',
+    newRecord: 'Novo recorde',
+    rewardCoins: 'Moedas',
+    rewardXp: 'XP',
+    skins: 'Skins',
+    upgrades: 'Aprimoramentos',
+    equipped: 'Equipado',
+    equip: 'Equipar',
+    buy: 'Comprar',
+    owned: 'Adquirido',
+    unlockAt: 'Patente {0}',
+    notEnoughCoins: 'Moedas insuficientes',
+    maxLevel: 'Max',
+    upgStability: 'Estabilidade',
+    upgStabilityDesc: 'O hexagono balanca menos ao pousar.',
+    upgGrip: 'Aderencia',
+    upgGripDesc: 'O hexagono escorrega menos no gelo e em rampas.',
+    upgFortune: 'Fortuna',
+    upgFortuneDesc: 'Ganhe mais moedas em cada fase.',
+    upgHeart: 'Coracao extra',
+    upgHeartDesc: 'Aumenta o maximo de coracoes.',
+    sound: 'Som',
+    music: 'Musica',
+    language: 'Idioma',
+    quality: 'Qualidade',
+    qualityAuto: 'Auto',
+    qualityHigh: 'Alta',
+    qualityLow: 'Baixa',
+    reset: 'Apagar progresso',
+    resetConfirm: 'Apagar todo o progresso?',
+    yes: 'Sim',
+    no: 'Nao',
+    progressNotSaved: 'O progresso nao sera salvo nesta janela.',
+    credits: 'Um quebra-cabeca de fisica sobre paciencia.',
+    world: 'Mundo',
+    complete: 'Completo',
+    materialWood: 'Madeira',
+    materialStone: 'Pedra',
+    materialIce: 'Gelo',
+    materialRubber: 'Borracha',
+    materialMetal: 'Metal',
+    materialGlass: 'Vidro',
+    materialObsidian: 'Obsidiana',
+    materialFoam: 'Espuma',
+    materialBomb: 'Bomba',
+    newMaterial: 'Material novo',
+    hintWood: 'Simples e previsivel.',
+    hintStone: 'Pesada. Cai com forca.',
+    hintIce: 'Quase sem atrito. Tudo escorrega.',
+    hintRubber: 'Quica e agarra.',
+    hintMetal: 'Pesadissima. Esmaga o que esta embaixo.',
+    hintGlass: 'Estilhaca com impacto forte.',
+    hintObsidian: 'Nao pode ser quebrada.',
+    hintFoam: 'Leve demais para segurar peso.',
+    hintBomb: 'Leva as vizinhas junto.',
+  },
+  es: {
+    play: 'Jugar',
+    levels: 'Niveles',
+    level: 'Nivel',
+    shop: 'Tienda',
+    settings: 'Ajustes',
+    back: 'Volver',
+    close: 'Cerrar',
+    resume: 'Continuar',
+    restart: 'Reiniciar',
+    retry: 'Reintentar',
+    next: 'Siguiente',
+    home: 'Inicio',
+    quit: 'Salir del nivel',
+    victory: 'Victoria',
+    gameOver: 'Game over',
+    paused: 'Pausa',
+    locked: 'Bloqueado',
+    coins: 'Monedas',
+    hearts: 'Corazones',
+    xp: 'XP',
+    playerLevel: 'Rango',
+    tapToStart: 'Toca una pieza para empezar',
+    tutorialTap: 'Toca las piezas para romperlas',
+    tutorialGoal: 'Lleva el hexagono hasta la plataforma',
+    tutorialStars: 'Cruza cada linea punteada para ganar una estrella',
+    skipTutorial: 'Saltar',
+    watchAd: 'Ver',
+    doubleReward: 'Doblar premio',
+    refillHearts: 'Rellenar corazones',
+    dailyBonus: 'Bono diario',
+    dailyBonusReady: 'Monedas gratis disponibles',
+    comeBackTomorrow: 'Vuelve manana',
+    skipLevel: 'Saltar nivel',
+    hint: 'Pista',
+    hintUsed: 'Pieza segura destacada',
+    stuckTitle: 'Atascado?',
+    noHearts: 'Sin corazones',
+    noHeartsBody: 'Puedes seguir jugando, pero los premios bajan a la mitad hasta que se recarguen.',
+    heartsIn: 'Proximo corazon en',
+    heartsFull: 'Corazones llenos',
+    bestStars: 'Mejor',
+    taps: 'Toques',
+    par: 'Meta',
+    newRecord: 'Nuevo record',
+    rewardCoins: 'Monedas',
+    rewardXp: 'XP',
+    skins: 'Skins',
+    upgrades: 'Mejoras',
+    equipped: 'Equipado',
+    equip: 'Equipar',
+    buy: 'Comprar',
+    owned: 'Adquirido',
+    unlockAt: 'Rango {0}',
+    notEnoughCoins: 'Monedas insuficientes',
+    maxLevel: 'Max',
+    upgStability: 'Estabilidad',
+    upgStabilityDesc: 'El hexagono se tambalea menos al aterrizar.',
+    upgGrip: 'Agarre',
+    upgGripDesc: 'El hexagono resbala menos en hielo y rampas.',
+    upgFortune: 'Fortuna',
+    upgFortuneDesc: 'Gana mas monedas en cada nivel.',
+    upgHeart: 'Corazon extra',
+    upgHeartDesc: 'Aumenta el maximo de corazones.',
+    sound: 'Sonido',
+    music: 'Musica',
+    language: 'Idioma',
+    quality: 'Calidad',
+    qualityAuto: 'Auto',
+    qualityHigh: 'Alta',
+    qualityLow: 'Baja',
+    reset: 'Borrar progreso',
+    resetConfirm: 'Borrar todo el progreso?',
+    yes: 'Si',
+    no: 'No',
+    progressNotSaved: 'El progreso no se guardara en esta ventana.',
+    credits: 'Un rompecabezas de fisica sobre paciencia.',
+    world: 'Mundo',
+    complete: 'Completo',
+    materialWood: 'Madera',
+    materialStone: 'Piedra',
+    materialIce: 'Hielo',
+    materialRubber: 'Goma',
+    materialMetal: 'Metal',
+    materialGlass: 'Vidrio',
+    materialObsidian: 'Obsidiana',
+    materialFoam: 'Espuma',
+    materialBomb: 'Bomba',
+    newMaterial: 'Material nuevo',
+    hintWood: 'Simple y predecible.',
+    hintStone: 'Pesada. Cae con fuerza.',
+    hintIce: 'Casi sin friccion. Todo resbala.',
+    hintRubber: 'Rebota y agarra.',
+    hintMetal: 'Muy pesada. Aplasta lo que esta debajo.',
+    hintGlass: 'Se rompe con un impacto fuerte.',
+    hintObsidian: 'No se puede romper.',
+    hintFoam: 'Demasiado ligera para sostener peso.',
+    hintBomb: 'Se lleva a sus vecinas.',
+  },
+};
+
+/** @returns {string} */
+function detect() {
+  const stored = load('lang', null);
+  if (stored && LANGS.includes(stored)) return stored;
+  let tags = [];
+  try {
+    tags = (navigator.languages && navigator.languages.length
+      ? navigator.languages
+      : [navigator.language || 'en']).map((t) => String(t).toLowerCase());
+  } catch {
+    tags = ['en'];
+  }
+  for (const tag of tags) {
+    if (tag.startsWith('pt')) return 'pt';
+    if (tag.startsWith('es')) return 'es';
+    if (tag.startsWith('en')) return 'en';
+  }
+  return 'en';
+}
+
+let current = detect();
+
+/** @type {Set<()=>void>} */
+const listeners = new Set();
+
+/** @returns {string} */
+export function getLang() {
+  return current;
+}
+
+/** @param {string} lang */
+export function setLang(lang) {
+  if (!LANGS.includes(lang) || lang === current) return;
+  current = lang;
+  save('lang', lang);
+  for (const fn of listeners) fn();
+}
+
+/** @param {()=>void} fn @returns {()=>void} */
+export function onLangChange(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+/**
+ * @param {string} key
+ * @param {...(string|number)} args substituem {0}, {1}, ...
+ * @returns {string}
+ */
+export function t(key, ...args) {
+  const table = STRINGS[current] || STRINGS.en;
+  let value = table[key];
+  if (value === undefined) value = STRINGS.en[key];
+  if (value === undefined) return key;
+  if (!args.length) return value;
+  return value.replace(/\{(\d+)\}/g, (m, i) => {
+    const v = args[Number(i)];
+    return v === undefined ? m : String(v);
+  });
+}

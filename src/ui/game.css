@@ -1,0 +1,325 @@
+/* Interface do jogo. Canvas embaixo, HTML por cima: texto nitido em qualquer
+   densidade de tela e layout que se adapta a retrato e paisagem sem esforco. */
+
+:root {
+  color-scheme: dark;
+  --ink: #f4ecff;
+  --ink-soft: rgba(244, 236, 255, 0.62);
+  --accent: #ff43b8;
+  --accent2: #33e1ff;
+  --panel: rgba(20, 10, 36, 0.86);
+  --panel-solid: #150a26;
+  --edge: rgba(255, 255, 255, 0.16);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --gold: #ffd23c;
+  --heart: #ff4d6d;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* O display das classes de botao vence a regra [hidden] da folha do navegador,
+   entao esconder por atributo precisa ser explicito. */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #06030f;
+  color: var(--ink);
+  font-family: var(--font);
+  user-select: none;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+#ui { position: fixed; inset: 0; pointer-events: none; }
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  padding: calc(10px + var(--safe-t)) calc(12px + var(--safe-r)) calc(10px + var(--safe-b)) calc(12px + var(--safe-l));
+  pointer-events: auto;
+}
+.screen.on { display: flex; }
+/* Na tela de jogo o canvas precisa receber o toque em quase toda a area. So
+   os controles de verdade capturam ponteiro; barras e espacadores nao, senao
+   o meio da tela fica morto e o jogador nao consegue tocar nas pecas. */
+.screen.pass,
+.screen.pass > * { pointer-events: none; }
+.screen.pass .btn,
+.screen.pass .badge,
+.screen.pass .level-pill { pointer-events: auto; }
+
+.veil { position: absolute; inset: 0; background: rgba(6, 3, 15, 0.72); backdrop-filter: blur(6px); }
+
+/* Nas telas de menu a fase roda atras como cenario vivo. O veu garante que o
+   texto continue legivel sobre qualquer tema, sem custar um blur de tela cheia. */
+#s-home::before,
+#s-map::before,
+#s-shop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(6, 3, 15, 0.86) 0%, rgba(6, 3, 15, 0.58) 38%,
+    rgba(6, 3, 15, 0.68) 66%, rgba(6, 3, 15, 0.92) 100%);
+  pointer-events: none;
+}
+/* Mapa e loja sao telas de leitura: o cenario vivo atrapalharia, entao ali o
+   veu e quase opaco e so deixa passar um brilho do tema. */
+#s-map::before,
+#s-shop::before { background: rgba(9, 5, 20, 0.93); }
+#s-home > *, #s-map > *, #s-shop > * { position: relative; z-index: 1; }
+
+/* ------------------------------------------------------------------ botoes */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 20px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  font: 700 15px/1 var(--font);
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: scale(0.96); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn.primary {
+  background: linear-gradient(135deg, var(--accent), #8a2bff);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(255, 67, 184, 0.28);
+}
+.btn.big { min-height: 56px; font-size: 17px; padding: 0 30px; }
+.btn.icon { width: 44px; min-height: 44px; padding: 0; font-size: 18px; }
+.btn.wide { width: 100%; }
+/* Botao de video: nunca verde, sempre com icone de video, e sempre ao lado de
+   um botao padrao igual ou maior. Regra explicita da Poki. */
+.btn.ad {
+  background: linear-gradient(135deg, #2b6cff, #6a3cff);
+  border-color: transparent;
+  color: #fff;
+}
+.btn.ad::before {
+  content: "";
+  width: 16px;
+  height: 12px;
+  border-radius: 3px;
+  background: #fff;
+  clip-path: polygon(0 0, 68% 0, 68% 30%, 100% 8%, 100% 92%, 68% 70%, 68% 100%, 0 100%);
+  flex: none;
+}
+
+/* -------------------------------------------------------------------- HUD */
+.hud-top { display: flex; align-items: center; gap: 8px; }
+.hud-bottom { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.grow { flex: 1; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 13px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  font: 700 14px/1 var(--font);
+}
+.badge .ico { font-size: 14px; line-height: 1; }
+.badge.coins .ico { color: var(--gold); }
+.badge.hearts .ico { color: var(--heart); }
+.badge small { color: var(--ink-soft); font-weight: 600; font-size: 11px; }
+
+.level-pill {
+  flex: 1;
+  text-align: center;
+  height: 36px;
+  line-height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  font: 700 14px/34px var(--font);
+  letter-spacing: 0.04em;
+  max-width: 190px;
+  margin: 0 auto;
+}
+
+.starrow { display: flex; justify-content: center; gap: 12px; margin-top: 10px; }
+.starrow i {
+  width: 26px; height: 26px;
+  background: var(--starOff, rgba(255,255,255,0.22));
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  transition: transform 0.3s cubic-bezier(0.2,1.4,0.4,1), background 0.3s ease;
+}
+.starrow i.on { background: var(--gold); transform: scale(1.22); }
+
+/* ------------------------------------------------------------------ paineis */
+.card {
+  position: relative;
+  width: min(420px, 100%);
+  margin: auto;
+  padding: 22px 20px 20px;
+  border-radius: 22px;
+  border: 1px solid var(--edge);
+  background: var(--panel-solid);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  text-align: center;
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+}
+.card h2 { margin: 0 0 4px; font-size: 26px; letter-spacing: 0.02em; }
+.card p { margin: 0 0 14px; color: var(--ink-soft); font-size: 14px; line-height: 1.45; }
+.card .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.card .row .btn { flex: 1 1 130px; }
+
+.crown { font-size: 34px; line-height: 1; margin-bottom: 2px; color: var(--gold); }
+.rewards { display: flex; justify-content: center; gap: 18px; margin: 12px 0 16px; }
+.reward { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.reward b { font-size: 22px; }
+.reward span { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.1em; }
+
+/* -------------------------------------------------------------------- mapa */
+.map-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 2px 20px; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+.world-head {
+  display: flex; align-items: center; gap: 10px;
+  margin: 18px 4px 10px; font: 700 12px/1 var(--font);
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-soft);
+}
+.world-head::after { content: ""; flex: 1; height: 1px; background: var(--edge); }
+.map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; }
+.node {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 16px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  font: 700 17px/1 var(--font);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.node:hover:not(.locked) { transform: translateY(-2px); border-color: var(--accent); }
+.node.locked { opacity: 0.32; cursor: default; color: var(--ink-soft); }
+.node.locked .pips { display: none; }
+.node.current { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255, 67, 184, 0.28); }
+.node .pips { position: absolute; bottom: 5px; display: flex; gap: 2px; }
+.node .pips i { width: 6px; height: 6px; background: rgba(255,255,255,0.2); clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+.node .pips i.on { background: var(--gold); }
+
+/* -------------------------------------------------------------------- loja */
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tab { flex: 1; height: 38px; border-radius: 12px; border: 1px solid var(--edge); background: rgba(255,255,255,0.04);
+  color: var(--ink-soft); font: 700 13px/1 var(--font); cursor: pointer; }
+.tab.on { color: var(--ink); border-color: var(--accent); background: rgba(255, 67, 184, 0.14); }
+.shop-list { display: grid; gap: 8px; }
+.item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 13px; border-radius: 14px;
+  border: 1px solid var(--edge); background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+}
+.item .swatch { width: 40px; height: 40px; flex: none; border-radius: 10px; display: grid; place-items: center; }
+.item .info { flex: 1; min-width: 0; }
+.item .info b { display: block; font-size: 14px; }
+.item .info span { font-size: 12px; color: var(--ink-soft); }
+.item .btn { min-height: 36px; padding: 0 14px; font-size: 13px; }
+.bars { display: flex; gap: 3px; margin-top: 5px; }
+.bars i { width: 20px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.18); }
+.bars i.on { background: var(--accent2); }
+
+/* -------------------------------------------------------------------- home */
+.home-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+.logo { font-size: clamp(38px, 11vw, 66px); font-weight: 800; letter-spacing: -0.03em; line-height: 1; margin: 0; }
+.logo span { background: linear-gradient(95deg, var(--accent), var(--gold) 50%, var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tagline { color: var(--ink-soft); font-size: 14px; margin: 0; }
+.home-actions { display: flex; flex-direction: column; gap: 10px; width: min(300px, 82vw); }
+
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; }
+.settings-row + .settings-row { border-top: 1px solid var(--edge); }
+.settings-row label { font-size: 14px; font-weight: 600; }
+.seg { display: flex; gap: 4px; }
+.seg button { height: 32px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--edge);
+  background: rgba(255,255,255,0.04); color: var(--ink-soft); font: 700 12px/1 var(--font); cursor: pointer; }
+.seg button.on { color: var(--ink); border-color: var(--accent2); background: rgba(51, 225, 255, 0.14); }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(86px + var(--safe-b)); transform: translate(-50%, 12px);
+  padding: 9px 16px; border-radius: 999px; background: var(--panel); border: 1px solid var(--edge);
+  backdrop-filter: blur(8px); font: 600 13px/1 var(--font); opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.22s ease; z-index: 30;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.tut {
+  position: fixed; left: 50%; top: calc(112px + var(--safe-t)); transform: translateX(-50%);
+  max-width: min(330px, 80vw); padding: 8px 15px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--edge); backdrop-filter: blur(8px);
+  font: 500 13px/1.35 var(--font); color: var(--ink-soft); text-align: center;
+  opacity: 1; transition: opacity 0.5s ease; pointer-events: none; z-index: 20;
+}
+.tut.hide { opacity: 0; }
+
+#loader {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background: #06030f; z-index: 50; transition: opacity 0.4s ease;
+}
+#loader.gone { opacity: 0; pointer-events: none; }
+.loader-inner { text-align: center; }
+.loader-bar { width: 180px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); margin: 16px auto 0; overflow: hidden; }
+.loader-bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.25s ease; }
+
+@media (orientation: landscape) and (max-height: 620px) {
+  .starrow { position: fixed; left: calc(14px + var(--safe-l)); top: calc(66px + var(--safe-t)); margin: 0; gap: 7px; }
+  .starrow i { width: 19px; height: 19px; }
+  .tut { top: auto; bottom: calc(14px + var(--safe-b)); }
+  .card { width: min(520px, 100%); padding: 16px; }
+  .card h2 { font-size: 22px; }
+  .rewards { margin: 8px 0 12px; }
+}
+@media (max-width: 400px) {
+  .btn { min-height: 42px; padding: 0 16px; font-size: 14px; }
+  .btn.big { min-height: 50px; font-size: 15px; }
+  .badge { height: 32px; font-size: 13px; padding: 0 10px; }
+  .level-pill { height: 32px; line-height: 30px; font-size: 13px; }
+}
+
+/* Moedas voando da tela de vitoria para o contador, como na referencia. */
+.coinfly {
+  position: fixed;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #fff3b0, var(--gold) 58%, #c98b00);
+  box-shadow: 0 0 10px rgba(255, 210, 60, 0.7);
+  pointer-events: none;
+  z-index: 40;
+  will-change: transform, opacity;
+}
