@@ -24,6 +24,10 @@ const POS_ITER = 4;
 /** Velocidade abaixo da qual consideramos o hexagono parado. */
 const REST_LINEAR = 0.16;
 const REST_ANGULAR = 0.35;
+/** Folga horizontal, em celulas, para uma peca desabar sobre o hexagono. */
+const REACH_SLACK = 2;
+/** Tirar o hexagono de cima alivia o dobro da velocidade com que carrega. */
+const HOLD_DECAY = 2;
 
 /**
  * @typedef {object} PieceState
@@ -40,6 +44,7 @@ const REST_ANGULAR = 0.35;
  * @property {number} area
  * @property {number} spawnX posicao inicial em coluna
  * @property {number} spawnY posicao inicial em linha
+ * @property {number} holdTimer segundos acumulados com o hexagono apoiado em cima
  */
 
 /**
@@ -144,7 +149,7 @@ export class PhysicsWorld {
       if (!p || !p.alive) continue;
       const mat = getMaterial(p.material);
       if (mat.breakSpeed > 0 && approach >= mat.breakSpeed) {
-        this._queueDestroy(p, 'shatter');
+        this._queueDestroy(p, mat.explodeRadius > 0 ? 'blast' : 'shatter');
       }
     }
   }
@@ -169,6 +174,11 @@ export class PhysicsWorld {
     this.towerCenterX = (layout.width * CELL) / 2;
     this.wind = layout.wind || 0;
     this.starLines = layout.starLines.slice();
+    // Bandeira de custo zero: sem material temporal na fase, a varredura de
+    // contatos por passo nem chega a rodar, e a simulacao fica identica a de
+    // antes. E o que mantem as fases antigas bit a bit iguais.
+    this._hasHold = layout.pieces.some((p) => (getMaterial(p.material).holdTime || 0) > 0);
+    this._holdCharging = false;
     this.starsCrossed = 0;
     this.time = 0;
     this.restTimer = 0;
@@ -231,6 +241,7 @@ export class PhysicsWorld {
       area: cells.length,
       spawnX: gridX,
       spawnY: gridY,
+      holdTimer: 0,
     };
     this.pieces.push(piece);
     // O corpo nasce no centro do retangulo envolvente, para que massa e
@@ -367,6 +378,7 @@ export class PhysicsWorld {
    * @param {string} cause
    */
   _applyDestroy(piece, cause) {
+    piece.holdTimer = 0;
     if (!piece.alive) return;
     piece.alive = false;
     const mat = getMaterial(piece.material);
@@ -478,6 +490,8 @@ export class PhysicsWorld {
     this.world.step(dt, VEL_ITER, POS_ITER);
     this._stepping = false;
 
+    this._updateHoldTimers(dt);
+
     while (this._pendingDestroy.length) {
       const item = this._pendingDestroy.shift();
       if (item) this._applyDestroy(item.piece, item.cause);
@@ -485,6 +499,51 @@ export class PhysicsWorld {
     this._resolveExplosions();
     this._cullFallen();
     this._updateStars();
+  }
+
+  /**
+   * Cronometro dos materiais que cedem por contato prolongado.
+   *
+   * So o hexagono carrega o relogio. Se qualquer peca servisse, uma torre de
+   * cristal se dissolveria sozinha nos primeiros segundos e a fase se
+   * resolveria sem o jogador.
+   *
+   * @param {number} dt
+   */
+  _updateHoldTimers(dt) {
+    if (!this._hasHold || !this.hexBody) return;
+    this._holdCharging = false;
+
+    /** @type {Set<PieceState>} */
+    const tocando = new Set();
+    for (let edge = this.hexBody.getContactList(); edge; edge = edge.next) {
+      if (!edge.contact || !edge.contact.isTouching()) continue;
+      const piece = this.byBody.get(edge.other);
+      if (!piece || !piece.alive) continue;
+      if (!(getMaterial(piece.material).holdTime > 0)) continue;
+      // So conta peso vindo de cima. Um rocar lateral enquanto o hexagono
+      // desliza nao e "ficar em cima", e contar isso tornaria o perigo
+      // impossivel de prever.
+      const wm = edge.contact.getWorldManifold(null);
+      if (!wm || !wm.normal || Math.abs(wm.normal.y) < 0.6) continue;
+      tocando.add(piece);
+    }
+
+    for (const p of this.pieces) {
+      if (!p.alive) continue;
+      const mat = getMaterial(p.material);
+      if (!(mat.holdTime > 0)) continue;
+      if (tocando.has(p)) {
+        p.holdTimer += dt;
+        if (p.holdTimer >= mat.holdTime) {
+          this._queueDestroy(p, mat.holdCause || 'crack');
+        } else {
+          this._holdCharging = true;
+        }
+      } else if (p.holdTimer > 0) {
+        p.holdTimer = Math.max(0, p.holdTimer - dt * HOLD_DECAY);
+      }
+    }
   }
 
   _cullFallen() {
@@ -525,6 +584,10 @@ export class PhysicsWorld {
 
   /** @returns {boolean} nada mais se move na cena */
   everythingAtRest() {
+    // Um cristal carregando nao e repouso. O jogador real gasta esse tempo
+    // parado e a peca cede; se o solucionador puder tocar antes, ele certifica
+    // uma fase que na pratica nao existe.
+    if (this._holdCharging) return false;
     if (!this.hexAtRest()) return false;
     for (const p of this.pieces) {
       if (!p.alive) continue;
@@ -549,6 +612,76 @@ export class PhysicsWorld {
     return this.starLines.length ? this.starLines[this.starLines.length - 1] : this.hexRadius;
   }
 
+  /**
+   * Alguma peca viva ainda pode mexer com o hexagono?
+   *
+   * Conservador de proposito: na duvida responde que sim e a fase continua.
+   * Errar para este lado so custa ao jogador os toques que ele ja daria hoje;
+   * errar para o outro encerra uma fase que tinha solucao.
+   *
+   * @returns {boolean}
+   */
+  _somethingCanReachHex() {
+    if (!this.hexBody) return false;
+    // Contato agora: o que escora, encosta ou pesa sobre o hexagono. E esta
+    // volta que preserva a saida da quina - se uma peca o segura de lado,
+    // derrubar essa peca ainda pode faze-lo rolar para fora da estatica.
+    // Cinematico conta junto: o pedestal que oscila carrega quem esta em cima.
+    for (let edge = this.hexBody.getContactList(); edge; edge = edge.next) {
+      if (!edge.contact || !edge.contact.isTouching()) continue;
+      if (!edge.other.isStatic()) return true;
+    }
+    const c = this.hexBody.getPosition();
+    const r = this.hexHalfWidth();
+    const base = c.y - this.hexHalfHeight();
+    for (const p of this.pieces) {
+      if (!p.alive || !p.body.isDynamic()) continue;
+      const b = this.pieceBox(p);
+      const mat = getMaterial(p.material);
+      // Explosao empurra o hexagono sem encostar nele: _resolveExplosions
+      // alcanca raio * 1.27. Uma celula de folga cobre a peca descer um degrau
+      // antes de detonar.
+      if (mat.explodeRadius > 0) {
+        const d = Math.hypot(b.cx - c.x, b.cy - c.y);
+        if (d <= mat.explodeRadius * 1.27 + CELL) return true;
+      }
+      // Peca inteiramente abaixo da base do hexagono nao sobe de volta: a
+      // gravidade so desce, e o unico empurrao para cima e a explosao, que ja
+      // foi testada acima.
+      if (b.top < base - 0.05) continue;
+      // Acima ou ao lado: pode desabar sobre ele. Uma peca tomba mais ou menos
+      // a propria maior dimensao para o lado, e o resto e folga para quicar.
+      const gap = Math.abs(b.cx - c.x) - b.hw - r;
+      if (gap <= (Math.max(p.cw, p.ch) + REACH_SLACK) * CELL) return true;
+    }
+    return false;
+  }
+
+  /**
+   * O hexagono encalhou: parou sobre geometria que o jogador nao pode remover
+   * e nada mais na cena o alcanca.
+   *
+   * Sem isto a fase seguia em 'playing' para sempre quando o hexagono pousava
+   * em cima de uma obsidiana solta com a torre restante longe demais para
+   * mexer com ele: o jogador so descobria o beco sem saida gastando toques ate
+   * acabarem as pecas.
+   *
+   * O gatilho e o hexagono DORMINDO, nao hexAtRest(). O sono do Box2D exige
+   * meio segundo abaixo de uma tolerancia muito mais apertada (0.01 m/s contra
+   * 0.16), entao um hexagono que ainda tomba devagar pela quina da estatica
+   * nunca dispara isto - e tombar devagar e justamente o caso em que encerrar
+   * a fase tiraria do jogador uma vitoria que existia.
+   *
+   * @returns {boolean}
+   */
+  hexStranded() {
+    if (!this.hexBody || this.hexBody.isAwake()) return false;
+    // A cena inteira precisa estar parada: uma peca ainda escorregando na
+    // direcao do hexagono e alcance que a geometria deste instante nao ve.
+    if (!this.everythingAtRest()) return false;
+    return !this._somethingCanReachHex();
+  }
+
   /** @returns {'playing'|'won'|'lost'|'stuck'} */
   evaluate() {
     if (!this.hexBody) return 'playing';
@@ -569,6 +702,11 @@ export class PhysicsWorld {
     if (this.destructibleCount <= 0 && this.everythingAtRest()) {
       return p.y <= this.winLineY() && onPedestalX ? 'won' : 'stuck';
     }
+    // Encalhado e o mesmo fim de jogo do 'stuck' acima - a cena parou sem o
+    // hexagono no pedestal -, so que reconhecido enquanto ainda sobram pecas
+    // para tocar. Cai na mesma regra de onLevelEnd: com estrela ja conquistada
+    // conta como vitoria, sem estrela e derrota.
+    if (this.hexStranded()) return 'stuck';
     return 'playing';
   }
 
@@ -649,6 +787,7 @@ export class PhysicsWorld {
         vy: v.y,
         w: p.body.getAngularVelocity(),
         awake: p.body.isAwake(),
+        hold: p.holdTimer,
       });
     }
     const hp = this.hexBody ? this.hexBody.getPosition() : { x: 0, y: 0 };
@@ -676,6 +815,7 @@ export class PhysicsWorld {
   restore(snap) {
     this._pendingDestroy.length = 0;
     this._pendingExplosions.length = 0;
+    this._holdCharging = false;
     this.time = snap.time;
     this.starsCrossed = snap.starsCrossed;
     this.destructibleCount = snap.destructibleCount;
@@ -691,6 +831,7 @@ export class PhysicsWorld {
         this.world.destroyBody(piece.body);
         piece.alive = false;
         piece.body = /** @type {*} */ (null);
+        piece.holdTimer = 0;
         continue;
       }
       if (!state.alive) continue;
@@ -698,6 +839,14 @@ export class PhysicsWorld {
       piece.body.setLinearVelocity(new pl.Vec2(state.vx, state.vy));
       piece.body.setAngularVelocity(state.w);
       piece.body.setAwake(state.awake);
+      // Sem esta linha o solucionador vaza tempo de contato entre os ramos que
+      // ele simula: a primeira candidata e avaliada num mundo honesto e as
+      // seguintes num mundo onde o cristal sob o hexagono ja estourou o prazo.
+      // A ordenacao vira artefato da ordem do laco, e a prova de que a fase e
+      // vencivel - que e o que fica gravado em levels.gen.js - fica falsa. Pior
+      // ainda no jogo: requestHint() roda sobre o mundo REAL, entao pedir dica
+      // envelheceria a peca sob o jogador e a dica passaria a mata-lo.
+      piece.holdTimer = state.hold || 0;
     }
 
     if (this.hexBody) {

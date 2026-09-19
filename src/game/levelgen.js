@@ -9,7 +9,7 @@
 
 import { Rng } from '../core/rng.js';
 import { SHAPE_LIST, orientations, bounds, normalize } from '../physics/shapes.js';
-import { MATERIAL_DEBUT } from '../physics/materials.js';
+import { MATERIAL_DEBUT, HOLD_MATERIALS } from '../physics/materials.js';
 import { HEX_RADIUS, CELL } from '../physics/world.js';
 
 export const LEVEL_COUNT = 100;
@@ -38,6 +38,7 @@ export const WORLD_THEMES = [
  * @property {Record<string, number>} materialWeights
  * @property {number} obsidian quantidade de pecas indestrutiveis
  * @property {number} bombs quantidade de bombas
+ * @property {number} tnt quantidade de caixas de TNT
  * @property {number} bandMerge probabilidade de fundir duas faixas
  * @property {number} barBias chance de uma faixa virar barras de largura total
  * @property {number} pedestalHalf meia largura do pedestal em celulas
@@ -89,6 +90,8 @@ export function levelConfig(index, soften = 0) {
   if (i >= 18) tierMax = 3;
   if (i >= 44) tierMax = 4;
 
+  const theme = WORLD_THEMES[Math.floor(i / 10) % WORLD_THEMES.length];
+
   // --- materiais ----------------------------------------------------------
   /** @type {Record<string, number>} */
   const materialWeights = { wood: 10 };
@@ -101,6 +104,15 @@ export function levelConfig(index, soften = 0) {
   add('metal', Math.min(5, 2 + (level - MATERIAL_DEBUT.metal) * 0.1));
   add('glass', Math.min(5, 2 + (level - MATERIAL_DEBUT.glass) * 0.1));
   add('foam', Math.min(4, 1.5 + (level - MATERIAL_DEBUT.foam) * 0.1));
+  // Peso deliberadamente pequeno, e nao so por custo de geracao. Um cristal sob
+  // o hexagono cede sozinho e faz de graca o trabalho que seria do jogador: na
+  // primeira medicao, com peso chegando a 4 (o mesmo da madeira), as fases 57 e
+  // 58 cairam de 12 e 10 toques para 6. Como perigo ocasional ele acrescenta
+  // variedade; como material comum, ele resolve a fase.
+  add('crystal', Math.min(1.8, 0.8 + (level - MATERIAL_DEBUT.crystal) * 0.025));
+  // A cera so existe onde a lava justifica. Fora do mundo 8 ela seria um
+  // material sem historia, e o jogador leria "derrete" como regra universal.
+  if (theme === 'lava') add('wax', 1.6);
   // A madeira perde espaco conforme os materiais especiais entram.
   materialWeights.wood = Math.max(4, 10 - (Object.keys(materialWeights).length - 1) * 0.9);
 
@@ -115,6 +127,8 @@ export function levelConfig(index, soften = 0) {
   }
   let bombs = 0;
   if (level >= MATERIAL_DEBUT.bomb) bombs = r.chance(0.55) ? 1 : 0;
+  let tnt = 0;
+  if (level >= MATERIAL_DEBUT.tnt) tnt = r.chance(0.5) ? 1 : 0;
 
   // --- pedestal -----------------------------------------------------------
   // O pedestal comeca bem mais largo que a torre e vai encolhendo. Nas
@@ -158,8 +172,6 @@ export function levelConfig(index, soften = 0) {
     tierMax = Math.max(1, tierMax - 1);
   }
 
-  const theme = WORLD_THEMES[Math.floor(i / 10) % WORLD_THEMES.length];
-
   /** @type {LevelConfig} */
   const config = {
     index: i,
@@ -170,6 +182,7 @@ export function levelConfig(index, soften = 0) {
     materialWeights,
     obsidian,
     bombs,
+    tnt,
     bandMerge: Math.min(0.5, 0.05 + p * 0.45),
     barBias,
     pedestalHalf,
@@ -184,7 +197,7 @@ export function levelConfig(index, soften = 0) {
 }
 
 /** Materiais que tornam a fase imprevisivel, na ordem em que sao aliviados. */
-const HAZARDS = ['bomb', 'foam', 'glass', 'metal', 'rubber', 'ice'];
+const HAZARDS = ['tnt', 'crystal', 'wax', 'bomb', 'foam', 'glass', 'metal', 'rubber', 'ice'];
 
 /**
  * Afrouxa uma configuracao em degraus.
@@ -202,6 +215,9 @@ export function softenConfig(config, step) {
   const c = { ...config, materialWeights: { ...config.materialWeights } };
   c.obsidian = 0;
   c.bombs = 0;
+  // TNT e o perigo de maior variancia: o alivio mais barato de uma fase
+  // impossivel e tirar a caixa que apaga meia torre.
+  c.tnt = 0;
   c.pedestalHalf = config.pedestalHalf * 1.25;
   c.wind = config.wind * 0.5;
   for (const h of HAZARDS) {
@@ -440,9 +456,14 @@ export function generateLayout(config, seed) {
   const matWeights = matIds.map((id) => config.materialWeights[id]);
   // Em fases avancadas, faixas inteiras podem ter um material so.
   const bandMaterial = new Map();
+  // Uma faixa inteira de cristal ou cera se dissolveria de uma vez sob o
+  // hexagono; o sorteio de faixa usa so os materiais estaveis. Mesmo numero de
+  // sorteios, entao o fluxo do Rng nao desloca.
+  const bandIds = matIds.filter((id) => !HOLD_MATERIALS.has(id));
+  const bandWeights = bandIds.map((id) => config.materialWeights[id]);
   for (let b = 0; b < bands.length; b++) {
     if (config.level >= 30 && rng.chance(0.28)) {
-      bandMaterial.set(b, rng.weighted(matIds, matWeights));
+      bandMaterial.set(b, rng.weighted(bandIds, bandWeights));
     }
   }
   for (const piece of pieces) {
@@ -482,6 +503,37 @@ export function generateLayout(config, seed) {
     rng.shuffle(candidates);
     for (let i = 0; i < Math.min(config.bombs, candidates.length); i++) {
       candidates[i].material = 'bomb';
+    }
+  }
+
+  // --- tnt ----------------------------------------------------------------
+  // Nunca na faixa mais alta: o hexagono nasce sobre ela e a primeira queda
+  // detonaria antes de o jogador entender o que e aquela caixa. Nunca na linha
+  // de base: ali a explosao apagaria a plataforma de pouso.
+  if (config.tnt > 0) {
+    const topo = bands.length - 1;
+    const candidates = pieces.filter(
+      (p) =>
+        p.material !== 'obsidian' &&
+        p.material !== 'bomb' &&
+        p.cells.length <= 4 &&
+        p.band !== topo &&
+        p.y >= 1,
+    );
+    rng.shuffle(candidates);
+    for (let i2 = 0; i2 < Math.min(config.tnt, candidates.length); i2++) {
+      candidates[i2].material = 'tnt';
+    }
+  }
+
+  // --- material temporal fora da faixa do topo ----------------------------
+  // O hexagono nasce em cima da ultima faixa. Se ela for de cristal, a trinca
+  // comeca antes do primeiro toque - e na fase de estreia isso acontece com a
+  // legenda do tutorial ainda na tela.
+  {
+    const topo = bands.length - 1;
+    for (const p of pieces) {
+      if (p.band === topo && HOLD_MATERIALS.has(p.material)) p.material = 'wood';
     }
   }
 

@@ -141,12 +141,21 @@ export class GameScene {
       color,
       vx: vel.x,
       vy: vel.y,
-      density: cause === 'explosion' ? dense + 2 : dense,
+      density: cause === 'explosion' || cause === 'blast' ? dense + 2 : cause === 'melt' ? 1 : dense,
+      // Derretimento escorre; nao voa. Os dois parametros existem so para este
+      // caso - todos os outros usam os valores de sempre.
+      lift: cause === 'melt' ? -0.5 : undefined,
+      spread: cause === 'melt' ? 1.2 : undefined,
       rand: () => this.rng.next(),
     });
     audio.breakPiece(piece.material, Math.min(1, piece.area / 6));
-    if (cause === 'explosion') this.camera.addTrauma(0.45);
+    if (cause === 'blast') {
+      this.camera.addTrauma(0.5);
+      this.particles.spark(pos.x, pos.y, '#ffd24a', 10, () => this.rng.next());
+    } else if (cause === 'explosion') this.camera.addTrauma(0.45);
+    else if (cause === 'crack') this.camera.addTrauma(0.2);
     else if (cause === 'shatter') this.camera.addTrauma(0.16);
+    else if (cause === 'melt') this.camera.addTrauma(0.04);
     else this.camera.addTrauma(0.09);
   }
 

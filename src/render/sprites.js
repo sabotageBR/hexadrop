@@ -9,6 +9,7 @@
  */
 
 import { outlineLoops, bounds } from '../physics/shapes.js';
+import { material as getMaterial } from '../physics/materials.js';
 import { Rng, hashSeed } from '../core/rng.js';
 
 /**
@@ -20,7 +21,7 @@ import { Rng, hashSeed } from '../core/rng.js';
  * @param {number} ox
  * @param {number} oy origem, ja no topo do sprite (eixo y invertido)
  */
-function traceLoop(ctx, loop, scale, radius, ox, oy) {
+export function traceLoop(ctx, loop, scale, radius, ox, oy) {
   const n = loop.length;
   if (n < 3) return;
   /** @param {number} i @returns {number[]} */
@@ -47,7 +48,7 @@ function traceLoop(ctx, loop, scale, radius, ox, oy) {
  * @param {number} ox
  * @param {number} oy
  */
-function tracePiece(ctx, loops, scale, radius, ox, oy) {
+export function tracePiece(ctx, loops, scale, radius, ox, oy) {
   ctx.beginPath();
   for (const loop of loops) traceLoop(ctx, loop, scale, radius, ox, oy);
 }
@@ -66,6 +67,40 @@ function withAlpha(hex, alpha) {
   const g = parseInt(full.slice(2, 4), 16);
   const b = parseInt(full.slice(4, 6), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/**
+ * Faixas de perigo da TNT.
+ *
+ * Cor sozinha nao basta: no neon a TNT laranja ao lado da madeira ambar sao
+ * dois quadrados parecidos, e confundir as duas custa a fase - a TNT detona
+ * com qualquer queda forte. A listra diagonal e o sinal universal de "isto
+ * explode" e aparece igual nos oito temas, sempre na propria cor do material.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./themes.js').PieceStyle} style
+ * @param {number} ox
+ * @param {number} oy
+ * @param {number} w
+ * @param {number} h
+ * @param {number} scale
+ */
+function hazardStripes(ctx, style, ox, oy, w, h, scale) {
+  ctx.save();
+  ctx.clip('evenodd');
+  // O traco, nao o realce: em tema claro o realce e quase branco e a listra
+  // sumia justamente onde ela mais precisa aparecer.
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = style.stroke;
+  ctx.lineWidth = scale * 0.16;
+  const passo = scale * 0.46;
+  for (let x = -h; x < w + h; x += passo) {
+    ctx.beginPath();
+    ctx.moveTo(ox + x, oy);
+    ctx.lineTo(ox + x + h, oy - h);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /**
@@ -92,8 +127,27 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed) {
 
   switch (th.style) {
     case 'neon': {
+      // Corpo primeiro, e opaco: o tubo de neon so le bem quando tem uma
+      // massa escura por tras. Antes o cenario atravessava a peca.
       ctx.fillStyle = style.fill;
       ctx.fill('evenodd');
+      ctx.save();
+      ctx.clip('evenodd');
+      // A luz do traco escorre para dentro: clareia o topo, escurece a base.
+      // E o que da volume sem inventar cor fora da paleta do material.
+      const luz = ctx.createLinearGradient(ox, oy - h, ox, oy);
+      luz.addColorStop(0, withAlpha(style.top || style.stroke, 0.42));
+      luz.addColorStop(0.45, withAlpha(style.stroke, 0.07));
+      luz.addColorStop(1, 'rgba(0,0,0,0.3)');
+      ctx.fillStyle = luz;
+      ctx.fillRect(ox, oy - h, w, h);
+      // Varredura fina, a marca do estilo, agora contida dentro da peca.
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = style.stroke;
+      for (let y = oy - h; y < oy; y += Math.max(3, scale * 0.14)) {
+        ctx.fillRect(ox, y, w, Math.max(1, scale * 0.03));
+      }
+      ctx.restore();
       ctx.save();
       ctx.shadowColor = style.stroke;
       ctx.shadowBlur = scale * 0.42;
@@ -287,6 +341,18 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed) {
       ctx.lineWidth = Math.max(1.6, scale * 0.065);
       ctx.stroke();
     }
+  }
+
+  // Quem quebra com pancada E explode: so a TNT. A bomba nao entra - ela
+  // espera o dedo do jogador, e o vidro quebra sem espalhar nada.
+  const mat = getMaterial(materialId);
+  if (mat.breakSpeed > 0 && mat.explodeRadius > 0) {
+    tracePiece(ctx, loops, scale, radius, ox, oy);
+    hazardStripes(ctx, style, ox, oy, w, h, scale);
+    tracePiece(ctx, loops, scale, radius, ox, oy);
+    ctx.strokeStyle = style.stroke;
+    ctx.lineWidth = Math.max(1.6, scale * 0.07);
+    ctx.stroke();
   }
 }
 

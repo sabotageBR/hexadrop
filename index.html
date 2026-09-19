@@ -17,27 +17,80 @@
 
   <!-- ---------------------------------------------------------- inicio -->
   <section class="screen" id="s-home">
+    <!-- Arte-chave: o momento que da nome ao jogo. Fica fixa, e nao segue o tema
+         da fase: a tela de abertura e a identidade do jogo, nao do mundo. -->
+    <svg class="keyart" viewBox="0 0 390 540" preserveAspectRatio="xMidYMin meet" aria-hidden="true">
+      <defs>
+        <linearGradient id="ka-hex" x1="0.15" y1="0" x2="0.85" y2="1">
+          <stop offset="0" stop-color="#ffffff"/>
+          <stop offset="0.42" stop-color="#cfe9ff"/>
+          <stop offset="1" stop-color="#6aa8e8"/>
+        </linearGradient>
+        <linearGradient id="ka-rim" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ffc43c"/>
+          <stop offset="0.5" stop-color="#ffc43c" stop-opacity="0.35"/>
+          <stop offset="1" stop-color="#ffc43c" stop-opacity="0.9"/>
+        </linearGradient>
+        <radialGradient id="ka-glow" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stop-color="#ffc43c" stop-opacity="0.5"/>
+          <stop offset="1" stop-color="#ffc43c" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="ka-trail" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ffc43c" stop-opacity="0"/>
+          <stop offset="1" stop-color="#ffc43c" stop-opacity="0.55"/>
+        </linearGradient>
+      </defs>
+      <circle cx="195" cy="196" r="168" fill="url(#ka-glow)"/>
+      <path d="M124 26 L131 150 L117 150 Z" fill="url(#ka-trail)"/>
+      <path d="M195 6 L202 132 L188 132 Z" fill="url(#ka-trail)"/>
+      <path d="M266 34 L273 156 L259 156 Z" fill="url(#ka-trail)"/>
+      <g transform="translate(195 200) rotate(-13) translate(-100 -87)">
+        <path d="M50 0 H150 L200 86.6 L150 173.2 H50 L0 86.6 Z" fill="url(#ka-hex)"/>
+        <path d="M50 0 H150 L200 86.6 L150 173.2 H50 L0 86.6 Z" fill="none" stroke="url(#ka-rim)" stroke-width="9" stroke-linejoin="round"/>
+        <path d="M52 8 H146" stroke="#ffffff" stroke-width="7" stroke-linecap="round" opacity="0.85"/>
+        <path d="M8 84 L46 18" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
+        <path d="M50 173.2 H150 L173 133 H27 Z" fill="#2e5d8f" opacity="0.28"/>
+      </g>
+      <g>
+        <rect x="96" y="392" width="92" height="34" rx="8" fill="#f0b43c" transform="rotate(-8 142 409)"/>
+        <rect x="200" y="404" width="92" height="34" rx="8" fill="#e0587a" transform="rotate(11 246 421)"/>
+        <rect x="70" y="446" width="120" height="34" rx="8" fill="#9aa7d8" transform="rotate(4 130 463)"/>
+        <rect x="206" y="456" width="86" height="34" rx="8" fill="#f0b43c" transform="rotate(-6 249 473)"/>
+        <rect x="112" y="500" width="176" height="30" rx="8" fill="#7a5fc4"/>
+      </g>
+      <circle cx="86" cy="436" r="4" fill="#ffffff" opacity="0.35"/>
+      <circle cx="308" cy="418" r="3" fill="#ffffff" opacity="0.3"/>
+      <circle cx="262" cy="384" r="3.5" fill="#ffffff" opacity="0.25"/>
+      <circle cx="140" cy="372" r="3" fill="#ffffff" opacity="0.3"/>
+    </svg>
+
     <div class="hud-top">
-      <div class="badge hearts"><span class="ico">&#10084;</span><span id="homeHearts">5</span></div>
+      <div class="stat hearts"><span class="ico">&#10084;</span><span id="homeHearts">5</span></div>
+      <div class="stat coins"><span class="ico">&#9679;</span><span id="homeCoins">0</span></div>
       <div class="grow"></div>
-      <div class="badge coins"><span class="ico">&#9679;</span><span id="homeCoins">0</span></div>
+      <button class="iconbtn" id="btnSettings" aria-label="Ajustes">&#9881;</button>
     </div>
+
+    <div class="grow"></div>
+
     <div class="home-mid">
-      <h1 class="logo"><span>HEXA DROP</span></h1>
+      <h1 class="logo">HEXA DROP</h1>
       <p class="tagline" id="tagline"></p>
-      <div class="home-actions">
-        <button class="btn primary big wide" id="btnPlay"></button>
-        <button class="btn wide" id="btnMap"></button>
-        <div class="row" style="display:flex; gap:10px;">
-          <button class="btn" style="flex:1" id="btnShop"></button>
-          <button class="btn" style="flex:1" id="btnSettings"></button>
-        </div>
+    </div>
+
+    <div class="home-actions">
+      <button class="btn primary big wide drop" id="btnPlay"></button>
+      <div class="row">
+        <button class="btn" style="flex:1" id="btnMap"></button>
+        <button class="btn" style="flex:1" id="btnShop"></button>
       </div>
     </div>
-    <div class="hud-bottom">
-      <div class="badge"><small id="rankLabel">Rank</small>&nbsp;<span id="homeRank">0</span></div>
-      <div class="grow"></div>
-      <div class="badge"><span class="ico" style="color:var(--gold)">&#9733;</span><span id="homeStars">0</span>/300</div>
+
+    <div class="hud-bottom home-foot">
+      <span class="rank-label" id="rankLabel">Rank</span>
+      <span class="rank-value" id="homeRank">0</span>
+      <div class="meter"><i id="homeRankBar"></i></div>
+      <div class="stat"><span class="ico" style="color:var(--gold)">&#9733;</span><span id="homeStars">0</span><small>/300</small></div>
     </div>
   </section>
 
@@ -58,18 +111,24 @@
 
   <!-- ------------------------------------------------------------ jogo -->
   <section class="screen pass" id="s-game">
-    <div class="hud-top">
-      <button class="btn icon" id="gameBack">&#8592;</button>
-      <div class="level-pill" id="gameLevel"></div>
-      <div class="badge hearts"><span class="ico">&#10084;</span><span id="gameHearts">5</span></div>
-      <button class="btn icon" id="gamePause">&#9208;</button>
+    <!-- Fio e sombra: sem caixa em volta de nada. Um degrade escurece a borda
+         e um fio fino marca o limite, entao o HUD nao rouba area do jogo. -->
+    <div class="shade top"></div>
+    <div class="hud-top bare">
+      <button class="iconbtn" id="gameBack" aria-label="Voltar">&#8592;</button>
+      <div class="grow"></div>
+      <div class="level-name" id="gameLevel"></div>
+      <div class="grow"></div>
+      <div class="stat hearts"><span class="ico">&#10084;</span><span id="gameHearts">5</span></div>
+      <button class="iconbtn" id="gamePause" aria-label="Pausar">&#9208;</button>
     </div>
     <div class="starrow" id="gameStars"><i></i><i></i><i></i></div>
     <div class="grow"></div>
-    <div class="hud-bottom">
+    <div class="shade bottom"></div>
+    <div class="hud-bottom bare">
       <div class="grow"></div>
       <!-- O botao padrao acompanha o de video, do mesmo tamanho e ao lado. -->
-      <button class="btn" id="gameRestart" hidden></button>
+      <button class="btn ghost" id="gameRestart" hidden></button>
       <button class="btn ad" id="gameHint" hidden></button>
     </div>
   </section>
@@ -106,6 +165,9 @@
         <button class="btn primary big" id="loseRetry"></button>
       </div>
       <div class="row" style="margin-top:10px">
+        <button class="btn wide" id="loseShuffle"></button>
+      </div>
+      <div class="row" style="margin-top:10px">
         <button class="btn" id="loseHome"></button>
         <button class="btn ad" id="loseAd"></button>
       </div>
@@ -138,6 +200,7 @@
     <div class="tabs" style="margin-top:12px">
       <button class="tab on" id="tabSkins"></button>
       <button class="tab" id="tabUpgrades"></button>
+      <button class="tab" id="tabBoosts"></button>
     </div>
     <div class="map-scroll"><div class="shop-list" id="shopList"></div></div>
   </section>

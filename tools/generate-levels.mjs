@@ -15,6 +15,7 @@
  *   node tools/generate-levels.mjs            geracao completa
  *   node tools/generate-levels.mjs --quick    menos seeds, para iterar rapido
  *   node tools/generate-levels.mjs --levels 1-20
+ *   node tools/generate-levels.mjs --seeds 40 --levels 79-79
  */
 
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
@@ -33,7 +34,10 @@ const GENERATOR_VERSION = 1;
 
 const QUICK = process.argv.includes('--quick');
 const VARIANTS_WANTED = QUICK ? 2 : 4;
-const SEED_BUDGET = QUICK ? 6 : 16;
+const seedArg = process.argv.indexOf('--seeds');
+// Cinco fases so conseguiam uma variante com o orcamento padrao, e o botao de
+// embaralhar precisa de pelo menos duas. --seeds 40 resolve, ao custo de tempo.
+const SEED_BUDGET = seedArg >= 0 ? Number(process.argv[seedArg + 1]) : QUICK ? 6 : 16;
 const SMART_RUNS = QUICK ? 4 : 6;
 
 /**
@@ -77,6 +81,10 @@ function bakeLevel(index) {
         minSmartWins: 2,
       });
       if (!report.accepted) continue;
+      // Uma fase que se resolve em um toque nao e uma fase. Com materiais que
+      // somem sozinhos isso deixa de ser hipotetico - e o bonus de moedas por
+      // bater o par ficaria inatingivel.
+      if (index >= 9 && report.par < 2) continue;
 
       accepted.push({
         seed,

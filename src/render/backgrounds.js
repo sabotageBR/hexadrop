@@ -98,39 +98,55 @@ export function paintBackground(ctx, th, w, h) {
   const horizonY = h * 0.56;
 
   switch (th.id) {
+    // O sol synthwave e a assinatura do mundo, mas ele nasce exatamente atras
+    // da coluna de jogo: brilhante e listrado como era, as faixas cruzavam as
+    // pecas e o jogador nao sabia mais o que era cenario e o que era torre.
+    // Aqui ele continua inteiro - so que menor, mais fundo na paleta e coberto
+    // por uma bruma no miolo da tela. Cenario e cenario; a cor viva fica para
+    // as pecas.
     case 'neon': {
       const glow = ctx.createRadialGradient(w / 2, horizonY, 0, w / 2, horizonY, w * 0.62);
-      glow.addColorStop(0, 'rgba(255,45,149,0.55)');
-      glow.addColorStop(0.45, 'rgba(160,40,180,0.22)');
+      glow.addColorStop(0, 'rgba(210,40,130,0.24)');
+      glow.addColorStop(0.45, 'rgba(120,30,150,0.12)');
       glow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, w, h);
+      const sunR = w * 0.17;
       ctx.save();
-      ctx.globalAlpha = 0.85;
-      const sun = ctx.createLinearGradient(0, horizonY - w * 0.26, 0, horizonY);
-      sun.addColorStop(0, '#ffe45e');
-      sun.addColorStop(0.5, '#ff5fa8');
-      sun.addColorStop(1, '#8a2bff');
+      ctx.globalAlpha = 0.5;
+      const sun = ctx.createLinearGradient(0, horizonY - sunR, 0, horizonY);
+      sun.addColorStop(0, '#ff9f4a');
+      sun.addColorStop(0.5, '#e8407f');
+      sun.addColorStop(1, '#5a17b0');
       ctx.fillStyle = sun;
       ctx.beginPath();
-      ctx.arc(w / 2, horizonY, w * 0.24, Math.PI, Math.PI * 2);
+      ctx.arc(w / 2, horizonY, sunR, Math.PI, Math.PI * 2);
       ctx.fill();
       ctx.globalCompositeOperation = 'destination-out';
       for (let i = 1; i < 7; i++) {
-        const y = horizonY - w * 0.24 + (i * w * 0.24) / 6.5;
-        ctx.fillRect(0, y, w, w * 0.012 * i * 0.5);
+        const y = horizonY - sunR + (i * sunR) / 6.5;
+        ctx.fillRect(0, y, w, sunR * 0.05 * i * 0.5);
       }
       ctx.restore();
-      mountains(ctx, w, horizonY + 1, 'rgba(60,15,80,0.9)', rng, h * 0.1, 7);
+      mountains(ctx, w, horizonY + 1, 'rgba(38,10,54,0.92)', rng, h * 0.1, 7);
       ctx.fillStyle = th.ground;
       ctx.fillRect(0, horizonY, w, h - horizonY);
       perspectiveGrid(ctx, th, w, h, horizonY);
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
       for (let i = 0; i < 40; i++) {
-        ctx.globalAlpha = rng.range(0.2, 0.9);
+        ctx.globalAlpha = rng.range(0.15, 0.6);
         ctx.fillRect(rng.range(0, w), rng.range(0, horizonY * 0.8), 1.5, 1.5);
       }
       ctx.globalAlpha = 1;
+      // Bruma no eixo da torre. E o inverso da vinheta do renderizador, que
+      // escurece as bordas: aqui o miolo - onde tudo acontece - e que precisa
+      // ficar calmo, e as pontas do sol continuam aparecendo dos lados.
+      const bruma = ctx.createRadialGradient(w / 2, horizonY, 0, w / 2, horizonY, w * 0.42);
+      bruma.addColorStop(0, 'rgba(8,4,24,0.5)');
+      bruma.addColorStop(0.7, 'rgba(8,4,24,0.28)');
+      bruma.addColorStop(1, 'rgba(8,4,24,0)');
+      ctx.fillStyle = bruma;
+      ctx.fillRect(0, 0, w, h);
       break;
     }
 

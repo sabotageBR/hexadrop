@@ -12,7 +12,14 @@
   --edge: rgba(255, 255, 255, 0.16);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --gold: #ffd23c;
+  --starOff: rgba(255, 255, 255, 0.22);
   --heart: #ff4d6d;
+  /* Valores de partida. applyUiTheme() sobrescreve tudo isto com a paleta do
+     tema da fase assim que a primeira cena carrega. */
+  --veil-rgb: 6, 3, 15;
+  --sheet-rgb: 6, 3, 15;
+  --wash: rgba(255, 255, 255, 0.08);
+  --accent-deep: #8a2bff;
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
@@ -67,7 +74,7 @@ html, body {
 .screen.pass .badge,
 .screen.pass .level-pill { pointer-events: auto; }
 
-.veil { position: absolute; inset: 0; background: rgba(6, 3, 15, 0.72); backdrop-filter: blur(6px); }
+.veil { position: absolute; inset: 0; background: rgba(var(--veil-rgb), 0.72); backdrop-filter: blur(6px); }
 
 /* Nas telas de menu a fase roda atras como cenario vivo. O veu garante que o
    texto continue legivel sobre qualquer tema, sem custar um blur de tela cheia. */
@@ -77,14 +84,14 @@ html, body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(6, 3, 15, 0.86) 0%, rgba(6, 3, 15, 0.58) 38%,
-    rgba(6, 3, 15, 0.68) 66%, rgba(6, 3, 15, 0.92) 100%);
+  background: linear-gradient(180deg, rgba(var(--sheet-rgb), 0.88) 0%, rgba(var(--sheet-rgb), 0.6) 38%,
+    rgba(var(--sheet-rgb), 0.7) 66%, rgba(var(--sheet-rgb), 0.94) 100%);
   pointer-events: none;
 }
 /* Mapa e loja sao telas de leitura: o cenario vivo atrapalharia, entao ali o
    veu e quase opaco e so deixa passar um brilho do tema. */
 #s-map::before,
-#s-shop::before { background: rgba(9, 5, 20, 0.93); }
+#s-shop::before { background: rgba(var(--sheet-rgb), 0.95); }
 #s-home > *, #s-map > *, #s-shop > * { position: relative; z-index: 1; }
 
 /* ------------------------------------------------------------------ botoes */
@@ -109,10 +116,10 @@ html, body {
 .btn:active:not(:disabled) { transform: scale(0.96); }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn.primary {
-  background: linear-gradient(135deg, var(--accent), #8a2bff);
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 8px 24px rgba(255, 67, 184, 0.28);
+  box-shadow: 0 8px 24px rgba(var(--veil-rgb), 0.45);
 }
 .btn.big { min-height: 56px; font-size: 17px; padding: 0 30px; }
 .btn.icon { width: 44px; min-height: 44px; padding: 0; font-size: 18px; }
@@ -174,7 +181,7 @@ html, body {
 .starrow { display: flex; justify-content: center; gap: 12px; margin-top: 10px; }
 .starrow i {
   width: 26px; height: 26px;
-  background: var(--starOff, rgba(255,255,255,0.22));
+  background: var(--starOff);
   clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
   transition: transform 0.3s cubic-bezier(0.2,1.4,0.4,1), background 0.3s ease;
 }
@@ -193,57 +200,132 @@ html, body {
   text-align: center;
   max-height: calc(100% - 20px);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 .card h2 { margin: 0 0 4px; font-size: 26px; letter-spacing: 0.02em; }
 .card p { margin: 0 0 14px; color: var(--ink-soft); font-size: 14px; line-height: 1.45; }
 .card .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .card .row .btn { flex: 1 1 130px; }
 
+/* ------------------------------------------------------- tela de vitoria */
+/* Cartao simples: coroa, titulo, estrelas e as duas recompensas em texto. O
+   que muda com o mundo e a paleta, que vem das variaveis. */
 .crown { font-size: 34px; line-height: 1; margin-bottom: 2px; color: var(--gold); }
 .rewards { display: flex; justify-content: center; gap: 18px; margin: 12px 0 16px; }
 .reward { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .reward b { font-size: 22px; }
 .reward span { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.1em; }
-
 /* -------------------------------------------------------------------- mapa */
-.map-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 2px 20px; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+.map-scroll { position: relative; flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 2px 20px; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+/* Cada mundo e uma caixa com a trilha ao fundo e os nos posicionados por
+   porcentagem sobre ela. Os mundos sao empilhados do ultimo para o primeiro,
+   entao progredir e subir na pagina. */
+.world, .gate {
+  /* O mapa e uma coluna: numa janela larga a serpentina esticaria de ponta a
+     ponta e viraria uma linha quase reta. */
+  max-width: 440px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.world { position: relative; margin-bottom: 6px; }
+.world.locked { opacity: 0.5; filter: saturate(0.35); }
 .world-head {
   display: flex; align-items: center; gap: 10px;
-  margin: 18px 4px 10px; font: 700 12px/1 var(--font);
+  margin: 14px 4px 6px; font: 700 12px/1 var(--font);
   letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-soft);
 }
 .world-head::after { content: ""; flex: 1; height: 1px; background: var(--edge); }
-.map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 8px; }
-.node {
-  position: relative;
-  aspect-ratio: 1;
-  border-radius: 16px;
-  border: 1px solid var(--edge);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--ink);
-  font: 700 17px/1 var(--font);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  transition: transform 0.12s ease, border-color 0.12s ease;
+
+.trail { position: relative; height: 620px; }
+/* preserveAspectRatio="none" no SVG: o viewBox de 100x100 se estica para a
+   caixa, e assim a curva usa exatamente as mesmas porcentagens dos nos. */
+.trail-line { position: absolute; inset: 0; width: 100%; height: 100%; }
+.trail-line path {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-dasharray: 3 3.4;
+  vector-effect: non-scaling-stroke;
 }
-.node:hover:not(.locked) { transform: translateY(-2px); border-color: var(--accent); }
-.node.locked { opacity: 0.32; cursor: default; color: var(--ink-soft); }
+
+.node {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 58px; height: 58px; border-radius: 50%;
+  border: 2px solid var(--edge); background: var(--panel);
+  color: var(--ink); font: 700 18px/1 var(--font);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 1;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.node:hover:not(.locked) { transform: translate(-50%, -50%) scale(1.08); border-color: var(--accent); }
+.node.locked { opacity: 0.4; cursor: default; color: var(--ink-soft); }
 .node.locked .pips { display: none; }
-.node.current { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255, 67, 184, 0.28); }
-.node .pips { position: absolute; bottom: 5px; display: flex; gap: 2px; }
-.node .pips i { width: 6px; height: 6px; background: rgba(255,255,255,0.2); clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
-.node .pips i.on { background: var(--gold); }
+.node.current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--wash), 0 0 18px var(--accent);
+}
+.node .pips { position: absolute; bottom: -9px; display: flex; gap: 2px; }
+.st, .node .pips i {
+  width: 9px; height: 9px; display: inline-block; background: var(--starOff);
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.node .pips i.on, .st.on { background: var(--gold); }
+
+/* ---------------------------------------------------------------- portao */
+.gate {
+  position: relative;
+  margin: 10px auto;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px dashed var(--edge);
+  background: var(--wash);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+}
+.gate.open { border-style: solid; border-color: var(--accent); }
+.gate-seal { font-size: 22px; line-height: 1; filter: grayscale(0.2); }
+.gate.open .gate-seal { color: var(--accent); }
+.gate-text { display: flex; flex-direction: column; gap: 2px; }
+.gate-text b { font-size: 17px; display: flex; align-items: center; gap: 6px; }
+.gate-text span { font-size: 12px; color: var(--ink-soft); }
+.gate-hint { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.gate-jump {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px; border-radius: 999px;
+  border: 1px solid var(--edge); background: var(--panel);
+  color: var(--ink); font: 700 12px/1 var(--font); cursor: pointer;
+}
+.gate-jump:hover { border-color: var(--accent); }
+
+/* Abertura do portao: o tracejado vira linha cheia e o selo gira. */
+.gate.just-open { animation: gateOpen 0.9s ease both; }
+@keyframes gateOpen {
+  0% { border-color: var(--edge); transform: scale(1); }
+  35% { border-color: var(--accent); transform: scale(1.03); }
+  100% { border-color: var(--accent); transform: scale(1); }
+}
+.gate.just-open .gate-seal { animation: sealSpin 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+@keyframes sealSpin { from { transform: rotate(-180deg) scale(0.2); } }
+
+/* O hexagono que percorre a trilha ao abrir um mundo. */
+.climber {
+  position: absolute; z-index: 3;
+  width: 44px; height: 44px; margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
 
 /* -------------------------------------------------------------------- loja */
 .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-.tab { flex: 1; height: 38px; border-radius: 12px; border: 1px solid var(--edge); background: rgba(255,255,255,0.04);
+.tab { flex: 1; height: 38px; border-radius: 12px; border: 1px solid var(--edge); background: var(--wash);
   color: var(--ink-soft); font: 700 13px/1 var(--font); cursor: pointer; }
 .tab.on { color: var(--ink); border-color: var(--accent); background: rgba(255, 67, 184, 0.14); }
 .shop-list { display: grid; gap: 8px; }
 .item {
   display: flex; align-items: center; gap: 12px;
   padding: 11px 13px; border-radius: 14px;
-  border: 1px solid var(--edge); background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--edge); background: var(--wash);
   text-align: left;
 }
 .item .swatch { width: 40px; height: 40px; flex: none; border-radius: 10px; display: grid; place-items: center; }
@@ -252,22 +334,135 @@ html, body {
 .item .info span { font-size: 12px; color: var(--ink-soft); }
 .item .btn { min-height: 36px; padding: 0 14px; font-size: 13px; }
 .bars { display: flex; gap: 3px; margin-top: 5px; }
-.bars i { width: 20px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.18); }
+.bars i { width: 20px; height: 4px; border-radius: 2px; background: var(--starOff); }
 .bars i.on { background: var(--accent2); }
 
 /* -------------------------------------------------------------------- home */
-.home-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
-.logo { font-size: clamp(38px, 11vw, 66px); font-weight: 800; letter-spacing: -0.03em; line-height: 1; margin: 0; }
-.logo span { background: linear-gradient(95deg, var(--accent), var(--gold) 50%, var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.tagline { color: var(--ink-soft); font-size: 14px; margin: 0; }
-.home-actions { display: flex; flex-direction: column; gap: 10px; width: min(300px, 82vw); }
+/* --------------------------------------------------- HUD do jogo: fio e sombra */
+/* Nada de caixa: um degrade escurece a borda o bastante para o texto sobreviver
+   a qualquer peca clara por baixo, e um fio fino marca o limite. E o tratamento
+   que menos rouba area util - o que importa num jogo em que a torre e alta. */
+.shade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 78px;
+  pointer-events: none;
+}
+.shade.top {
+  top: 0;
+  /* sheet e nao veil: num mundo claro o texto do HUD e escuro, e escurecer a
+     borda o tornaria ilegivel. A sombra acompanha a polaridade da interface. */
+  background: linear-gradient(180deg, rgba(var(--sheet-rgb), 0.82) 0%, rgba(var(--sheet-rgb), 0) 100%);
+  border-bottom: 1px solid var(--edge);
+  opacity: 0.96;
+}
+.shade.bottom {
+  bottom: 0;
+  background: linear-gradient(0deg, rgba(var(--sheet-rgb), 0.82) 0%, rgba(var(--sheet-rgb), 0) 100%);
+}
+/* Os trilhos ficam por cima do degrade, sem fundo proprio. */
+.hud-top.bare, .hud-bottom.bare { position: relative; z-index: 1; background: transparent; }
+.hud-top.bare { gap: 12px; }
+
+.level-name {
+  font: 700 15px/1 var(--font);
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+/* Botao secundario sem preenchimento: sobre a cena, um fundo cheio viraria
+   mancha. O contorno basta, e o de video ao lado continua sendo o solido. */
+/* Sobre a cena, um preenchimento cheio viraria mancha; o realce de toque da
+   definicao suficiente e acompanha a polaridade do mundo. */
+.btn.ghost { background: var(--wash); backdrop-filter: none; }
+
+/* ------------------------------------------------------------ tela inicial */
+/* A abertura tem identidade propria e nao segue o tema da fase: e a capa do
+   jogo, nao do mundo. Por isso as cores aqui sao fixas. */
+#s-home {
+  --ink: #f8f5ff;
+  --ink-soft: #9a92b8;
+  --accent: #ffc43c;
+  --accent-deep: #c97f14;
+  --edge: #332a52;
+  --veil-rgb: 13, 10, 31;
+  /* A capa tambem fixa a fonte: senao o titulo virava monoespacado quando a
+     ultima fase jogada era de um mundo que usa a fonte tecnica. */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --panel: #191233;
+  background: #0d0a1f;
+  padding-bottom: calc(10px + var(--safe-b));
+}
+/* O veu generico das telas de menu nao vale aqui: a arte-chave e o fundo. */
+#s-home::before { display: none; }
+/* O jogo e feito para celular; numa janela larga a coluna se mantem e a arte
+   centraliza, em vez de esticar ate o hexagono sair do quadro. */
+#s-home > .hud-top,
+#s-home > .home-mid,
+#s-home > .home-actions,
+#s-home > .home-foot { width: 100%; max-width: 430px; margin-inline: auto; }
+#s-home > .home-foot { max-width: 386px; }
+
+#s-home > .keyart {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  width: min(100%, 470px);
+  height: min(540px, 60%);
+  pointer-events: none;
+}
+
+.home-mid { position: relative; text-align: center; padding: 0 22px; }
+.logo {
+  margin: 0;
+  /* Sem fonte de fora: a Poki reprova qualquer requisicao externa, entao o peso
+     vem do proprio sistema, apertado no espacamento. */
+  font: 900 clamp(38px, 12vw, 54px)/0.92 var(--font);
+  letter-spacing: -0.035em;
+  color: #f8f5ff;
+}
+.tagline { color: var(--ink-soft); font-size: 13px; margin: 12px 0 0; }
+
+.home-actions { position: relative; padding: 22px 22px 0; display: flex; flex-direction: column; gap: 11px; }
+.home-actions .row { display: flex; gap: 11px; }
+/* A base solida e o que da peso de jogo ao botao principal. */
+.btn.drop { box-shadow: 0 6px 0 rgba(0, 0, 0, 0.3); }
+.btn.drop:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3); }
+
+/* Numeros soltos sobre a arte, sem caixa em volta. */
+.stat { display: flex; align-items: center; gap: 6px; font: 700 15px/1 var(--font); color: var(--ink); }
+.stat .ico { font-size: 14px; line-height: 1; }
+.stat small { color: var(--ink-soft); font-weight: 400; font-size: 12px; }
+.stat.coins .ico { color: var(--gold); }
+.stat.hearts .ico { color: var(--heart); }
+
+.iconbtn {
+  width: 34px; height: 34px; padding: 0;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--ink-soft); font-size: 19px; line-height: 1;
+}
+.iconbtn:hover { color: var(--ink); }
+
+.home-foot {
+  position: relative;
+  align-items: center;
+  gap: 10px;
+  padding-top: 14px;
+  margin: 18px 22px 0;
+  border-top: 1px solid var(--edge);
+}
+.rank-label { font: 700 11px/1 var(--font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+.rank-value { font: 700 15px/1 var(--font); color: var(--ink); }
+.meter { flex: 1; height: 6px; border-radius: 3px; background: var(--edge); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s ease; }
 
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; }
 .settings-row + .settings-row { border-top: 1px solid var(--edge); }
 .settings-row label { font-size: 14px; font-weight: 600; }
 .seg { display: flex; gap: 4px; }
 .seg button { height: 32px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--edge);
-  background: rgba(255,255,255,0.04); color: var(--ink-soft); font: 700 12px/1 var(--font); cursor: pointer; }
+  background: var(--wash); color: var(--ink-soft); font: 700 12px/1 var(--font); cursor: pointer; }
 .seg button.on { color: var(--ink); border-color: var(--accent2); background: rgba(51, 225, 255, 0.14); }
 
 .toast {
@@ -297,8 +492,14 @@ html, body {
 .loader-bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.25s ease; }
 
 @media (orientation: landscape) and (max-height: 620px) {
-  .starrow { position: fixed; left: calc(14px + var(--safe-l)); top: calc(66px + var(--safe-t)); margin: 0; gap: 7px; }
-  .starrow i { width: 19px; height: 19px; }
+  /* So a fileira do HUD vai para o canto. A regra generica arrastava junto as
+     estrelas de DENTRO do cartao de vitoria, que iam parar fora dele. */
+  #s-home > .keyart { height: min(300px, 52%); }
+  #s-home .logo { font-size: clamp(30px, 7vw, 40px); }
+  #s-home .home-actions { padding-top: 12px; }
+  #gameStars { position: fixed; left: calc(14px + var(--safe-l)); top: calc(66px + var(--safe-t)); margin: 0; gap: 7px; }
+  #gameStars i { width: 19px; height: 19px; }
+  .trail { height: 520px; }
   .tut { top: auto; bottom: calc(14px + var(--safe-b)); }
   .card { width: min(520px, 100%); padding: 16px; }
   .card h2 { font-size: 22px; }

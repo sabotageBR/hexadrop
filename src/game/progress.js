@@ -7,7 +7,8 @@
  */
 
 import { load, save, isPersistent } from '../core/storage.js';
-import { rankFromXp, upgradeEffects, UPGRADES, SKINS } from './content.js';
+import { LEVEL_COUNT } from './levelgen.js';
+import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars } from './content.js';
 
 const BASE_HEARTS = 5;
 /** Um coracao a cada dez minutos de relogio real. */
@@ -26,6 +27,8 @@ const SAVE_VERSION = 1;
  * @property {string} skin
  * @property {string[]} skins
  * @property {Record<string, number>} upgrades
+ * @property {Record<string, number>} boosts consumiveis restantes, por id
+ * @property {number[]} gatesSeen mundos cuja abertura ja foi encenada
  * @property {number} dailyAt
  * @property {number} plays
  */
@@ -43,6 +46,8 @@ function blank() {
     skin: 'classic',
     skins: ['classic'],
     upgrades: {},
+    boosts: Object.fromEntries(BOOSTS.map((b) => [b.id, b.inicial])),
+    gatesSeen: [],
     dailyAt: 0,
     plays: 0,
   };
@@ -53,6 +58,17 @@ export class Progress {
     const stored = load('save', null);
     /** @type {SaveData} */
     this.data = stored && stored.v === SAVE_VERSION ? { ...blank(), ...stored } : blank();
+    // Toda skin gratuita e sem patente pertence a todo mundo, inclusive a quem
+    // ja jogava antes de ela existir. Sem isto, um save antigo nao consegue
+    // equipar a skin inicial nova.
+    for (const s of SKINS) {
+      if (s.cost === 0 && s.rank === 0 && !this.data.skins.includes(s.id)) {
+        this.data.skins.push(s.id);
+      }
+    }
+    for (const b of BOOSTS) {
+      if (this.data.boosts[b.id] === undefined) this.data.boosts[b.id] = b.inicial;
+    }
     this.persistent = isPersistent();
     this.refreshHearts();
   }
@@ -123,7 +139,74 @@ export class Progress {
 
   /** @param {number} level @returns {boolean} */
   isUnlocked(level) {
-    return level <= this.data.unlocked;
+    if (level > this.data.unlocked) return false;
+    return this.worldOpen(Math.floor((level - 1) / 10));
+  }
+
+  /**
+   * Um mundo abre quando o jogador acumulou estrelas suficientes no total.
+   *
+   * O criterio e acumulado e nao por mundo de proposito: pular uma fase com
+   * video nao grava estrela nenhuma, entao o portao seguinte fica fechado e o
+   * jogador precisa voltar e melhorar alguma fase. E o que torna o "volte e
+   * preencha as estrelas" uma regra e nao um pedido.
+   *
+   * @param {number} world 0 a 9
+   * @returns {boolean}
+   */
+  worldOpen(world) {
+    return this.totalStars >= gateStars(world);
+  }
+
+  /**
+   * Mundos que acabaram de abrir e cuja animacao ainda nao rodou.
+   *
+   * Fica no save porque a abertura e encenada uma vez so: reanimar o portao a
+   * cada visita ao mapa transformaria a recompensa em ruido.
+   *
+   * @returns {number[]}
+   */
+  freshlyOpenedWorlds() {
+    /** @type {number[]} */
+    const out = [];
+    for (let w = 1; w < 10; w++) {
+      if (this.worldOpen(w) && !this.data.gatesSeen.includes(w)) out.push(w);
+    }
+    return out;
+  }
+
+  /** @param {number} w */
+  markGateSeen(w) {
+    if (!this.data.gatesSeen.includes(w)) {
+      this.data.gatesSeen.push(w);
+      this.flush();
+    }
+  }
+
+  /**
+   * Quantas estrelas ainda faltam para abrir um mundo.
+   * @param {number} world
+   * @returns {number}
+   */
+  starsToOpen(world) {
+    return Math.max(0, gateStars(world) - this.totalStars);
+  }
+
+  /**
+   * Fases ja jogadas que ainda tem estrela sobrando, da mais barata para a mais
+   * cara. E a lista que o portao mostra: "volte aqui".
+   * @param {number} [limit]
+   * @returns {{level:number, stars:number}[]}
+   */
+  refillCandidates(limit = 3) {
+    /** @type {{level:number, stars:number}[]} */
+    const out = [];
+    for (let lvl = 1; lvl < this.data.unlocked; lvl++) {
+      const st = this.starsOf(lvl);
+      if (st < 3) out.push({ level: lvl, stars: st });
+    }
+    out.sort((a, b) => b.stars - a.stars || a.level - b.level);
+    return out.slice(0, limit);
   }
 
   /** @returns {number} soma de estrelas */
@@ -156,7 +239,7 @@ export class Progress {
     if (best) d.stars[String(o.level)] = o.stars;
 
     if (o.stars >= 1 && o.level >= d.unlocked) {
-      d.unlocked = Math.min(100, o.level + 1);
+      d.unlocked = Math.min(LEVEL_COUNT, o.level + 1);
     }
 
     let coins = 0;
@@ -197,6 +280,44 @@ export class Progress {
     this.data.coins -= cost;
     this.flush();
     return true;
+  }
+
+  // ------------------------------------------------------------ consumiveis
+
+  /** @param {string} id @returns {number} */
+  boostCount(id) {
+    return Math.max(0, this.data.boosts[id] || 0);
+  }
+
+  /**
+   * Gasta um consumivel. Devolve false quando nao ha nenhum, e nesse caso a UI
+   * e que decide o que oferecer - nunca uma espera obrigatoria.
+   * @param {string} id
+   * @returns {boolean}
+   */
+  spendBoost(id) {
+    if (this.boostCount(id) <= 0) return false;
+    this.data.boosts[id] = this.boostCount(id) - 1;
+    this.flush();
+    return true;
+  }
+
+  /** @param {string} id @param {number} n */
+  addBoost(id, n) {
+    this.data.boosts[id] = this.boostCount(id) + Math.max(0, Math.round(n));
+    this.flush();
+  }
+
+  /**
+   * @param {string} id
+   * @returns {{ok:boolean, cost:number}}
+   */
+  buyBoost(id) {
+    const def = getBoost(id);
+    if (!def) return { ok: false, cost: 0 };
+    if (!this.spendCoins(def.custo)) return { ok: false, cost: def.custo };
+    this.addBoost(id, def.pacote);
+    return { ok: true, cost: def.custo };
   }
 
   /** @param {string} id @returns {boolean} */

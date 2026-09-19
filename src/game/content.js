@@ -131,6 +131,56 @@ export const SKINS = [
 ];
 
 /**
+ * Estrelas acumuladas para abrir cada mundo.
+ *
+ * O teto e 300 (100 fases x 3 estrelas). A curva e folgada no comeco - quem
+ * passa raspando pelo mundo 1 entra no 2 sem perceber o portao - e vai
+ * apertando, de modo que perto do fim o jogador precisa ter voltado para
+ * melhorar fases antigas. Nunca chega a exigir tudo: o ultimo portao pede 270
+ * das 300, entao sobra folga para dez fases mal resolvidas.
+ *
+ * Indice = numero do mundo (0 a 9); o mundo 0 nunca e travado.
+ */
+export const GATE_STARS = [0, 12, 30, 54, 84, 120, 156, 198, 240, 270];
+
+/**
+ * @param {number} world 0 a 9
+ * @returns {number}
+ */
+export function gateStars(world) {
+  return GATE_STARS[Math.max(0, Math.min(GATE_STARS.length - 1, world))] || 0;
+}
+
+/**
+ * @typedef {object} Boost
+ * @property {string} id
+ * @property {string} nameKey
+ * @property {string} descKey
+ * @property {number} inicial quantos o jogador ja comeca tendo
+ * @property {number} pacote quantos vem em cada compra
+ * @property {number} custo moedas por pacote
+ */
+
+/**
+ * Consumiveis.
+ *
+ * Diferente dos aprimoramentos, que sao uma escada de niveis permanente, um
+ * boost e gasto e acaba. Nenhum deles pode ser condicao para progredir: sem
+ * boost nenhum o jogador continua tendo "tentar de novo", que e gratuito e
+ * ilimitado.
+ *
+ * @type {Boost[]}
+ */
+export const BOOSTS = [
+  { id: 'shuffle', nameKey: 'boostShuffle', descKey: 'boostShuffleDesc', inicial: 3, pacote: 5, custo: 150 },
+];
+
+/** @param {string} id @returns {Boost|undefined} */
+export function boost(id) {
+  return BOOSTS.find((b) => b.id === id);
+}
+
+/**
  * @typedef {object} Upgrade
  * @property {string} id
  * @property {string} nameKey

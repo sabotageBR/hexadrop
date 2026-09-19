@@ -62,8 +62,8 @@ export class Particles {
         const dur = 0.42 + o.rand(1) * 0.5;
         d[i] = wx;
         d[i + 1] = wy;
-        d[i + 2] = (o.vx || 0) * 0.4 + (o.rand(1) - 0.5) * 5.5;
-        d[i + 3] = (o.vy || 0) * 0.4 + o.rand(1) * 4.2;
+        d[i + 2] = (o.vx || 0) * 0.4 + (o.rand(1) - 0.5) * (o.spread === undefined ? 5.5 : o.spread);
+        d[i + 3] = (o.vy || 0) * 0.4 + o.rand(1) * (o.lift === undefined ? 4.2 : o.lift);
         d[i + 4] = dur;
         d[i + 5] = dur;
         d[i + 6] = 0.1 + o.rand(1) * 0.13;

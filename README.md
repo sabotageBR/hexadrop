@@ -50,6 +50,7 @@ inteiro cabe em dez kilobytes.
 npm run levels               # gera e valida as 100 fases
 npm run levels:quick         # menos seeds, para iterar
 node tools/generate-levels.mjs --levels 1-20
+node tools/generate-levels.mjs --seeds 40 --levels 79-79   # mais seeds numa fase teimosa
 ```
 
 A ferramenta usa um processo por núcleo. Para cada fase ela procura seeds cujo
@@ -106,9 +107,15 @@ tools/                     geração de fases, verificação, capturas, testes
 ## Conteúdo
 
 **Oito temas**: neon, futurista, rústico, clássico, doce, gelo, lava e papel. O
-tema é propriedade da fase e muda a cada mundo de dez.
+tema é propriedade da fase, muda a cada mundo de dez, e vale também para a
+interface em HTML: o cartão de vitória, os botões e o mapa herdam a paleta do
+mundo em que se está jogando. Três temas pedem interface clara, e a polaridade
+acompanha.
 
-**Nove materiais**, cada um com física própria e cor própria dentro de cada tema:
+Cada mundo tem também o seu pedestal: plataforma de neon, altar em degraus,
+bloco de gelo facetado, tronco, folha dobrada, rocha de obsidiana.
+
+**Doze materiais**, cada um com física própria e cor própria dentro de cada tema:
 
 | Material | Comportamento |
 |---|---|
@@ -121,9 +128,17 @@ tema é propriedade da fase e muda a cada mundo de dez.
 | Espuma | Leve demais para segurar peso |
 | Bomba | Ao tocar, leva as vizinhas |
 | Obsidiana | Indestrutível e ancorada, não cai nunca |
+| Cristal | Racha depois de quase dois segundos com o hexágono parado em cima |
+| TNT | Detona com qualquer pancada forte, não com o toque do jogador |
+| Cera | Amolece sob o hexágono; só existe no mundo da lava |
 
 A razão entre a densidade mais alta e a mais baixa é de dez para um, que é o
 limite a partir do qual o empilhamento do Box2D começa a degradar.
+
+Cristal e cera contam o tempo em que o hexágono fica apoiado neles, e esse
+cronômetro entra no `snapshot`/`restore` da física. Sem isso o validador
+certificaria fases que na prática não existem, e a dica — que roda sobre o mundo
+real — envelheceria a peça sob o jogador.
 
 **Trinta e três formas de peça**, de um a dez blocos, incluindo poliminós com
 buraco interno.
@@ -137,6 +152,14 @@ nem segunda moeda.
 continua jogando normalmente e apenas ganha metade das moedas e do XP. Recarrega
 um a cada dez minutos. Nunca há espera obrigatória, o que é a diferença entre
 passar e não passar na revisão.
+
+**Embaralhar.** Ao perder, o jogador continua na mesma fase. "Tentar de novo" é
+grátis e repete o mesmo layout; "embaralhar" gasta um consumível e remonta a fase
+com outra variante aprovada. Nunca é condição para progredir.
+
+**Portões de mundo.** Cada mundo pede um total de estrelas acumuladas. Pular uma
+fase com vídeo não grava estrela, então o portão seguinte continua fechado e o
+jogador precisa voltar e melhorar alguma fase — o portão lista quais.
 
 **Quatro vídeos recompensados**, todos opcionais e sempre ao lado de um botão
 padrão de tamanho igual ou maior: recarregar corações na derrota, dobrar o

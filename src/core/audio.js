@@ -299,6 +299,23 @@ export class AudioEngine {
       case 'obsidian':
         this.tone({ freq: 90, dur: 0.1, gain: 0.14, type: 'square' });
         break;
+      case 'tnt':
+        // Mais grave, mais longo e mais sujo que a bomba: e a detonacao que o
+        // jogador nao pediu.
+        this.noise({ freq: 520, freqEnd: 60, dur: 0.62, gain: 0.38, filter: 'lowpass', q: 0.5 });
+        this.tone({ freq: 180, freqEnd: 28, dur: 0.55, gain: 0.32, type: 'sine' });
+        this.noise({ freq: 3200, dur: 0.09, gain: 0.18, filter: 'highpass' });
+        break;
+      case 'crystal':
+        // Estalo seco, mais curto e mais agudo que o vidro.
+        this.noise({ freq: 6200, freqEnd: 2400, dur: 0.16, gain: 0.16, filter: 'bandpass', q: 2 });
+        this.tone({ freq: 1800, freqEnd: 900, dur: 0.12, gain: 0.08, type: 'triangle' });
+        break;
+      case 'wax':
+        // Sopro molhado, sem ataque: derreter nao estala.
+        this.noise({ freq: 300, freqEnd: 90, dur: 0.38, gain: 0.16, filter: 'lowpass', q: 0.7 });
+        this.tone({ freq: 160, freqEnd: 70, dur: 0.3, gain: 0.1, type: 'sine' });
+        break;
       case 'bomb':
         this.noise({ freq: 400, freqEnd: 80, dur: 0.5, gain: 0.34, filter: 'lowpass', q: 0.6 });
         this.tone({ freq: 160, freqEnd: 35, dur: 0.45, gain: 0.3, type: 'sine' });

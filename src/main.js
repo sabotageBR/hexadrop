@@ -8,11 +8,12 @@
 
 import { GameScene } from './game/scene.js';
 import { createSession } from './game/session.js';
-import { levelConfig, LEVEL_COUNT } from './game/levelgen.js';
+import { levelConfig, LEVEL_COUNT, WORLD_THEMES } from './game/levelgen.js';
 import { LEVELS } from './game/levels.gen.js';
 import { Progress } from './game/progress.js';
-import { UPGRADES, skin as getSkin } from './game/content.js';
+import { UPGRADES, BOOSTS, gateStars, xpForRank, skin as getSkin } from './game/content.js';
 import { THEMES } from './render/themes.js';
+import { applyUiTheme } from './render/uitheme.js';
 import { material as getMaterial } from './physics/materials.js';
 import { audio } from './core/audio.js';
 import { poki } from './poki.js';
@@ -31,6 +32,9 @@ const MUSIC = {
   lava: { scale: [0, 1, 5, 7, 8], root: -12, bpm: 88, type: 'sawtooth', bass: 'square' },
   paper: { scale: [0, 2, 5, 7, 9], root: -7, bpm: 100, type: 'triangle', bass: 'triangle' },
 };
+
+/** Mundos do mapa. Dez fases cada. */
+const WORLD_COUNT = 10;
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
@@ -119,7 +123,20 @@ class Game {
     }
     $('homeRank').textContent = String(p.rank);
     $('homeStars').textContent = String(p.totalStars);
-    if (this.screen === 'map') this.buildMap();
+    // Barra de patente: quanto falta de XP para a proxima.
+    const bar = document.getElementById('homeRankBar');
+    if (bar) {
+      const base = xpForRank(p.rank);
+      const alvo = xpForRank(p.rank + 1);
+      const frac = alvo > base ? (p.data.xp - base) / (alvo - base) : 0;
+      bar.style.width = `${Math.max(0, Math.min(1, frac)) * 100}%`;
+    }
+    if (this.screen === 'map') {
+      this.buildMap();
+      const novos = this.progress.freshlyOpenedWorlds();
+      if (novos.length) this.playWorldUnlock(novos[0]);
+      else this.scrollMapToCurrent();
+    }
     if (this.screen === 'shop') this.buildShop();
     if (this.screen === 'home') {
       $('btnPlay').textContent = `${t('play')}  ${this.level}`;
@@ -154,6 +171,7 @@ class Game {
     set('shopTitle', t('shop'));
     set('tabSkins', t('skins'));
     set('tabUpgrades', t('upgrades'));
+    set('tabBoosts', t('boosts'));
     set('winNext', t('next'));
     set('winHome', t('home'));
     set('winDouble', t('doubleReward'));
@@ -161,6 +179,7 @@ class Game {
     set('winXpLbl', t('rewardXp'));
     set('loseTitle', t('gameOver'));
     set('loseRetry', t('retry'));
+    set('loseShuffle', t('shuffle'));
     set('loseHome', t('home'));
     set('loseAd', t('refillHearts'));
     set('loseSkip', t('skipLevel'));
@@ -230,6 +249,7 @@ class Game {
     };
     $('winDouble').onclick = () => this.doubleReward();
     $('loseRetry').onclick = () => this.retry(false);
+    $('loseShuffle').onclick = () => this.shuffleLevel();
     $('loseHome').onclick = () => {
       audio.buttonBack();
       this.showAmbient();
@@ -245,6 +265,11 @@ class Game {
     };
     $('tabUpgrades').onclick = () => {
       this.shopTab = 'upgrades';
+      audio.button();
+      this.buildShop();
+    };
+    $('tabBoosts').onclick = () => {
+      this.shopTab = 'boosts';
       audio.button();
       this.buildShop();
     };
@@ -281,10 +306,19 @@ class Game {
    * @param {number} level base 1
    * @returns {{session:*, theme:string}}
    */
-  makeSession(level) {
+  makeSession(level, variantIndex) {
     const index = Math.max(0, Math.min(LEVEL_COUNT - 1, level - 1));
     const record = LEVELS[index] || LEVELS[0];
-    const variant = record.v[Math.floor(this.rng.next() * record.v.length)];
+    // A variante fica gravada. Sem isso, "tentar de novo" sorteava outro layout
+    // e ficava indistinguivel de "embaralhar" - que e justamente o que deve
+    // custar um consumivel.
+    const vi =
+      variantIndex === undefined
+        ? Math.floor(this.rng.next() * record.v.length)
+        : ((variantIndex % record.v.length) + record.v.length) % record.v.length;
+    this.variantIndex = vi;
+    this.variantCount = record.v.length;
+    const variant = record.v[vi];
     const config = levelConfig(index, record.s);
     const session = createSession({
       levelIndex: index,
@@ -310,19 +344,23 @@ class Game {
     session.onStar = null;
     session.onFirstTap = null;
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
+    applyUiTheme(this.scene.theme);
     audio.setMusic_(MUSIC[theme] || MUSIC.neon);
   }
 
   /** @param {number} level */
-  startLevel(level) {
+  startLevel(level, variantIndex) {
     // Fecha o gameplay anterior antes de abrir o proximo: a Poki reprova
     // gameplayStart repetido sem um gameplayStop entre eles.
     poki.gameplayStop();
+    const mudouDeFase = this.level !== Math.max(1, Math.min(LEVEL_COUNT, level));
     this.level = Math.max(1, Math.min(LEVEL_COUNT, level));
+    if (mudouDeFase) this.lossStreak = 0;
     this.paused = false;
     this.pendingHeart = true;
-    const { session, theme } = this.makeSession(this.level);
+    const { session, theme } = this.makeSession(this.level, variantIndex);
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
+    applyUiTheme(this.scene.theme);
     audio.setMusic_(MUSIC[theme] || MUSIC.neon);
     this.setStars('gameStars', 0);
     $('gameLevel').textContent = `${t('level')} ${this.level}`;
@@ -507,6 +545,15 @@ class Game {
     adBtn.hidden = p.data.hearts >= p.maxHearts;
     adBtn.disabled = false;
     adBtn.textContent = t('refillHearts');
+    // Embaralhar: so faz sentido quando a fase tem mais de um layout aprovado.
+    // Cinco das cem tem um so; ali o botao nao aparece em vez de gastar um
+    // consumivel para devolver a mesma coisa.
+    const shuffle = /** @type {HTMLButtonElement} */ ($('loseShuffle'));
+    const restam = p.boostCount('shuffle');
+    shuffle.hidden = (this.variantCount || 1) < 2;
+    shuffle.disabled = restam <= 0;
+    shuffle.textContent = restam > 0 ? `${t('shuffle')}  x${restam}` : t('shuffleNone');
+
     const skip = /** @type {HTMLButtonElement} */ ($('loseSkip'));
     skip.hidden = this.lossStreak < 3;
     skip.disabled = false;
@@ -560,13 +607,36 @@ class Game {
     this.startLevel(target);
   }
 
+  /**
+   * Remonta a fase com outra variante aprovada, gastando um consumivel.
+   * Nunca e condicao para progredir: "tentar de novo" continua gratuito.
+   */
+  shuffleLevel() {
+    if ((this.variantCount || 1) < 2) {
+      this.toast(t('shuffleOnly'));
+      return;
+    }
+    if (!this.progress.spendBoost('shuffle')) {
+      this.toast(t('shuffleNone'));
+      return;
+    }
+    audio.button();
+    // Um indice diferente do atual, sempre: embaralhar tem que mudar algo.
+    const n = this.variantCount;
+    const proximo = (this.variantIndex + 1 + Math.floor(this.rng.next() * (n - 1))) % n;
+    this.toast(t('shuffleUsed'));
+    this.startLevel(this.level, proximo);
+    this.refreshScreen();
+  }
+
   /** @param {boolean} fromPause */
   async retry(fromPause) {
     audio.button();
     this.paused = false;
     if (this.scene.session) this.scene.session.paused = false;
     if (!fromPause) await poki.commercialBreak();
-    this.startLevel(this.level);
+    // Mesma fase, mesmo layout: repetir tem que ser repetir.
+    this.startLevel(this.level, this.variantIndex);
   }
 
   // ------------------------------------------------------- videos opcionais
@@ -656,6 +726,16 @@ class Game {
   }
 
   /**
+   * Equipa uma skin e deixa a cena coerente com ela.
+   * @param {string} skinId
+   */
+  useSkin(skinId) {
+    this.progress.equipSkin(skinId);
+    this.scene.skin = getSkin(skinId);
+    if (this.scene.sprites) this.scene.sprites.clear();
+  }
+
+  /**
    * @param {string} skinId
    * @returns {Promise<void>}
    */
@@ -663,9 +743,7 @@ class Game {
     const ok = await poki.rewardedBreak('large');
     if (!ok) return;
     this.progress.grantSkin(skinId);
-    this.progress.equipSkin(skinId);
-    this.scene.skin = getSkin(skinId);
-    if (this.scene.sprites) this.scene.sprites.clear();
+    this.useSkin(skinId);
     audio.win();
     this.buildShop();
     this.refreshScreen();
@@ -673,31 +751,84 @@ class Game {
 
   // ----------------------------------------------------------------- mapa
 
+  /**
+   * Posicao de um no dentro do mundo, em porcentagem da caixa.
+   *
+   * A trilha serpenteia: o x descreve uma onda e meia ao longo dos dez nos, e o
+   * y sobe do fundo para o topo - por isso o indice entra invertido. E a mesma
+   * funcao que alimenta as posicoes dos botoes e o traçado do SVG, para que o
+   * caminho passe exatamente pelo meio de cada no e nao ao lado.
+   *
+   * @param {number} i 0 a 9, de baixo para cima
+   * @returns {{x:number, y:number}} em porcentagem
+   */
+  nodeSpot(i) {
+    return {
+      x: 50 + 27 * Math.sin((i / 9) * Math.PI * 3),
+      y: 94 - (i / 9) * 88,
+    };
+  }
+
   buildMap() {
+    const p = this.progress;
+    const chave = [p.data.unlocked, getLang(), p.totalStars, this.level].join('|');
     const host = $('mapScroll');
-    if (host.dataset.built === String(this.progress.data.unlocked) + '|' + getLang() + '|' + this.progress.totalStars) return;
-    host.dataset.built = String(this.progress.data.unlocked) + '|' + getLang() + '|' + this.progress.totalStars;
+    if (host.dataset.built === chave) return;
+    host.dataset.built = chave;
     host.innerHTML = '';
-    for (let w = 0; w < 10; w++) {
+
+    // Os mundos sao empilhados do ultimo para o primeiro, entao progredir e
+    // subir na pagina - que e o que a animacao de troca de mundo encena.
+    for (let w = WORLD_COUNT - 1; w >= 0; w--) {
+      const sec = document.createElement('section');
+      sec.className = 'world';
+      sec.dataset.world = String(w);
+      if (!p.worldOpen(w)) sec.classList.add('locked');
+
+      const themeId = levelConfig(w * 10).theme;
       const head = document.createElement('div');
       head.className = 'world-head';
-      const themeId = levelConfig(w * 10).theme;
       head.textContent = `${t('world')} ${w + 1} - ${THEMES[themeId].label}`;
-      host.appendChild(head);
-      const grid = document.createElement('div');
-      grid.className = 'map-grid';
+      sec.appendChild(head);
+
+      const trilha = document.createElement('div');
+      trilha.className = 'trail';
+
+      // Traçado: uma polilinha suave pelos mesmos pontos dos nos.
+      const pontos = [];
+      for (let i = 0; i < 10; i++) pontos.push(this.nodeSpot(i));
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 100 100');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      svg.setAttribute('class', 'trail-line');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      let d = `M ${pontos[0].x} ${pontos[0].y}`;
+      for (let i = 1; i < pontos.length; i++) {
+        const a2 = pontos[i - 1];
+        const b2 = pontos[i];
+        const my = (a2.y + b2.y) / 2;
+        d += ` C ${a2.x} ${my}, ${b2.x} ${my}, ${b2.x} ${b2.y}`;
+      }
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+      trilha.appendChild(svg);
+
       for (let i = 0; i < 10; i++) {
         const level = w * 10 + i + 1;
-        const unlocked = this.progress.isUnlocked(level);
-        const stars = this.progress.starsOf(level);
+        const spot = pontos[i];
+        const unlocked = p.isUnlocked(level);
+        const stars = p.starsOf(level);
         const node = document.createElement('button');
         node.className = 'node' + (unlocked ? '' : ' locked') + (level === this.level ? ' current' : '');
+        node.style.left = `${spot.x}%`;
+        node.style.top = `${spot.y}%`;
+        node.dataset.level = String(level);
         node.textContent = String(level);
         const pips = document.createElement('div');
         pips.className = 'pips';
-        for (let s = 0; s < 3; s++) {
+        for (let k = 0; k < 3; k++) {
           const pip = document.createElement('i');
-          if (s < stars) pip.classList.add('on');
+          if (k < stars) pip.classList.add('on');
           pips.appendChild(pip);
         }
         node.appendChild(pips);
@@ -709,10 +840,143 @@ class Game {
         } else {
           node.setAttribute('aria-disabled', 'true');
         }
-        grid.appendChild(node);
+        trilha.appendChild(node);
       }
-      host.appendChild(grid);
+      sec.appendChild(trilha);
+      host.appendChild(sec);
+      // O portao entra DEPOIS do mundo que protege. Como a pilha desce do
+      // mundo 10 para o 1, isso o coloca exatamente entre a ultima fase do
+      // mundo anterior e a primeira deste - que e por onde o hexagono sobe.
+      if (w > 0) host.appendChild(this.buildGate(w));
     }
+  }
+
+  /**
+   * Encena a abertura de um mundo: rola ate o portao, abre e leva o hexagono
+   * subindo pela trilha ate a primeira fase do mundo novo.
+   *
+   * Roda uma vez por mundo - o save guarda quais ja foram encenados.
+   * @param {number} w
+   */
+  playWorldUnlock(w) {
+    const host = $('mapScroll');
+    const gate = host.querySelector(`.gate[data-world="${w}"]`);
+    const de = host.querySelector(`.node[data-level="${w * 10}"]`);
+    const para = host.querySelector(`.node[data-level="${w * 10 + 1}"]`);
+    this.progress.markGateSeen(w);
+    if (!gate || !de || !para) {
+      this.scrollMapToCurrent();
+      return;
+    }
+
+    gate.scrollIntoView({ block: 'center' });
+    gate.classList.add('just-open');
+    audio.star(1);
+
+    const skinAtual = getSkin(this.progress.data.skin);
+    const climber = document.createElement('div');
+    climber.className = 'climber';
+    climber.style.background = skinAtual.fill || 'rgba(190,240,255,0.3)';
+    climber.style.border = `3px solid ${skinAtual.stroke || '#4fc8ff'}`;
+    host.appendChild(climber);
+
+    // Posicoes medidas na tela e convertidas para o sistema do container
+    // rolavel, que e quem hospeda o hexagono.
+    const rh = host.getBoundingClientRect();
+    const ponto = (/** @type {Element} */ el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        x: r.left - rh.left + host.scrollLeft + r.width / 2,
+        y: r.top - rh.top + host.scrollTop + r.height / 2,
+      };
+    };
+    const a0 = ponto(de);
+    const meio = ponto(gate);
+    const a1 = ponto(para);
+    climber.style.left = `${a0.x}px`;
+    climber.style.top = `${a0.y}px`;
+
+    const anim = climber.animate(
+      [
+        { transform: 'translate(0,0) scale(1)' },
+        { transform: `translate(${meio.x - a0.x}px, ${meio.y - a0.y}px) scale(1.15)`, offset: 0.5 },
+        { transform: `translate(${a1.x - a0.x}px, ${a1.y - a0.y}px) scale(1)` },
+      ],
+      { duration: 1500, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' },
+    );
+    anim.onfinish = () => {
+      audio.win();
+      window.setTimeout(() => {
+        climber.remove();
+        gate.classList.remove('just-open');
+        this.scrollMapToCurrent();
+      }, 420);
+    };
+  }
+
+  /** Centraliza o mapa na fase atual, sem animar se ja estiver perto. */
+  scrollMapToCurrent() {
+    const host = $('mapScroll');
+    const node = host.querySelector('.node.current');
+    if (!node) return;
+    // offsetTop seria relativo a trilha, que e posicionada; o retangulo na tela
+    // e o unico jeito confiavel de achar a posicao dentro do container rolavel.
+    const rn = node.getBoundingClientRect();
+    const rh = host.getBoundingClientRect();
+    const alvo = host.scrollTop + (rn.top - rh.top) - host.clientHeight / 2 + rn.height / 2;
+    const destino = Math.max(0, Math.min(host.scrollHeight - host.clientHeight, alvo));
+    if (Math.abs(host.scrollTop - destino) < 4) return;
+    host.scrollTop = destino;
+  }
+
+  /**
+   * O portao entre dois mundos.
+   * @param {number} w mundo que o portao protege
+   * @returns {HTMLElement}
+   */
+  buildGate(w) {
+    const p = this.progress;
+    const faltam = p.starsToOpen(w);
+    const gate = document.createElement('div');
+    gate.className = 'gate' + (faltam > 0 ? '' : ' open');
+    gate.dataset.world = String(w);
+
+    const selo = document.createElement('div');
+    selo.className = 'gate-seal';
+    selo.innerHTML = faltam > 0 ? '&#128274;' : '&#10004;';
+    gate.appendChild(selo);
+
+    const txt = document.createElement('div');
+    txt.className = 'gate-text';
+    const forte = document.createElement('b');
+    forte.innerHTML = `<i class="st"></i> ${p.totalStars} / ${gateStars(w)}`;
+    txt.appendChild(forte);
+    const sub = document.createElement('span');
+    sub.textContent = faltam > 0 ? t('gateNeed', faltam) : t('gateOpen');
+    txt.appendChild(sub);
+    gate.appendChild(txt);
+
+    // Quando falta estrela, o portao aponta onde busca-la: as fases ja jogadas
+    // com estrela sobrando, da mais facil de melhorar para a mais dificil.
+    if (faltam > 0) {
+      const alvos = p.refillCandidates(3);
+      if (alvos.length) {
+        const lista = document.createElement('div');
+        lista.className = 'gate-hint';
+        for (const alvo of alvos) {
+          const b = document.createElement('button');
+          b.className = 'gate-jump';
+          b.innerHTML = `${alvo.level} <i class="st${alvo.stars ? ' on' : ''}"></i>${'+' + (3 - alvo.stars)}`;
+          b.onclick = () => {
+            audio.button();
+            this.startLevel(alvo.level);
+          };
+          lista.appendChild(b);
+        }
+        gate.appendChild(lista);
+      }
+    }
+    return gate;
   }
 
   // ----------------------------------------------------------------- loja
@@ -720,6 +984,7 @@ class Game {
   buildShop() {
     $('tabSkins').classList.toggle('on', this.shopTab === 'skins');
     $('tabUpgrades').classList.toggle('on', this.shopTab === 'upgrades');
+    $('tabBoosts').classList.toggle('on', this.shopTab === 'boosts');
     const host = $('shopList');
     host.innerHTML = '';
     const p = this.progress;
@@ -761,9 +1026,7 @@ class Game {
           btn.textContent = t('equip');
           btn.onclick = () => {
             audio.button();
-            p.equipSkin(s.id);
-            this.scene.skin = getSkin(s.id);
-            if (this.scene.sprites) this.scene.sprites.clear();
+            this.useSkin(s.id);
             this.buildShop();
           };
         } else if (entry.rankLocked) {
@@ -788,9 +1051,7 @@ class Game {
             }
             audio.coin(1);
             p.grantSkin(s.id);
-            p.equipSkin(s.id);
-            this.scene.skin = getSkin(s.id);
-            if (this.scene.sprites) this.scene.sprites.clear();
+            this.useSkin(s.id);
             this.buildShop();
             this.refreshScreen();
           };
@@ -815,13 +1076,56 @@ class Game {
             }
             audio.coin(1);
             p.grantSkin(s.id);
-            p.equipSkin(s.id);
-            this.scene.skin = getSkin(s.id);
-            if (this.scene.sprites) this.scene.sprites.clear();
+            this.useSkin(s.id);
             this.buildShop();
             this.refreshScreen();
           };
         }
+        item.appendChild(btn);
+        host.appendChild(item);
+      }
+      return;
+    }
+
+    if (this.shopTab === 'boosts') {
+      for (const b of BOOSTS) {
+        const restam = p.boostCount(b.id);
+        const item = document.createElement('div');
+        item.className = 'item';
+
+        const swatch = document.createElement('div');
+        swatch.className = 'swatch';
+        swatch.style.background = 'var(--wash)';
+        swatch.style.border = '2px solid var(--accent)';
+        swatch.innerHTML = '<span style="font-size:18px">&#8646;</span>';
+        item.appendChild(swatch);
+
+        const info = document.createElement('div');
+        info.className = 'info';
+        const name = document.createElement('b');
+        name.textContent = `${t(b.nameKey)}  x${restam}`;
+        const sub = document.createElement('span');
+        sub.textContent = t(b.descKey);
+        info.appendChild(name);
+        info.appendChild(sub);
+        item.appendChild(info);
+
+        const btn = document.createElement('button');
+        btn.className = 'btn primary';
+        btn.innerHTML = `<span style="color:var(--gold)">&#9679;</span> ${b.custo}`;
+        btn.disabled = p.data.coins < b.custo;
+        btn.onclick = () => {
+          const r = p.buyBoost(b.id);
+          if (!r.ok) {
+            audio.denied();
+            this.toast(t('notEnoughCoins'));
+            return;
+          }
+          audio.coin(1);
+          this.toast(`+${b.pacote} ${t(b.nameKey)}`);
+          this.buildShop();
+          this.refreshScreen();
+        };
         item.appendChild(btn);
         host.appendChild(item);
       }

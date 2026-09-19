@@ -7,6 +7,21 @@
  */
 
 /**
+ * Orcamento de tempo dos materiais que cedem por contato.
+ *
+ * O solucionador roda no maximo MAX_SETTLE = 420 passos por toque. Cada carga
+ * custa holdTime * 60 passos que antes nao existiam, mais o reassentamento
+ * depois da quebra. No pior caso o hexagono cai de um material temporal em
+ * outro dentro do mesmo assentamento:
+ *
+ *     2 * holdTime * 60 + 120 < 420   =>   holdTime < 2.5 s
+ *
+ * Estourar esse teto faz o assentamento truncar no meio do movimento e o
+ * validador julgar a fase com a cena ainda em queda. Nenhum holdTime aqui pode
+ * passar de 2.5 segundos.
+ */
+
+/**
  * @typedef {object} Material
  * @property {string} id
  * @property {number} density
@@ -16,6 +31,8 @@
  * @property {number} breakSpeed velocidade de impacto que quebra sozinho, m/s (0 = nunca)
  * @property {number} explodeRadius raio em celulas ao ser destruida (0 = nenhum)
  * @property {boolean} [anchored] corpo estatico, nao cai nunca
+ * @property {number} [holdTime] segundos com o hexagono apoiado em cima antes de ceder
+ * @property {string} [holdCause] causa reportada quando o holdTime estoura
  * @property {string} color cor base, usada em particulas e como reserva
  * @property {number} tapWeight peso na escolha do solucionador automatico
  * @property {string} nameKey chave de traducao
@@ -128,6 +145,61 @@ export const MATERIALS = {
     nameKey: 'materialBomb',
     hintKey: 'hintBomb',
   },
+  // TNT nao precisa de campo novo: velocidade de quebra somada a raio de
+  // explosao ja produz "detona com qualquer pancada forte". 3.2 m/s e uma queda
+  // de meia celula, e fica acima do limiar de 2.2 do som de impacto - entao
+  // toda detonacao vem precedida do baque, e o jogador entende o que houve.
+  // Diferente da bomba, que explode quando o JOGADOR a toca.
+  tnt: {
+    id: 'tnt',
+    density: 1.15,
+    friction: 0.62,
+    restitution: 0.02,
+    destructible: true,
+    breakSpeed: 3.2,
+    explodeRadius: 2.2,
+    color: '#ff9a3c',
+    tapWeight: 0.4,
+    nameKey: 'materialTnt',
+    hintKey: 'hintTnt',
+  },
+  // Cristal cede pelo TEMPO com o hexagono em cima, nunca por impacto. Se
+  // tambem quebrasse por pancada seria vidro com um extra, e a leitura do
+  // jogador - azul quebra por pancada, roxo quebra por espera - se perderia.
+  crystal: {
+    id: 'crystal',
+    density: 1.25,
+    friction: 0.4,
+    restitution: 0.08,
+    destructible: true,
+    breakSpeed: 0,
+    explodeRadius: 0,
+    holdTime: 1.8,
+    holdCause: 'crack',
+    color: '#c9a8ff',
+    tapWeight: 1,
+    nameKey: 'materialCrystal',
+    hintKey: 'hintCrystal',
+  },
+  // Cera amolece sob o peso do hexagono. E o calor do mundo que justifica, mas
+  // quem conta o tempo e o apoio: um derretimento disparado pela proximidade da
+  // lava dissolveria a torre inteira sozinha e a fase se resolveria sem o
+  // jogador.
+  wax: {
+    id: 'wax',
+    density: 0.9,
+    friction: 0.7,
+    restitution: 0.02,
+    destructible: true,
+    breakSpeed: 0,
+    explodeRadius: 0,
+    holdTime: 2.4,
+    holdCause: 'melt',
+    color: '#ffb347',
+    tapWeight: 1,
+    nameKey: 'materialWax',
+    hintKey: 'hintWax',
+  },
   obsidian: {
     id: 'obsidian',
     density: 3.5,
@@ -161,7 +233,15 @@ export const MATERIAL_DEBUT = {
   glass: 52,
   foam: 62,
   bomb: 70,
+  crystal: 56,
+  wax: 74,
+  tnt: 84,
 };
+
+/** Materiais que cedem por tempo de contato com o hexagono. */
+export const HOLD_MATERIALS = new Set(
+  Object.keys(MATERIALS).filter((id) => (MATERIALS[id].holdTime || 0) > 0),
+);
 
 /**
  * @param {string} id

@@ -7,6 +7,10 @@
  */
 
 import { paintBackground } from './backgrounds.js';
+import { roundRect } from './draw2d.js';
+import { paintPedestal } from './pedestal.js';
+import { tracePiece } from './sprites.js';
+import { outlineLoops } from '../physics/shapes.js';
 import { material as getMaterial } from '../physics/materials.js';
 import { PEDESTAL_HALF_H } from '../physics/world.js';
 
@@ -98,13 +102,34 @@ export class Renderer {
       ctx.restore();
     }
 
+    // --- aviso dos perigos -------------------------------------------------
+    // O sprite e cacheado por forma+material, entao nao pode mudar com o tempo:
+    // o aviso vem por cima, reaproveitando o mesmo tracado de silhueta do
+    // realce. A TNT pulsa devagar e sempre; o cristal so comeca a piscar depois
+    // de um terco do prazo, e acelera ate ceder.
+    for (const piece of world.pieces) {
+      if (!piece.alive) continue;
+      const mat = getMaterial(piece.material);
+      const estilo = theme.materials[piece.material];
+      const cor = estilo ? estilo.stroke : mat.color;
+      if (mat.explodeRadius > 0 && mat.breakSpeed > 0) {
+        this.outlinePiece(ctx, piece, toScreen, px, cor, 0.25 + 0.25 * Math.sin(scene.time * 4), theme.corner);
+      } else if (mat.holdTime > 0 && piece.holdTimer > 0) {
+        const k = piece.holdTimer / mat.holdTime;
+        if (k > 0.3) {
+          const alpha = ((k - 0.3) / 0.7) * (0.55 + 0.45 * Math.sin(scene.time * (6 + k * 14)));
+          this.outlinePiece(ctx, piece, toScreen, px, cor, Math.max(0, alpha), theme.corner);
+        }
+      }
+    }
+
     // --- realce de dica e de peca sob o ponteiro --------------------------
     if (session.hintPiece && session.hintPiece.alive) {
-      this.outlinePiece(ctx, session.hintPiece, toScreen, px, theme.accent2, 0.5 + 0.5 * Math.sin(scene.time * 6));
+      this.outlinePiece(ctx, session.hintPiece, toScreen, px, theme.accent2, 0.5 + 0.5 * Math.sin(scene.time * 6), theme.corner);
     }
     if (scene.hovered && scene.hovered.alive && scene.hovered !== session.hintPiece) {
       const mat = getMaterial(scene.hovered.material);
-      this.outlinePiece(ctx, scene.hovered, toScreen, px, mat.destructible ? theme.accent : '#ff5050', 0.55);
+      this.outlinePiece(ctx, scene.hovered, toScreen, px, mat.destructible ? theme.accent : '#ff5050', 0.55, theme.corner);
     }
 
     // --- hexagono ---------------------------------------------------------
@@ -130,8 +155,9 @@ export class Renderer {
    * @param {number} px
    * @param {string} color
    * @param {number} alpha
+   * @param {number} corner raio dos cantos do tema, em fracao da celula
    */
-  outlinePiece(ctx, piece, toScreen, px, color, alpha) {
+  outlinePiece(ctx, piece, toScreen, px, color, alpha, corner) {
     const pos = piece.body.getPosition();
     const angle = piece.body.getAngle();
     const [sx, sy] = toScreen(pos.x, pos.y);
@@ -144,14 +170,22 @@ export class Renderer {
     ctx.shadowColor = color;
     ctx.shadowBlur = px * 0.3;
     ctx.lineJoin = 'round';
-    const pad = px * 0.06;
-    for (const r of piece.rects) {
-      const w = r.w * px;
-      const h = r.h * px;
-      const ox = (r.x + r.w / 2 - piece.cw / 2) * px;
-      const oy = -(r.y + r.h / 2 - piece.ch / 2) * px;
-      ctx.strokeRect(ox - w / 2 - pad, oy - h / 2 - pad, w + pad * 2, h + pad * 2);
-    }
+    // A mesma fonte geometrica do sprite: um caminho unico pela silhueta, e nao
+    // um retangulo por bloco de toRects(). Com um retangulo por bloco, as
+    // costuras internas da peca eram tracadas junto e brilhavam tanto quanto a
+    // borda de verdade - duas em cada tres formas tem mais de um bloco. O
+    // caminho unico tambem contorna o buraco das pecas vazadas.
+    // Sao os numeros do sprite menos o dpr e menos o pad: a folga aqui vem toda
+    // da espessura do traco.
+    tracePiece(
+      ctx,
+      outlineLoops(piece.cells),
+      px,
+      Math.max(1.5, px * corner),
+      -(piece.cw / 2) * px,
+      (piece.ch / 2) * px,
+    );
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -163,29 +197,18 @@ export class Renderer {
    * @param {number} px
    */
   drawPedestal(ctx, world, theme, toScreen, px) {
-    const x = world.pedestalX();
-    const halfW = world.pedestalHalfWidth;
-    const [sx, sy] = toScreen(x, 0);
-    const w = halfW * 2 * px;
-    const h = PEDESTAL_HALF_H * 2 * px;
-    const vh = this.viewport.height;
-
+    const [sx, sy] = toScreen(world.pedestalX(), 0);
     ctx.save();
-    // Coluna de apoio, que some na base da tela.
-    ctx.fillStyle = theme.pedestal.fill;
-    ctx.globalAlpha = 0.55;
-    ctx.fillRect(sx - w * 0.34, sy + h, w * 0.68, Math.max(0, vh - sy));
-    ctx.globalAlpha = 1;
-
-    ctx.shadowColor = theme.pedestal.glow;
-    ctx.shadowBlur = theme.glow > 0.3 ? px * 0.5 : 0;
-    ctx.fillStyle = theme.pedestal.fill;
-    const r = Math.min(h * 0.3, px * 0.22);
-    roundRect(ctx, sx - w / 2, sy, w, h, r);
-    ctx.fill();
-    ctx.strokeStyle = theme.pedestal.stroke;
-    ctx.lineWidth = Math.max(2, px * 0.055);
-    ctx.stroke();
+    paintPedestal({
+      ctx,
+      sx,
+      sy,
+      w: world.pedestalHalfWidth * 2 * px,
+      h: PEDESTAL_HALF_H * 2 * px,
+      px,
+      vh: this.viewport.height,
+      theme,
+    });
     ctx.restore();
   }
 
@@ -249,24 +272,6 @@ export class Renderer {
   }
 }
 
-/**
- * @param {CanvasRenderingContext2D} ctx
- * @param {number} x
- * @param {number} y
- * @param {number} w
- * @param {number} h
- * @param {number} r
- */
-export function roundRect(ctx, x, y, w, h, r) {
-  const rr = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
 
 /**
  * @param {CanvasRenderingContext2D} ctx
