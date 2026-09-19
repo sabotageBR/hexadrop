@@ -130,7 +130,10 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed) {
 
   ctx.save();
   ctx.clip('evenodd');
-  const tile = tileOf(materialId, Math.max(40, scale * 2.2));
+  // Um tema pode dispensar a foto. O neon faz isso: ali a peca e vidro aceso, e
+  // a fotografia de pedra dentro de um tubo de luz e o oposto do que o mundo
+  // promete. Em todos os outros temas o material continua sendo uma foto.
+  const tile = th.photo === false ? null : tileOf(materialId, Math.max(40, scale * 2.2));
   if (tile) {
     const pat = ctx.createPattern(tile, 'repeat');
     if (pat) {
@@ -177,8 +180,8 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed) {
     ctx.lineTo(bx + scale * 0.1, by - scale * 0.34);
     ctx.stroke();
   }
-  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-  ctx.lineWidth = Math.max(1, scale * 0.05);
+  ctx.strokeStyle = style.inner || 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = Math.max(1, scale * (th.photo === false ? 0.09 : 0.05));
   tracePiece(ctx, loops, scale, radius, ox, oy);
   ctx.stroke();
   ctx.restore();
@@ -189,7 +192,7 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed) {
     ctx.shadowBlur = scale * (0.22 + th.glow * 0.28);
   }
   ctx.strokeStyle = style.stroke;
-  ctx.lineWidth = Math.max(1.6, scale * 0.07);
+  ctx.lineWidth = Math.max(1.6, scale * (th.photo === false ? 0.1 : 0.07));
   ctx.lineJoin = 'round';
   tracePiece(ctx, loops, scale, radius, ox, oy);
   ctx.stroke();

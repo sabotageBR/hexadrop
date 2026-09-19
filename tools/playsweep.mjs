@@ -66,11 +66,20 @@ for (const level of LEVELS) {
     taps++;
     await sleep(650);
   }
-  await sleep(900);
-  const res = await js('({screen: window.__game.screen, state: window.__game.scene.session ? window.__game.scene.session.state : "?", stars: window.__game.scene.session ? window.__game.scene.session.stars : 0})');
+  // A vitoria passa pela celebracao de fim de fase antes do cartao: as pecas
+  // que sobraram estouram uma a uma, e so entao a tela deixa de ser 'game'.
+  // Com espera fixa o sweep media a contagem no meio e registrava a fase como
+  // inconclusiva - o que acontecia justo nas torres altas, que e onde sobra
+  // mais peca.
+  for (let i = 0; i < 40; i++) {
+    if ((await js('window.__game.screen')) !== 'game') break;
+    await sleep(250);
+  }
+  await sleep(400);
+  const res = await js('({screen: window.__game.screen, state: window.__game.scene.session ? window.__game.scene.session.state : "?", stars: window.__game.scene.session ? window.__game.scene.session.stars : 0, intactas: window.__game.scene.session ? window.__game.scene.session.bonusTotal : 0})');
   const avgFps = fps.length ? Math.round(fps.reduce((a, b) => a + b, 0) / fps.length) : 0;
   if (res.screen === 'win') wins++; else if (res.screen === 'lose') losses++;
-  rows.push(`fase ${String(level).padStart(3)}  ${res.screen.padEnd(5)}  estado=${String(res.state).padEnd(7)} estrelas=${res.stars} toques=${String(taps).padStart(2)} fps~${avgFps}${errors.length ? '  ERRO: ' + errors[0] : ''}`);
+  rows.push(`fase ${String(level).padStart(3)}  ${res.screen.padEnd(5)}  estado=${String(res.state).padEnd(7)} estrelas=${res.stars} toques=${String(taps).padStart(2)} intactas=${String(res.intactas).padStart(2)} fps~${avgFps}${errors.length ? '  ERRO: ' + errors[0] : ''}`);
   console.log(rows[rows.length - 1]);
   // volta ao menu para a proxima
   await js('window.__game.showAmbient(); window.__game.show("home");');

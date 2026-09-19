@@ -32,6 +32,7 @@ export class Camera {
    * @param {number} o.pedestalHalf
    * @param {number} o.topInset pixels reservados para o HUD no topo
    * @param {number} o.bottomInset
+   * @param {boolean} [o.fitWhole] enquadrar a cena INTEIRA, sem piso de zoom
    */
   fit(o) {
     this.viewW = o.viewW;
@@ -43,7 +44,11 @@ export class Camera {
     // das bordas quando for muito mais largo que a torre, e isso ate ajuda,
     // porque um chao que sai da tela le como "aqui embaixo e seguro".
     const neededW = o.towerWidth + 1.8;
-    const usableH = Math.max(140, o.viewH - o.topInset - o.bottomInset);
+    // O piso de 140 protege a area de JOGO de virar uma fresta. Na home ele
+    // seria o contrario do que se quer: com um vao de 58 px entre o titulo e os
+    // botoes, fingir 140 faz a cena ser desenhada maior do que o espaco que
+    // existe, e ela reaparece por cima dos botoes.
+    const usableH = Math.max(o.fitWhole ? 54 : 140, o.viewH - o.topInset - o.bottomInset);
     const sceneBottom = -1.1;
     const sceneTop = o.towerHeight + 2.9;
     const sceneH = sceneTop - sceneBottom;
@@ -52,10 +57,20 @@ export class Camera {
     // Mira em um tamanho de celula parecido em qualquer tela, entre 5,5 e 13
     // linhas visiveis. Sem isso, uma janela 16:9 de desktop achataria a torre
     // num palito e o celular em pe mostraria pecas gigantes.
+    //
+    // `fitWhole` dispensa o piso: na tela inicial a cena e cenario, nao area de
+    // jogo, e o que importa e a torre caber inteira no vao entre o titulo e os
+    // botoes. Com o piso de 5,5 linhas o zoom nao recuava o bastante e a torre
+    // transbordava por cima dos botoes em paisagem baixa.
     const TARGET_CELL_PX = 56;
-    const visibleRows = Math.max(5.5, Math.min(13, usableH / TARGET_CELL_PX));
+    const visibleRows = o.fitWhole
+      ? sceneH
+      : Math.max(5.5, Math.min(13, usableH / TARGET_CELL_PX));
     const byHeight = usableH / Math.min(sceneH, visibleRows);
-    this.pxPerMeter = Math.max(12, Math.min(byWidth, byHeight));
+    // O piso existe para a peca nao virar um ponto durante o jogo. Na home ele
+    // cede: ali a cena e cenario, e transbordar por cima dos botoes e pior do
+    // que aparecer pequena numa janela baixa.
+    this.pxPerMeter = Math.max(o.fitWhole ? 6 : 12, Math.min(byWidth, byHeight));
 
     this.x = o.towerWidth / 2;
     const half = o.viewH / 2;

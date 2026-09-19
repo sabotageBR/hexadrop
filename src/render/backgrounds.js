@@ -67,22 +67,45 @@ function perspectiveGrid(ctx, th, w, h, horizonY) {
  * @param {Rng} rng
  * @param {number} height
  * @param {number} count
+ * @param {string} [edge] cor da crista acesa; sem ela a silhueta e chapada
+ * @param {number} [blur] halo da crista
  */
-function mountains(ctx, w, baseY, color, rng, height, count) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(-10, baseY);
+function mountains(ctx, w, baseY, color, rng, height, count, edge, blur = 10) {
+  // Os pontos saem primeiro para poderem ser percorridos duas vezes: uma para
+  // a silhueta cheia e outra so para a crista. A ordem de consumo do rng e a
+  // mesma de sempre, entao os cenarios dos outros temas nao mudam um pixel.
+  /** @type {number[][]} */
+  const pts = [];
   let x = -10;
   for (let i = 0; i < count; i++) {
     const peakW = w / count;
     const peak = rng.range(height * 0.45, height);
-    ctx.lineTo(x + peakW / 2, baseY - peak);
+    pts.push([x + peakW / 2, baseY - peak]);
     x += peakW;
-    ctx.lineTo(x, baseY - rng.range(0, height * 0.18));
+    pts.push([x, baseY - rng.range(0, height * 0.18)]);
   }
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-10, baseY);
+  for (const [px, py] of pts) ctx.lineTo(px, py);
   ctx.lineTo(w + 10, baseY);
   ctx.closePath();
   ctx.fill();
+
+  if (!edge) return;
+  ctx.save();
+  ctx.strokeStyle = edge;
+  ctx.lineWidth = 1.7;
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = edge;
+  ctx.shadowBlur = blur;
+  ctx.beginPath();
+  ctx.moveTo(-10, baseY);
+  for (const [px, py] of pts) ctx.lineTo(px, py);
+  ctx.lineTo(w + 10, baseY);
+  ctx.stroke();
+  ctx.restore();
 }
 
 /**
@@ -98,53 +121,61 @@ export function paintBackground(ctx, th, w, h) {
   const horizonY = h * 0.56;
 
   switch (th.id) {
-    // O sol synthwave e a assinatura do mundo, mas ele nasce exatamente atras
-    // da coluna de jogo: brilhante e listrado como era, as faixas cruzavam as
-    // pecas e o jogador nao sabia mais o que era cenario e o que era torre.
-    // Aqui ele continua inteiro - so que menor, mais fundo na paleta e coberto
-    // por uma bruma no miolo da tela. Cenario e cenario; a cor viva fica para
-    // as pecas.
+    // O sol listrado saiu de cena.
+    //
+    // Ele era a assinatura do mundo, mas nascia exatamente atras da coluna de
+    // jogo, e obrigava todo o resto a se defender dele: a peca precisou de
+    // corpo opaco para as faixas nao atravessarem o material, e o miolo da tela
+    // precisou de bruma para a torre nao sumir no brilho. Sem o sol, o cenario
+    // fica sendo o que este mundo sempre quis ser - grade, montanha e estrela -
+    // e a peca pode voltar a ser o tubo de vidro aceso que da o nome ao tema.
     case 'neon': {
-      const glow = ctx.createRadialGradient(w / 2, horizonY, 0, w / 2, horizonY, w * 0.62);
-      glow.addColorStop(0, 'rgba(210,40,130,0.24)');
-      glow.addColorStop(0.45, 'rgba(120,30,150,0.12)');
-      glow.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = glow;
+      // Luz que sobe do horizonte, sem fonte pontual: nada atras da torre.
+      const brilho = ctx.createLinearGradient(0, horizonY - h * 0.34, 0, horizonY + h * 0.08);
+      brilho.addColorStop(0, 'rgba(120,20,140,0)');
+      brilho.addColorStop(0.6, 'rgba(160,30,140,0.14)');
+      brilho.addColorStop(1, 'rgba(255,45,149,0.26)');
+      ctx.fillStyle = brilho;
       ctx.fillRect(0, 0, w, h);
-      const sunR = w * 0.17;
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      const sun = ctx.createLinearGradient(0, horizonY - sunR, 0, horizonY);
-      sun.addColorStop(0, '#ff9f4a');
-      sun.addColorStop(0.5, '#e8407f');
-      sun.addColorStop(1, '#5a17b0');
-      ctx.fillStyle = sun;
-      ctx.beginPath();
-      ctx.arc(w / 2, horizonY, sunR, Math.PI, Math.PI * 2);
-      ctx.fill();
-      ctx.globalCompositeOperation = 'destination-out';
-      for (let i = 1; i < 7; i++) {
-        const y = horizonY - sunR + (i * sunR) / 6.5;
-        ctx.fillRect(0, y, w, sunR * 0.05 * i * 0.5);
-      }
-      ctx.restore();
-      mountains(ctx, w, horizonY + 1, 'rgba(38,10,54,0.92)', rng, h * 0.1, 7);
-      ctx.fillStyle = th.ground;
-      ctx.fillRect(0, horizonY, w, h - horizonY);
-      perspectiveGrid(ctx, th, w, h, horizonY);
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      for (let i = 0; i < 40; i++) {
-        ctx.globalAlpha = rng.range(0.15, 0.6);
-        ctx.fillRect(rng.range(0, w), rng.range(0, horizonY * 0.8), 1.5, 1.5);
+
+      // Estrelas antes das montanhas: o que cai atras do pico fica atras dele.
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let i = 0; i < 54; i++) {
+        ctx.globalAlpha = rng.range(0.16, 0.7);
+        const s2 = rng.range(1.2, 2.2);
+        ctx.fillRect(rng.range(0, w), rng.range(0, horizonY * 0.88), s2, s2);
       }
       ctx.globalAlpha = 1;
-      // Bruma no eixo da torre. E o inverso da vinheta do renderizador, que
-      // escurece as bordas: aqui o miolo - onde tudo acontece - e que precisa
-      // ficar calmo, e as pontas do sol continuam aparecendo dos lados.
-      const bruma = ctx.createRadialGradient(w / 2, horizonY, 0, w / 2, horizonY, w * 0.42);
-      bruma.addColorStop(0, 'rgba(8,4,24,0.5)');
-      bruma.addColorStop(0.7, 'rgba(8,4,24,0.28)');
-      bruma.addColorStop(1, 'rgba(8,4,24,0)');
+
+      // Duas cordilheiras com a crista acesa, como na referencia: a de tras
+      // mais apagada, a da frente marcando a linha do horizonte.
+      mountains(ctx, w, horizonY + 1, 'rgba(30,8,44,0.92)', rng, h * 0.065, 6, 'rgba(178,70,240,0.3)', 10);
+      mountains(ctx, w, horizonY + 2, 'rgba(14,4,24,0.97)', rng, h * 0.042, 9, 'rgba(236,60,165,0.42)', 9);
+
+      ctx.fillStyle = th.ground;
+      ctx.fillRect(0, horizonY + 2, w, h - horizonY);
+      // A grade e a personagem principal do chao, entao vai por cima dele.
+      perspectiveGrid(ctx, th, w, h, horizonY + 2);
+      // Fio do horizonte: e ele que faz a grade parecer ir para longe.
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,90,190,0.45)';
+      ctx.lineWidth = 1.1;
+      ctx.shadowColor = '#ff2d95';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(0, horizonY + 2);
+      ctx.lineTo(w, horizonY + 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // Bruma no eixo da torre. Continua necessaria, e agora por outro motivo:
+      // a peca voltou a ser translucida, entao a grade apareceria DENTRO dela.
+      // Escurecer o miolo - onde a torre fica - deixa a grade viva so nas
+      // laterais e no rodape, que e onde ela e cenario e nao ruido.
+      const bruma = ctx.createRadialGradient(w / 2, horizonY, 0, w / 2, horizonY, w * 0.72);
+      bruma.addColorStop(0, 'rgba(3,1,10,0.72)');
+      bruma.addColorStop(0.45, 'rgba(3,1,10,0.52)');
+      bruma.addColorStop(1, 'rgba(3,1,10,0)');
       ctx.fillStyle = bruma;
       ctx.fillRect(0, 0, w, h);
       break;

@@ -20,6 +20,7 @@
  * @property {string} label
  * @property {'neon'|'plate'|'grain'|'flat'|'gloss'|'frost'|'ember'|'paper'} style
  * @property {number} glow 0 a 1
+ * @property {boolean} [photo] false quando o material NAO e uma fotografia
  * @property {number} corner raio dos cantos, em fracao da celula
  * @property {string[]} sky gradiente vertical do fundo
  * @property {string} horizon
@@ -59,10 +60,14 @@ export const THEMES = {
     style: 'neon',
     glow: 1,
     corner: 0.22,
-    sky: ['#05030f', '#140a2e', '#2b0f47'],
+    // Sem foto: neste mundo a peca e um tubo de vidro aceso, e a fotografia de
+    // pedra dentro dele contradiz o que o cenario promete. Todos os outros
+    // temas continuam usando o material como fotografia.
+    photo: false,
+    sky: ['#03020b', '#0a0520', '#1d0937'],
     horizon: '#ff2d95',
-    ground: '#0a0520',
-    grid: 'rgba(120,80,255,0.2)',
+    ground: '#06030f',
+    grid: 'rgba(190,90,255,0.26)',
     ink: '#f4ecff',
     inkSoft: 'rgba(244,236,255,0.62)',
     accent: '#ff43b8',
@@ -71,26 +76,31 @@ export const THEMES = {
     panelEdge: 'rgba(255,67,184,0.75)',
     panelSolid: '#1a0a38',
     veilRgb: '6, 3, 15',
-    // Corpo opaco, na cor do material. Com o preenchimento translucido de
-    // antes o sol e a grade do cenario apareciam ATRAVES da peca: o jogador
-    // via listras onde devia ver madeira, e duas pecas vizinhas viravam a
-    // mesma mancha. A cor fecha a silhueta; o traco neon continua sendo quem
-    // identifica o material de longe.
+    // Miolo translucido e escuro, traco aceso: a peca e um tubo de luz com
+    // vidro fumê dentro.
+    //
+    // Ja foi corpo opaco, e por um motivo concreto: o sol listrado do cenario
+    // aparecia ATRAVES da peca e o jogador via faixas onde devia ver material.
+    // O sol saiu do cenario - a referencia deste mundo nao tem sol -, e com ele
+    // saiu a razao do corpo opaco. O que garante a leitura agora e o proprio
+    // fundo, escuro e calmo atras da coluna de jogo.
+    //
+    // A obsidiana e a excecao: vai quase opaca de proposito. Ela e a unica que
+    // o jogador nao pode quebrar, e um corpo denso le como "isto nao cede"
+    // antes mesmo de ele tentar.
     materials: {
-      wood: { fill: '#6b4611', stroke: '#ffc43c', inner: 'rgba(255,196,60,0.5)', top: '#ffc43c' },
-      stone: { fill: '#5e1830', stroke: '#ff3d6e', inner: 'rgba(255,61,110,0.5)', top: '#ff3d6e' },
-      ice: { fill: '#134858', stroke: '#50e2ff', inner: 'rgba(80,226,255,0.55)', top: '#8af0ff' },
-      rubber: { fill: '#0f4b2f', stroke: '#42ff8c', inner: 'rgba(66,255,140,0.5)', top: '#42ff8c' },
-      metal: { fill: '#313c60', stroke: '#b2c6ff', inner: 'rgba(178,198,255,0.5)', top: '#d8e2ff' },
-      // O vidro e o unico que continua deixando ver atraves: e a leitura de
-      // "vidro" e o aviso de que ele estilhaca com pancada.
-      glass: { fill: 'rgba(158,220,240,0.58)', stroke: '#d2f5ff', inner: 'rgba(210,245,255,0.42)', top: '#ffffff' },
-      foam: { fill: '#5c1c49', stroke: '#ff8cdc', inner: 'rgba(255,140,220,0.5)', top: '#ff8cdc' },
-      bomb: { fill: '#68190f', stroke: '#ff5a3c', inner: 'rgba(255,200,60,0.75)', top: '#ffc83c' },
-      obsidian: { fill: '#241b3e', stroke: '#8a74c8', inner: 'rgba(60,44,100,0.9)', top: '#8a74c8' },
-      tnt: { fill: '#6b3205', stroke: '#ff8c28', inner: 'rgba(255,230,90,0.8)', top: '#ffe65a' },
-      crystal: { fill: '#3d2a66', stroke: '#c896ff', inner: 'rgba(200,150,255,0.5)', top: '#e0c6ff' },
-      wax: { fill: '#70400e', stroke: '#ffbe5a', inner: 'rgba(255,230,160,0.55)', top: '#ffe6a0' },
+      wood: { fill: 'rgba(92,60,14,0.46)', stroke: '#ffc43c', inner: 'rgba(255,196,60,0.42)', top: '#ffc43c' },
+      stone: { fill: 'rgba(84,20,42,0.46)', stroke: '#ff3d6e', inner: 'rgba(255,61,110,0.42)', top: '#ff3d6e' },
+      ice: { fill: 'rgba(16,62,76,0.44)', stroke: '#50e2ff', inner: 'rgba(80,226,255,0.48)', top: '#8af0ff' },
+      rubber: { fill: 'rgba(12,64,40,0.46)', stroke: '#42ff8c', inner: 'rgba(66,255,140,0.42)', top: '#42ff8c' },
+      metal: { fill: 'rgba(44,54,86,0.5)', stroke: '#b2c6ff', inner: 'rgba(178,198,255,0.42)', top: '#d8e2ff' },
+      glass: { fill: 'rgba(158,220,240,0.24)', stroke: '#d2f5ff', inner: 'rgba(210,245,255,0.5)', top: '#ffffff' },
+      foam: { fill: 'rgba(80,24,63,0.46)', stroke: '#ff8cdc', inner: 'rgba(255,140,220,0.42)', top: '#ff8cdc' },
+      bomb: { fill: 'rgba(92,22,14,0.54)', stroke: '#ff5a3c', inner: 'rgba(255,200,60,0.6)', top: '#ffc83c' },
+      obsidian: { fill: 'rgba(30,22,52,0.86)', stroke: '#8a74c8', inner: 'rgba(90,70,150,0.5)', top: '#8a74c8' },
+      tnt: { fill: 'rgba(92,44,6,0.54)', stroke: '#ff8c28', inner: 'rgba(255,230,90,0.6)', top: '#ffe65a' },
+      crystal: { fill: 'rgba(52,36,88,0.44)', stroke: '#c896ff', inner: 'rgba(200,150,255,0.45)', top: '#e0c6ff' },
+      wax: { fill: 'rgba(96,56,14,0.46)', stroke: '#ffbe5a', inner: 'rgba(255,230,160,0.48)', top: '#ffe6a0' },
     },
     pedestal: { style: 'neon', fill: 'rgba(92,46,190,0.85)', stroke: '#b98cff', glow: '#a066ff' },
     hexagon: { fill: 'rgba(190,240,255,0.2)', stroke: '#4fc8ff', core: '#ffffff' },

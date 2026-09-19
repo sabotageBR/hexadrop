@@ -11,7 +11,9 @@ import { createSession } from './game/session.js';
 import { levelConfig, LEVEL_COUNT, WORLD_THEMES } from './game/levelgen.js';
 import { LEVELS } from './game/levels.gen.js';
 import { Progress } from './game/progress.js';
-import { UPGRADES, BOOSTS, gateStars, xpForRank, skin as getSkin } from './game/content.js';
+import {
+  UPGRADES, BOOSTS, gateStars, xpForRank, skin as getSkin, BONUS_COINS_PER_PIECE,
+} from './game/content.js';
 import { THEMES } from './render/themes.js';
 import { applyUiTheme } from './render/uitheme.js';
 import { loadTextures } from './render/textures.js';
@@ -22,20 +24,49 @@ import { t, getLang, setLang, LANGS, LANG_NAMES, onLangChange } from './core/i18
 import { load, save, isPersistent } from './core/storage.js';
 import { Rng } from './core/rng.js';
 
-/** Trilha sonora por tema. */
+/**
+ * Trilha sonora por tema.
+ *
+ * `scale` e `root` dao a cor harmonica do mundo, `motif` a figura melodica que
+ * o identifica, e o resto e timbre. O desenho ritmico e a forma de 32 compassos
+ * moram em core/audio.js e valem para todas as trilhas - aqui fica so o que
+ * muda de mundo para mundo.
+ */
 const MUSIC = {
-  neon: { scale: [0, 3, 5, 7, 10], root: -5, bpm: 104, type: 'sawtooth', bass: 'square' },
-  futuristic: { scale: [0, 2, 3, 7, 9], root: -7, bpm: 96, type: 'square', bass: 'triangle' },
-  rustic: { scale: [0, 2, 4, 7, 9], root: -9, bpm: 84, type: 'triangle', bass: 'sine' },
-  classic: { scale: [0, 2, 4, 7, 11], root: -4, bpm: 92, type: 'sine', bass: 'sine' },
-  candy: { scale: [0, 2, 4, 7, 9], root: 0, bpm: 118, type: 'triangle', bass: 'sine' },
-  ice: { scale: [0, 2, 3, 7, 10], root: -2, bpm: 76, type: 'sine', bass: 'triangle' },
-  lava: { scale: [0, 1, 5, 7, 8], root: -12, bpm: 88, type: 'sawtooth', bass: 'square' },
-  paper: { scale: [0, 2, 5, 7, 9], root: -7, bpm: 100, type: 'triangle', bass: 'triangle' },
+  neon: { scale: [0, 3, 5, 7, 10], root: -5, bpm: 104, type: 'sawtooth', bass: 'square', pad: 'sawtooth', motif: [0, 3, 1, 4] },
+  futuristic: { scale: [0, 2, 3, 7, 9], root: -7, bpm: 96, type: 'square', bass: 'triangle', pad: 'triangle', motif: [0, 4, 2, 1] },
+  rustic: { scale: [0, 2, 4, 7, 9], root: -9, bpm: 84, type: 'triangle', bass: 'sine', pad: 'sine', motif: [0, 1, 3, 2], hat: false },
+  classic: { scale: [0, 2, 4, 7, 11], root: -4, bpm: 92, type: 'sine', bass: 'sine', pad: 'sine', motif: [0, 2, 4, 3] },
+  candy: { scale: [0, 2, 4, 7, 9], root: 0, bpm: 118, type: 'triangle', bass: 'sine', pad: 'triangle', motif: [0, 2, 5, 3] },
+  ice: { scale: [0, 2, 3, 7, 10], root: -2, bpm: 76, type: 'sine', bass: 'triangle', pad: 'sine', motif: [0, 4, 1, 5], hat: false },
+  lava: { scale: [0, 1, 5, 7, 8], root: -12, bpm: 88, type: 'sawtooth', bass: 'square', pad: 'square', motif: [0, 1, 4, 2] },
+  paper: { scale: [0, 2, 5, 7, 9], root: -7, bpm: 100, type: 'triangle', bass: 'triangle', pad: 'sine', motif: [0, 3, 2, 4], hat: false },
+};
+
+/**
+ * Trilha da tela inicial.
+ *
+ * Nao e a de nenhum mundo. Antes a home herdava a musica do mundo em cartaz, e
+ * deslizar o carrossel trocava a trilha: a identidade sonora do jogo dependia
+ * de onde o jogador tinha parado. Com tema proprio, a home soa sempre igual e
+ * entrar numa fase passa a ter uma troca que se percebe.
+ */
+const MAIN_THEME = {
+  scale: [0, 2, 4, 7, 9],
+  root: -3,
+  bpm: 88,
+  type: 'triangle',
+  bass: 'sine',
+  pad: 'triangle',
+  motif: [0, 2, 4, 1],
 };
 
 /** Mundos do mapa. Dez fases cada. */
 const WORLD_COUNT = 10;
+
+/** Margens que a HUD de jogo reserva no enquadramento da cena. */
+const GAME_INSET_TOP = 108;
+const GAME_INSET_BOTTOM = 40;
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
@@ -44,7 +75,7 @@ class Game {
     this.progress = new Progress();
     this.rng = new Rng(Date.now() & 0x7fffffff);
     this.canvas = /** @type {HTMLCanvasElement} */ ($('game'));
-    this.scene = new GameScene(this.canvas, { topInset: 108, bottomInset: 40 });
+    this.scene = new GameScene(this.canvas, { topInset: GAME_INSET_TOP, bottomInset: GAME_INSET_BOTTOM });
     /** @type {string} */
     this.screen = '';
     this.level = Math.min(LEVEL_COUNT, this.progress.data.unlocked);
@@ -55,6 +86,9 @@ class Game {
     this.toastTimer = 0;
     this.tutTimer = 0;
     this.pendingHeart = false;
+    /** Vitoria aguardando o fim da celebracao para ser gravada. */
+    /** @type {{stars:number, won:boolean}|null} */
+    this.pendingWin = null;
     this.homeWorld = Math.floor((this.level - 1) / 10);
     this.homeSwiped = false;
   }
@@ -96,6 +130,11 @@ class Game {
     });
     this.scene.input.onKey((code) => this.onKey(code));
     window.setInterval(() => this.tickHearts(), 5000);
+    // O reenquadramento da home vem depois do refit da cena, senao mede o
+    // layout antigo.
+    window.addEventListener('resize', () => {
+      window.requestAnimationFrame(() => this.fitHomeScene());
+    });
   }
 
   bindHomeSwipe() {
@@ -137,8 +176,34 @@ class Game {
       if (tut) tut.classList.add('hide');
     }
     this.refreshScreen();
+    // O enquadramento da home depende da altura real do titulo e da pilha de
+    // botoes, que so existe depois que a tela entra no layout.
+    if (name === 'home') {
+      window.requestAnimationFrame(() => this.fitHomeScene());
+    }
     // No mobile, afasta o botao flutuante da Poki da HUD do topo.
     poki.movePill(name === 'game' ? 0 : 0, name === 'game' ? 64 : 24);
+  }
+
+  /**
+   * Enquadra a cena de fundo da home na faixa livre entre o titulo e os botoes.
+   *
+   * A home reserva faixas diferentes das do jogo: em cima o nome do jogo, em
+   * baixo o mundo em cartaz, os botoes e o rodape de patente. Medir os blocos
+   * de verdade, em vez de cravar numeros, e o que impede a torre de voltar a
+   * ficar atras deles quando a tela muda de tamanho ou o idioma muda o texto.
+   */
+  fitHomeScene() {
+    if (this.screen !== 'home') return;
+    const topo = document.getElementById('homeTop');
+    const base = document.getElementById('homeBase');
+    if (!topo || !base) return;
+    const rt = topo.getBoundingClientRect();
+    const rb = base.getBoundingClientRect();
+    if (rt.height <= 0 || rb.height <= 0) return;
+    const alto = Math.round(rt.bottom + 14);
+    const baixo = Math.round(window.innerHeight - rb.top + 18);
+    this.scene.setInsets(Math.max(60, alto), Math.max(30, baixo), true);
   }
 
   refreshScreen() {
@@ -156,6 +221,9 @@ class Game {
     }
     $('homeRank').textContent = String(p.rank);
     $('homeStars').textContent = String(p.totalStars);
+    // O teto que importa e o do ultimo portao, nao as 300 teoricas: e o numero
+    // que diz ao jogador quando ele terminou de abrir o jogo.
+    $('homeStarsMax').textContent = `/${gateStars(WORLD_COUNT - 1)}`;
     // Barra de patente: quanto falta de XP para a proxima.
     const bar = document.getElementById('homeRankBar');
     if (bar) {
@@ -205,17 +273,20 @@ class Game {
     set('tabUpgrades', t('upgrades'));
     set('tabBoosts', t('boosts'));
     set('winNext', t('next'));
+    set('winRetry', t('retry'));
     set('winHome', t('home'));
-    set('winDouble', t('doubleReward'));
+    set('winBonusLbl', t('bonusTitle'));
+    set('winPurseLbl', t('coins'));
     set('winCoinsLbl', t('rewardCoins'));
     set('winXpLbl', t('rewardXp'));
     set('loseTitle', t('gameOver'));
     set('loseRetry', t('retry'));
     set('loseShuffle', t('shuffle'));
     set('loseHome', t('home'));
-    set('loseAd', t('refillHearts'));
     set('loseSkip', t('skipLevel'));
     set('pauseTitle', t('paused'));
+    set('pauseSoundLbl', t('sound'));
+    set('pauseMusicLbl', t('music'));
     set('pauseResume', t('resume'));
     set('pauseRestart', t('restart'));
     set('pauseHome', t('home'));
@@ -279,6 +350,18 @@ class Game {
       this.retry(true);
     };
     $('pauseHome').onclick = () => this.quitLevel();
+    $('pauseSound').onclick = () => {
+      audio.setSfx(!audio.sfxOn);
+      audio.button();
+      this.buildPause();
+      this.buildSettings();
+    };
+    $('pauseMusic').onclick = () => {
+      audio.setMusic(!audio.musicOn);
+      audio.button();
+      this.buildPause();
+      this.buildSettings();
+    };
 
     $('winNext').onclick = () => this.nextLevel();
     $('winHome').onclick = () => {
@@ -286,7 +369,7 @@ class Game {
       this.showAmbient();
       this.show('home');
     };
-    $('winDouble').onclick = () => this.doubleReward();
+    $('winRetry').onclick = () => this.retry(false);
     $('loseRetry').onclick = () => this.retry(false);
     $('loseShuffle').onclick = () => this.shuffleLevel();
     $('loseHome').onclick = () => {
@@ -294,7 +377,6 @@ class Game {
       this.showAmbient();
       this.show('home');
     };
-    $('loseAd').onclick = () => this.refillByAd();
     $('loseSkip').onclick = () => this.skipByAd();
     $('btnDaily').onclick = () => this.dailyByAd();
     $('tabSkins').onclick = () => {
@@ -369,6 +451,9 @@ class Game {
         onStar: (n) => this.onStar(n),
         onEnd: (state) => this.onLevelEnd(state),
         onFirstTap: () => poki.gameplayStart(),
+        onCombo: (n, x, y) => this.onCombo(n, x, y),
+        onBonusPiece: (done, total, x, y) => this.onBonusPiece(done, total, x, y),
+        onBonusDone: () => this.finishWin(),
       },
     });
     session.par = variant[1];
@@ -383,10 +468,16 @@ class Game {
     session.onEnd = null;
     session.onStar = null;
     session.onFirstTap = null;
+    session.onCombo = null;
+    session.onBonusPiece = null;
+    session.onBonusDone = null;
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
     applyUiTheme(this.scene.theme);
-    audio.setMusic_(MUSIC[theme] || MUSIC.neon);
+    // A trilha da home e sempre a mesma; so o cenario muda com o carrossel.
+    audio.setMusic_(MAIN_THEME);
+    audio.releaseMusic();
     this.buildHomeWorlds();
+    this.fitHomeScene();
   }
 
   /**
@@ -463,9 +554,13 @@ class Game {
     this.paused = false;
     this.pendingHeart = true;
     const { session, theme } = this.makeSession(this.level, variantIndex);
+    this.pendingWin = null;
+    this.hideBonusCounter();
+    this.scene.setInsets(GAME_INSET_TOP, GAME_INSET_BOTTOM, false);
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
     applyUiTheme(this.scene.theme);
     audio.setMusic_(MUSIC[theme] || MUSIC.neon);
+    audio.releaseMusic();
     this.setStars('gameStars', 0);
     const themeId = levelConfig(this.level - 1).theme;
     $('gameLevel').textContent = `${THEMES[themeId].label} · ${this.level}`;
@@ -536,15 +631,16 @@ class Game {
     if (completed) {
       this.lossStreak = 0;
       poki.measure('level', String(this.level), 'complete');
-      const result = this.progress.finishLevel({
-        level: this.level,
-        stars,
-        won: state === 'won',
-        taps: session.taps,
-        par: session.par || 0,
-      });
-      this.lastResult = result;
-      window.setTimeout(() => this.showWin(stars, result), 700);
+      // O resultado so e gravado depois da celebracao: as pecas que sobraram
+      // fazem parte do premio, e a contagem delas acontece no canvas antes do
+      // cartao entrar.
+      this.pendingWin = { stars, won: state === 'won' };
+      const sobraram = session.startBonus();
+      if (sobraram > 0) {
+        this.showBonusCounter(sobraram);
+      } else {
+        window.setTimeout(() => this.finishWin(), 700);
+      }
     } else {
       this.lossStreak++;
       poki.measure('level', String(this.level), 'fail');
@@ -557,20 +653,155 @@ class Game {
   }
 
   /**
+   * Mostra o painel de contagem da celebracao.
+   * @param {number} total
+   */
+  showBonusCounter(total) {
+    const box = $('bonusBox');
+    if (!box) return;
+    $('bonusLabel').textContent = t('bonusIntact');
+    // Comeca em zero e SOBE a cada estouro. Contar para baixo dava a sensacao
+    // de algo acabando; contar para cima e o placar crescendo, que e o que faz
+    // o jogador querer deixar mais pecas na proxima vez.
+    $('bonusCount').textContent = '0';
+    $('bonusGain').textContent = '';
+    box.hidden = false;
+    box.classList.add('on');
+    // Durante a celebracao o jogador nao sai nem pausa: a fase ja acabou, e o
+    // premio so e gravado quando a contagem termina.
+    /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = true;
+    /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = true;
+  }
+
+  hideBonusCounter() {
+    const box = $('bonusBox');
+    if (box) {
+      box.hidden = true;
+      box.classList.remove('on');
+    }
+    /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = false;
+    /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = false;
+  }
+
+  /**
+   * Uma peca da celebracao estourou.
+   * @param {number} done
+   * @param {number} total
+   * @param {number} x em metros
+   * @param {number} y
+   */
+  onBonusPiece(done, total, x, y) {
+    audio.bonusPop(done, total);
+    const count = document.getElementById('bonusCount');
+    if (count) {
+      count.textContent = String(done);
+      count.classList.remove('pop');
+      // Reinicia a animacao: sem o reflow o navegador ignora a reaplicacao.
+      void /** @type {HTMLElement} */ (count).offsetWidth;
+      count.classList.add('pop');
+    }
+    const gain = document.getElementById('bonusGain');
+    if (gain) gain.textContent = `+${done * BONUS_COINS_PER_PIECE}`;
+    this.scene.camera.addTrauma(0.1 + (done / Math.max(1, total)) * 0.14);
+    if (x !== undefined && y !== undefined) this.floatText(`+${BONUS_COINS_PER_PIECE}`, x, y, 'coin');
+  }
+
+  /**
+   * Combo fechado: mais de uma peca caiu pelo mesmo toque.
+   * @param {number} n
+   * @param {number} x em metros
+   * @param {number} y
+   */
+  onCombo(n, x, y) {
+    audio.combo(n);
+    this.scene.camera.addTrauma(Math.min(0.42, 0.1 + n * 0.05));
+    this.floatText(`${t('combo')} x${n}`, x, y, 'combo');
+  }
+
+  /**
+   * Texto que sobe e some, ancorado num ponto do mundo.
+   * @param {string} text
+   * @param {number} wx em metros
+   * @param {number} wy
+   * @param {string} kind
+   */
+  floatText(text, wx, wy, kind) {
+    const [sx, sy] = this.scene.camera.toScreen(wx, wy);
+    if (!isFinite(sx) || !isFinite(sy)) return;
+    const el = document.createElement('div');
+    el.className = `floater ${kind}`;
+    el.textContent = text;
+    el.style.left = `${sx}px`;
+    el.style.top = `${sy}px`;
+    document.body.appendChild(el);
+    el.animate(
+      [
+        { transform: 'translate(-50%, -50%) scale(0.6)', opacity: 0 },
+        { transform: 'translate(-50%, -110%) scale(1.1)', opacity: 1, offset: 0.25 },
+        { transform: 'translate(-50%, -220%) scale(1)', opacity: 0 },
+      ],
+      { duration: kind === 'combo' ? 1100 : 700, easing: 'cubic-bezier(0.2,0.7,0.3,1)', fill: 'forwards' },
+    ).onfinish = () => el.remove();
+  }
+
+  /**
+   * Fecha a fase vencida: grava o progresso e abre o cartao.
+   *
+   * Separado de onLevelEnd porque entre os dois roda a celebracao, que e quem
+   * decide quantas pecas sobraram - e isso entra no premio.
+   */
+  finishWin() {
+    const session = this.scene.session;
+    const pend = this.pendingWin;
+    if (!session || !pend) return;
+    this.pendingWin = null;
+    this.hideBonusCounter();
+    const result = this.progress.finishLevel({
+      level: this.level,
+      stars: pend.stars,
+      won: pend.won,
+      taps: session.taps,
+      par: session.par || 0,
+      bonusPieces: session.bonusTotal,
+      comboScore: session.comboScore,
+      comboPieces: session.comboPieces,
+    });
+    this.lastResult = result;
+    this.showWin(pend.stars, result, session);
+  }
+
+  /**
    * @param {number} stars
    * @param {*} result
+   * @param {*} [session]
    */
-  showWin(stars, result) {
+  showWin(stars, result, session) {
     audio.win();
     $('winTitle').textContent = t('victory');
     this.setStars('winStars', 0);
     $('winCoins').textContent = '0';
     $('winXp').textContent = '0';
+    $('winPurse').textContent = String(this.progress.data.coins - result.coins - result.bonusCoins);
+
     $('winNote').textContent = result.halved ? t('noHeartsBody') : result.best ? t('newRecord') : '';
-    const next = this.level >= LEVEL_COUNT ? t('home') : t('next');
-    $('winNext').textContent = next;
-    /** @type {HTMLButtonElement} */ ($('winDouble')).disabled = false;
-    $('winDouble').textContent = `${t('doubleReward')}`;
+    $('winNext').textContent = this.level >= LEVEL_COUNT ? t('home') : t('next');
+    $('winRetry').textContent = t('retry');
+
+    // Linha de bonus: so aparece quando houve merito a mostrar, e diz de onde
+    // veio - pecas intactas e combos sao coisas que o jogador pode repetir de
+    // proposito na proxima tentativa.
+    const bonus = $('winBonus');
+    const total = result.bonusCoins + result.bonusXp;
+    if (total > 0 && session) {
+      const partes = [];
+      if (session.bonusTotal > 0) partes.push(`${t('bonusIntact')} x${session.bonusTotal}`);
+      if (session.bestCombo >= 2) partes.push(`${t('combo')} x${session.bestCombo}`);
+      $('winBonusWhat').textContent = partes.join('  ·  ');
+      $('winBonusValue').textContent = `+${result.bonusCoins}`;
+      bonus.hidden = false;
+    } else {
+      bonus.hidden = true;
+    }
     this.show('win');
 
     // Estrelas e contadores animam depois que a tela aparece.
@@ -580,9 +811,12 @@ class Game {
         audio.star(i - 1);
       }, 180 * i);
     }
-    this.countUp($('winCoins'), result.coins, 180 * stars + 120, true);
-    this.flyCoins($('winCoins'), Math.min(12, Math.max(4, Math.round(result.coins / 3))), 180 * stars + 160);
-    this.countUp($('winXp'), result.xp, 180 * stars + 260, false);
+    const moedas = result.coins + result.bonusCoins;
+    this.countUp($('winCoins'), moedas, 180 * stars + 120, true);
+    this.flyCoins($('winCoins'), Math.min(12, Math.max(4, Math.round(moedas / 3))), 180 * stars + 160);
+    this.countUp($('winXp'), result.xp + result.bonusXp, 180 * stars + 260, false);
+    const bolsaAntes = this.progress.data.coins - moedas;
+    this.countUp($('winPurse'), this.progress.data.coins, 180 * stars + 700, false, bolsaAntes);
     if (result.rankUp) {
       window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), 900);
     }
@@ -595,7 +829,7 @@ class Game {
    * @param {number} delay
    */
   flyCoins(from, count, delay) {
-    const target = $('homeCoins');
+    const target = $('winPurse');
     if (!target || !from) return;
     window.setTimeout(() => {
       const a = from.getBoundingClientRect();
@@ -628,14 +862,17 @@ class Game {
    * @param {number} target
    * @param {number} delay
    * @param {boolean} sound
+   * @param {number} [from] valor de partida; a bolsa conta do saldo anterior,
+   *   e nao do zero, senao o jogador ve o dinheiro dele sumir e voltar
    */
-  countUp(el, target, delay, sound) {
+  countUp(el, target, delay, sound, from = 0) {
     window.setTimeout(() => {
-      const steps = Math.min(18, Math.max(1, target));
+      const span = target - from;
+      const steps = Math.min(18, Math.max(1, Math.abs(span)));
       let i = 0;
       const timer = window.setInterval(() => {
         i++;
-        el.textContent = String(Math.round((target * i) / steps));
+        el.textContent = String(Math.round(from + (span * i) / steps));
         if (sound) audio.coin(i);
         if (i >= steps) window.clearInterval(timer);
       }, 42);
@@ -647,10 +884,6 @@ class Game {
     $('loseTitle').textContent = t('gameOver');
     const p = this.progress;
     $('loseNote').textContent = p.depleted ? t('noHeartsBody') : '';
-    const adBtn = /** @type {HTMLButtonElement} */ ($('loseAd'));
-    adBtn.hidden = p.data.hearts >= p.maxHearts;
-    adBtn.disabled = false;
-    adBtn.textContent = t('refillHearts');
     // Embaralhar: so faz sentido quando a fase tem mais de um layout aprovado.
     // Cinco das cem tem um so; ali o botao nao aparece em vez de gastar um
     // consumivel para devolver a mesma coisa.
@@ -660,10 +893,15 @@ class Game {
     shuffle.disabled = restam <= 0;
     shuffle.textContent = restam > 0 ? `${t('shuffle')}  x${restam}` : t('shuffleNone');
 
+    // Pular fase fica sempre a mao, ao lado de "tentar de novo", que e maior e
+    // gratuito. A fase pulada nao ganha estrela, entao o portao do mundo
+    // seguinte continua cobrando o que cobrava - o video adianta o caminho, nao
+    // o progresso.
     const skip = /** @type {HTMLButtonElement} */ ($('loseSkip'));
-    skip.hidden = this.lossStreak < 3;
+    skip.hidden = this.level >= LEVEL_COUNT;
     skip.disabled = false;
     skip.textContent = t('skipLevel');
+    $('loseSkipNote').textContent = skip.hidden ? '' : t('skipNoStars');
     this.show('lose');
   }
 
@@ -673,12 +911,35 @@ class Game {
     this.scene.session.paused = true;
     poki.gameplayStop();
     audio.button();
+    // A trilha tocava na tela de pausa: quem pulsa o sequenciador e o passo da
+    // cena, que segue rodando, e ele nao sabia de pausa nenhuma.
+    audio.holdMusic();
+    this.buildPause();
     this.show('pause');
+  }
+
+  /** Conteudo da tela de pausa: onde o jogador esta e como esta indo. */
+  buildPause() {
+    const session = this.scene.session;
+    const themeId = levelConfig(this.level - 1).theme;
+    $('pauseWhere').textContent = `${THEMES[themeId].label} · ${t('level')} ${this.level}`;
+    this.setStars('pauseStars', session ? session.stars : 0);
+    const par = session && session.par ? ` · ${t('par')} ${session.par}` : '';
+    $('pauseTaps').textContent = session ? `${t('taps')} ${session.taps}${par}` : '';
+    const toggle = (/** @type {string} */ id, /** @type {boolean} */ on) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('off', !on);
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+    };
+    toggle('pauseSound', audio.sfxOn);
+    toggle('pauseMusic', audio.musicOn);
   }
 
   async resumeLevel() {
     audio.button();
     this.paused = false;
+    audio.releaseMusic();
     this.show('game');
     // Voltar de uma parada para o jogo e o momento certo do intervalo, mas so
     // quando havia jogo de fato. Pausar antes do primeiro toque nao e uma
@@ -695,9 +956,32 @@ class Game {
     audio.buttonBack();
     poki.gameplayStop();
     this.paused = false;
+    audio.releaseMusic();
     if (this.scene.session) this.scene.session.paused = false;
+    // Sair no meio da celebracao nao pode custar a fase vencida: o progresso so
+    // e gravado no fim da contagem, entao ele e fechado aqui antes de tudo.
+    if (this.pendingWin) this.commitPendingWin();
+    this.hideBonusCounter();
     this.showAmbient();
     this.show('home');
+  }
+
+  /** Grava uma vitoria pendente sem abrir o cartao. */
+  commitPendingWin() {
+    const session = this.scene.session;
+    const pend = this.pendingWin;
+    if (!session || !pend) return;
+    this.pendingWin = null;
+    this.lastResult = this.progress.finishLevel({
+      level: this.level,
+      stars: pend.stars,
+      won: pend.won,
+      taps: session.taps,
+      par: session.par || 0,
+      bonusPieces: session.bonusDone,
+      comboScore: session.comboScore,
+      comboPieces: session.comboPieces,
+    });
   }
 
   async nextLevel() {
@@ -747,40 +1031,6 @@ class Game {
 
   // ------------------------------------------------------- videos opcionais
 
-  async doubleReward() {
-    const btn = /** @type {HTMLButtonElement} */ ($('winDouble'));
-    btn.disabled = true;
-    const ok = await poki.rewardedBreak('small');
-    if (ok && this.lastResult) {
-      this.progress.addCoins(this.lastResult.coins);
-      this.progress.data.xp += this.lastResult.xp;
-      this.progress.flush();
-      $('winCoins').textContent = String(this.lastResult.coins * 2);
-      $('winXp').textContent = String(this.lastResult.xp * 2);
-      audio.win();
-      this.toast(`+${this.lastResult.coins}`);
-      this.lastResult = null;
-      this.refreshScreen();
-    } else {
-      btn.disabled = false;
-    }
-  }
-
-  async refillByAd() {
-    const btn = /** @type {HTMLButtonElement} */ ($('loseAd'));
-    btn.disabled = true;
-    const ok = await poki.rewardedBreak('small');
-    if (ok) {
-      this.progress.refillHearts();
-      audio.star(2);
-      this.toast(t('heartsFull'));
-      this.refreshScreen();
-      btn.hidden = true;
-    } else {
-      btn.disabled = false;
-    }
-  }
-
   async skipByAd() {
     const btn = /** @type {HTMLButtonElement} */ ($('loseSkip'));
     btn.disabled = true;
@@ -792,6 +1042,9 @@ class Game {
     this.lossStreak = 0;
     const p = this.progress;
     if (this.level >= p.data.unlocked) p.data.unlocked = Math.min(LEVEL_COUNT, this.level + 1);
+    // Sem estrela: o mapa mostra a fase como pulada e o portao seguinte segue
+    // cobrando as estrelas que ela nao deu.
+    p.markSkipped(this.level);
     p.flush();
     this.level = Math.min(LEVEL_COUNT, this.level + 1);
     this.startLevel(this.level);
@@ -877,7 +1130,7 @@ class Game {
 
   buildMap() {
     const p = this.progress;
-    const chave = [p.data.unlocked, getLang(), p.totalStars, this.level].join('|');
+    const chave = [p.data.unlocked, getLang(), p.totalStars, this.level, (p.data.skipped || []).length].join('|');
     const host = $('mapScroll');
     if (host.dataset.built === chave) return;
     host.dataset.built = chave;
@@ -925,7 +1178,15 @@ class Game {
         const unlocked = p.isUnlocked(level);
         const stars = p.starsOf(level);
         const node = document.createElement('button');
-        node.className = 'node' + (unlocked ? '' : ' locked') + (level === this.level ? ' current' : '');
+        // Fase passada por video aparece diferente: ela esta aberta, mas nao
+        // deu estrela, e e exatamente ali que o jogador precisa voltar quando o
+        // portao do mundo seguinte travar.
+        const pulada = p.wasSkipped(level) && stars === 0;
+        node.className =
+          'node' +
+          (unlocked ? '' : ' locked') +
+          (pulada ? ' skipped' : '') +
+          (level === this.level ? ' current' : '');
         node.style.left = `${spot.x}%`;
         node.style.top = `${spot.y}%`;
         node.dataset.level = String(level);

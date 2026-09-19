@@ -16,37 +16,41 @@
 <div id="ui">
 
   <!-- ---------------------------------------------------------- inicio -->
+  <!-- Tres faixas que nao se tocam: nome do jogo em cima, a torre do mundo
+       aparecendo pela faixa vazia do meio, e as opcoes embaixo. A faixa do meio
+       nao tem conteudo de proposito - e o buraco por onde a cena aparece, e
+       fitHomeScene() mede as outras duas para enquadrar a torre ali dentro. -->
   <section class="screen" id="s-home">
-    <div class="hud-top">
-      <div class="stat hearts"><span class="ico">&#10084;</span><span id="homeHearts">5</span></div>
-      <div class="stat coins"><span class="ico">&#9679;</span><span id="homeCoins">0</span></div>
-      <div class="grow"></div>
-      <button class="iconbtn" id="btnSettings" aria-label="Ajustes">&#9881;</button>
-    </div>
-
-    <div class="grow"></div>
-
-    <div class="home-mid">
-      <p class="world-loc" id="homeWorld"></p>
-      <div class="world-dots" id="homeWorldDots"></div>
-      <p class="world-hint" id="homeSwipeHint"></p>
+    <div class="home-top" id="homeTop">
+      <div class="hud-top">
+        <div class="stat hearts"><span class="ico">&#10084;</span><span id="homeHearts">5</span></div>
+        <div class="stat coins"><span class="ico">&#9679;</span><span id="homeCoins">0</span></div>
+        <div class="grow"></div>
+        <button class="iconbtn" id="btnSettings" aria-label="Ajustes">&#9881;</button>
+      </div>
       <h1 class="logo">HEXA DROP</h1>
       <p class="tagline" id="tagline"></p>
     </div>
 
-    <div class="home-actions">
-      <button class="btn primary big wide drop" id="btnPlay"></button>
-      <div class="row">
-        <button class="btn" style="flex:1" id="btnMap"></button>
-        <button class="btn" style="flex:1" id="btnShop"></button>
-      </div>
-    </div>
+    <div class="home-stage"></div>
 
-    <div class="hud-bottom home-foot">
-      <span class="rank-label" id="rankLabel">Rank</span>
-      <span class="rank-value" id="homeRank">0</span>
-      <div class="meter"><i id="homeRankBar"></i></div>
-      <div class="stat"><span class="ico" style="color:var(--gold)">&#9733;</span><span id="homeStars">0</span><small>/300</small></div>
+    <div class="home-base" id="homeBase">
+      <p class="world-loc" id="homeWorld"></p>
+      <div class="world-dots" id="homeWorldDots"></div>
+      <p class="world-hint" id="homeSwipeHint"></p>
+      <div class="home-actions">
+        <button class="btn primary big wide drop" id="btnPlay"></button>
+        <div class="row">
+          <button class="btn" style="flex:1" id="btnMap"></button>
+          <button class="btn" style="flex:1" id="btnShop"></button>
+        </div>
+      </div>
+      <div class="hud-bottom home-foot">
+        <span class="rank-label" id="rankLabel">Rank</span>
+        <span class="rank-value" id="homeRank">0</span>
+        <div class="meter"><i id="homeRankBar"></i></div>
+        <div class="stat"><span class="ico" style="color:var(--gold)">&#9733;</span><span id="homeStars">0</span><small id="homeStarsMax">/270</small></div>
+      </div>
     </div>
   </section>
 
@@ -79,6 +83,14 @@
       <button class="iconbtn" id="gamePause" aria-label="Pausar">&#9208;</button>
     </div>
     <div class="starrow" id="gameStars"><i></i><i></i><i></i></div>
+    <!-- Contagem da celebracao. Fica na faixa livre embaixo do HUD, e nao no
+         meio da tela: ali ela cobria justamente a torre estourando, que e o
+         que o jogador quer ver. -->
+    <div class="bonus" id="bonusBox" hidden>
+      <span class="bonus-label" id="bonusLabel"></span>
+      <b class="bonus-count" id="bonusCount">0</b>
+      <span class="bonus-gain" id="bonusGain"></span>
+    </div>
     <div class="grow"></div>
     <div class="shade bottom"></div>
     <div class="hud-bottom bare">
@@ -100,13 +112,21 @@
         <div class="reward"><b id="winCoins">0</b><span id="winCoinsLbl"></span></div>
         <div class="reward"><b id="winXp">0</b><span id="winXpLbl"></span></div>
       </div>
+      <!-- De onde veio o extra. Peca intacta e combo sao coisas que o jogador
+           pode repetir de proposito, entao vale dizer o nome delas. -->
+      <div class="bonus-line" id="winBonus" hidden>
+        <span class="bonus-line-lbl" id="winBonusLbl"></span>
+        <span class="bonus-line-what" id="winBonusWhat"></span>
+        <b class="bonus-line-val" id="winBonusValue"></b>
+      </div>
       <p id="winNote"></p>
       <div class="row">
+        <button class="btn" id="winRetry"></button>
         <button class="btn primary big" id="winNext"></button>
       </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" id="winHome"></button>
-        <button class="btn ad" id="winDouble"></button>
+      <div class="row foot-row">
+        <button class="btn ghost" id="winHome"></button>
+        <div class="purse"><span class="ico">&#9679;</span><b id="winPurse">0</b><span id="winPurseLbl"></span></div>
       </div>
     </div>
   </section>
@@ -117,18 +137,19 @@
     <div class="card end-card">
       <h2 id="loseTitle"></h2>
       <p id="loseNote"></p>
+      <!-- O video fica ao lado de "tentar de novo", que e maior e gratuito:
+           exigencia da Poki e, aqui, tambem a verdade do jogo - pular nao da
+           estrela, entao nunca e o caminho melhor. -->
       <div class="row">
         <button class="btn primary big" id="loseRetry"></button>
+        <button class="btn ad" id="loseSkip"></button>
       </div>
-      <div class="row" style="margin-top:10px">
+      <p class="fineprint" id="loseSkipNote"></p>
+      <div class="row">
         <button class="btn wide" id="loseShuffle"></button>
       </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" id="loseHome"></button>
-        <button class="btn ad" id="loseAd"></button>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn ad wide" id="loseSkip" hidden></button>
+      <div class="row foot-row">
+        <button class="btn ghost" id="loseHome"></button>
       </div>
     </div>
   </section>
@@ -136,12 +157,19 @@
   <!-- ----------------------------------------------------------- pausa -->
   <section class="screen" id="s-pause">
     <div class="veil"></div>
-    <div class="card">
+    <div class="card pause-card">
       <h2 id="pauseTitle"></h2>
-      <div class="row" style="flex-direction:column">
+      <p class="pause-where" id="pauseWhere"></p>
+      <div class="starrow" id="pauseStars"><i></i><i></i><i></i></div>
+      <p class="pause-taps" id="pauseTaps"></p>
+      <div class="col">
         <button class="btn primary big wide" id="pauseResume"></button>
         <button class="btn wide" id="pauseRestart"></button>
         <button class="btn wide" id="pauseHome"></button>
+      </div>
+      <div class="pause-toggles">
+        <button class="toggle" id="pauseSound" aria-pressed="true"><span class="ico">&#9834;</span><span id="pauseSoundLbl"></span></button>
+        <button class="toggle" id="pauseMusic" aria-pressed="true"><span class="ico">&#9835;</span><span id="pauseMusicLbl"></span></button>
       </div>
     </div>
   </section>

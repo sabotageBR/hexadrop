@@ -131,6 +131,17 @@ export const SKINS = [
 ];
 
 /**
+ * Quanto vale cada peca que sobrou de pe no fim da fase.
+ *
+ * Medido no validador: 76% das vitorias deixam alguma peca, com media de 3,2 e
+ * picos de dez. A tres moedas por peca o bonus tipico fica perto de 40% do
+ * ganho base - grande o bastante para o jogador querer repetir a jogada, longe
+ * o bastante de virar a principal fonte de moeda.
+ */
+export const BONUS_COINS_PER_PIECE = 3;
+export const BONUS_XP_PER_PIECE = 2;
+
+/**
  * Estrelas acumuladas para abrir cada mundo.
  *
  * O teto e 300 (100 fases x 3 estrelas). A curva e folgada no comeco - quem

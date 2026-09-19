@@ -76,13 +76,21 @@ export function levelConfig(index, soften = 0) {
 
   // --- altura, com dente de serra e fases de folego -----------------------
   // A altura e o eixo que mais gasta toques, mas tambem o que mais acumula
-  // risco: cada degrau e uma chance de o hexagono tombar. Por isso ela para em
-  // 16 e o resto da dificuldade vem de pedestal estreito, materiais e vento.
-  let rows = 4 + Math.round(Math.pow(p, 0.8) * 11);
+  // risco: cada degrau e uma chance de o hexagono tombar.
+  //
+  // Sao duas curvas, e vale a maior das duas. A primeira e a de sempre e manda
+  // ate a metade do jogo; a segunda, de expoente mais alto, so ultrapassa ela
+  // perto do fim. O `max` e o que garante que NENHUMA fase fique mais baixa do
+  // que ja era - o objetivo era apertar o fim do jogo, nao aliviar o comeco.
+  //
+  // O teto e 24. Ele nao aperta o enquadramento: a camera limita as linhas
+  // visiveis a 13 e acompanha o hexagono (render/camera.js), entao uma torre
+  // mais alta rola mais, e nao encolhe a peca na tela.
+  let rows = 4 + Math.round(Math.max(Math.pow(p, 0.8) * 11, Math.pow(p, 1.35) * 18));
   const inWorld = i % 10;
   if (inWorld === 9) rows += 2; // fase final de cada mundo
   else if (inWorld === 0 && i > 0) rows -= 1; // alivio depois do chefe
-  rows = Math.max(4, Math.min(16, rows));
+  rows = Math.max(4, Math.min(24, rows));
 
   // --- complexidade das formas -------------------------------------------
   let tierMax = 1;

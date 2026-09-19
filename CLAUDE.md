@@ -64,7 +64,43 @@ o que `GameScene.load()` faz.
 **`main.js` é o único lugar que decide telas, progressão e quando falar com a Poki.**
 Nenhum outro módulo importa `poki.js`. Mantenha assim.
 
+### Celebração de fim de fase e combo
+
+Vencer não abre o cartão na hora. `onLevelEnd` guarda o resultado em `pendingWin` e chama
+`Session.startBonus()`: as peças **destrutíveis que sobraram** estouram uma a uma, de cima
+para baixo, cada uma dando um empurrão nas vizinhas (`PhysicsWorld.burstAt`, que só aplica
+impulso e nunca destrói) e um som que sobe com a contagem. O cartão só entra em
+`onBonusDone`, depois de um rescaldo de 0,9 s — sem ele o cartão subia no mesmo quadro da
+última explosão e cortava justamente o fim da comemoração.
+
+Três coisas que essa fase precisa respeitar:
+
+- **`evaluate()` não roda durante o bônus.** Esvaziar a torre dispararia `stuck` por cima
+  do resultado que o jogador acabou de conquistar.
+- **O ritmo acelera e tem teto.** O intervalo cai de 0,20 s para 0,07 s e a celebração
+  inteira cabe em ~3,2 s: com trinta peças sobrando ela aperta o passo em vez de arrastar.
+- **Sair no meio não pode custar a fase.** `quitLevel()` chama `commitPendingWin()` antes
+  de voltar para a home, porque o progresso só é gravado no fim da contagem.
+
+O **combo** é a outra metade: uma jogada abre no `tap()` e fecha quando a cena volta ao
+repouso (ou em 1,4 s). Tudo que quebrar nesse intervalo conta junto — a peça tocada, a
+cadeia de TNT, o que o desabamento levou. Esperar o repouso, e não o quadro seguinte, é o
+que faz o combo enxergar desabamento. A `Session` instala a **própria** `world.onDestroy`
+para contar; `GameScene.load()` embrulha essa função, então a contagem sobrevive.
+
+Peça intacta e combo valem moedas **e** XP (`progress.finishLevel`), nunca estrelas: os
+portões de mundo continuam cobrando exatamente o que cobravam.
+
 ### Determinismo e as fases assadas
+
+A altura das torres vai de 4 a **24 linhas**, por duas curvas das quais vale a maior
+(`levelConfig`): a antiga manda até a metade do jogo e a de expoente alto só ultrapassa
+ela perto do fim, então nenhuma fase ficou mais baixa do que já era. Isso não aperta o
+enquadramento — `camera.fit()` limita as linhas visíveis a 13 e acompanha o hexágono, de
+modo que a torre mais alta rola mais, e não encolhe a peça na tela. O que precisou subir
+junto foi o orçamento do validador: `MAX_SETTLE` de 420 para 600 passos e `maxTaps` de
+60 para 85, porque uma torre do fim do jogo ainda está desabando quando os sete segundos
+de antes acabavam.
 
 `src/game/levelgen.js` é puro e determinístico: a mesma seed produz o mesmo layout no
 validador em Node e no cliente. `src/game/levels.gen.js` guarda só o degrau de
@@ -141,11 +177,15 @@ Por cima da foto vai um véu da cor do horizonte do tema em `soft-light` — luz
 não da peça. Ele é homogêneo de propósito: a peça gira, e um gradiente denunciaria onde
 era o "cima" do sprite.
 
-No mundo **neon** as peças têm corpo opaco, não só contorno. O preenchimento
-translúcido de antes deixava o sol listrado do cenário aparecer através da peça, e
-duas peças vizinhas viravam a mesma mancha — por isso o fundo desse mundo também é
-mais escuro no miolo da tela (`bruma` em `backgrounds.js`), onde a torre fica. Cor
-viva é das peças; o cenário é cenário.
+No mundo **neon** a peça é um tubo de luz com vidro fumê dentro: miolo translúcido
+escuro, traço aceso e grosso, e **nenhuma fotografia** — é o único tema com
+`photo: false`, que `paintPiece` consulta para pular o ladrilho. Já foi corpo opaco,
+porque o sol listrado do cenário aparecia através da peça; o sol saiu de
+`backgrounds.js` e com ele a razão do corpo opaco. Quem garante a leitura agora é a
+`bruma`, que escurece o miolo da tela — onde a torre fica — e deixa a grade em
+perspectiva viva só nas laterais e no rodapé. A obsidiana é a exceção e vai quase
+opaca: é a única que o jogador não pode quebrar, e um corpo denso diz isso antes de
+ele tentar.
 
 A TNT ganha listras diagonais em qualquer tema (`hazardStripes` em `sprites.js`),
 porque só a cor não separava a TNT laranja da madeira âmbar — e confundir as duas
@@ -160,15 +200,27 @@ polaridade vai em `data-ui` no root, e superfícies usam `var(--wash)` em vez de
 cravado. `.btn.ad` fica fora do tema — a Poki exige que o botão de vídeo seja constante.
 
 Além da paleta, o mundo escolhe um **kit** de cromado (`render/uikit.js` → `data-kit` no
-root): `atelier`, `hexdeck`, `ficha` ou `queda` mudam o botão primário, o cartão de fim
-de fase e onde ficam as estrelas do HUD. São quatro e não oito porque o kit é a cara de
-uma família de mundos, não da fase. O kit muda o cromado, nunca o que cabe na tela: em
-paisagem baixa a regra de `@media` recoloca as estrelas no canto para qualquer kit.
+root): `neon`, `atelier`, `hexdeck`, `ficha` ou `queda` mudam o botão primário, o cartão
+de fim de fase e onde ficam as estrelas do HUD. São cinco e não oito porque o kit é a
+cara de uma família de mundos, não da fase — o `neon` é o único de um tema só, porque o
+anel de luz é a assinatura desse mundo e ficaria errado no futurista, que é frio e
+chapado de propósito. O kit muda o cromado, nunca o que cabe na tela: em paisagem baixa
+a regra de `@media` recoloca as estrelas no canto para qualquer kit. O cartão da **pausa**
+tem fundo em todos os kits, inclusive no `queda`, onde os de vitória e derrota são
+transparentes: dava para ver o jogo atrás, mas não dava para ler a tela.
 
 A tela inicial é um **carrossel de mundos** — a cena de fundo é uma fase real do mundo em
 cartaz, e deslizar (ou tocar nas bolinhas) troca de mundo entre os já abertos. O rótulo
 do botão de jogar sai de `buildHomeWorlds()`, junto com as bolinhas, e não de
 `refreshScreen()`: deslizar não passa por lá, e o botão prometia uma fase e abria outra.
+
+A home é **três faixas que não se tocam**: nome do jogo em cima, um vão vazio no meio e
+as opções embaixo. O vão não tem conteúdo de propósito — é por ele que a torre aparece.
+`fitHomeScene()` mede a altura real das outras duas faixas e chama `scene.setInsets()`
+para enquadrar a cena exatamente ali; medir, em vez de cravar números, é o que sustenta
+a troca de idioma e de tamanho de janela. Antes havia um único espaçador antes do bloco
+central, e tudo se empilhava na metade de baixo: o título ficava sobre a torre e o
+rodapé de patente saía da tela.
 
 ### Materiais que cedem com o tempo
 
@@ -189,6 +241,25 @@ mantém as fases antigas idênticas passo a passo.
 `tnt` não precisou de campo novo: `breakSpeed` + `explodeRadius` já compõem "detona com
 pancada forte". A cera só é sorteada no mundo lava, por peso em `levelConfig`, e não por
 uma bandeira no `LevelLayout` — assim `PhysicsWorld` segue sem conhecer tema.
+
+### Áudio
+
+Tudo sintetizado em Web Audio, sem um byte de asset. A trilha é um sequenciador com
+lookahead pulsado pelo passo da cena (`audio.updateMusic()` em `scene.step`), e não por
+timer próprio.
+
+- **A forma tem 32 compassos em quatro seções (A A' B A'')**, com máscaras rítmicas que
+  têm silêncio. A versão anterior atacava em toda colcheia par, com baixo sempre nos
+  mesmos dois lugares e loop de oito compassos — era um relógio. O silêncio é o que tira
+  o som de metrônomo; a seção B sobe uma oitava, abre o ritmo e traz o pad.
+- **A home tem trilha própria** (`MAIN_THEME` em `main.js`), que não muda ao deslizar o
+  carrossel. Antes ela herdava a música do mundo em cartaz, e a identidade sonora do jogo
+  dependia de onde o jogador tinha parado.
+- **A trilha para fora da aba e na pausa.** `AudioEngine` tem o próprio handler de
+  `visibilitychange`: suspende o contexto e, ao voltar, **ressincroniza** `_musicNext` —
+  sem isso o agendador despejava de uma vez todas as notas vencidas. A pausa usa
+  `holdMusic()`/`releaseMusic()`, porque quem pulsa o sequenciador é o passo da cena, que
+  segue rodando e não sabe de pausa nenhuma.
 
 ### Poki
 
@@ -213,6 +284,11 @@ padrão de tamanho igual ou maior, e a recompensa só vale quando o retorno é
 estritamente `true`. Nada de vídeo como condição para progredir: os corações são
 "suaves" — sem corações o jogador continua jogando e só ganha metade das recompensas
 (`game/progress.js`).
+
+Na **vitória** não há vídeo nenhum: só Repetir e Próxima. Na **derrota** há um, "pular
+fase", sempre visível e ao lado de "tentar de novo", que é maior e gratuito. Pular
+**não grava estrela** (`progress.markSkipped`), então o portão do mundo seguinte continua
+cobrando o que cobrava — o vídeo adianta o caminho, nunca o progresso.
 
 ### O que `tools/verify-build.mjs` reprova
 

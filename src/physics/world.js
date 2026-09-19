@@ -418,6 +418,60 @@ export class PhysicsWorld {
     if (this.hexBody) this.hexBody.setAwake(true);
   }
 
+  /**
+   * Empurrao radial que NAO destroi nada.
+   *
+   * E o sopro da celebracao de fim de fase: a peca contada some por
+   * destroyPiece, e este empurrao e o que faz a vizinhanca reagir. Separado de
+   * _resolveExplosions de proposito - aquele laco destroi tudo que for
+   * destrutivel dentro do raio, e usa-lo aqui levaria junto as pecas que ainda
+   * serao contadas uma a uma, que e justamente a graca da contagem.
+   *
+   * Fica fora de snapshot()/restore() e nunca e chamado de dentro de step():
+   * nao faz parte da simulacao que o solucionador prova.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @param {number} radius
+   * @param {number} [force]
+   */
+  burstAt(x, y, radius, force = 4) {
+    const r2 = radius * radius;
+    for (const p of this.pieces) {
+      if (!p.alive || !p.body.isDynamic()) continue;
+      const c = p.body.getPosition();
+      const dx = c.x - x;
+      const dy = c.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > r2) continue;
+      const d = Math.sqrt(d2) || 0.001;
+      p.body.setAwake(true);
+      p.body.applyLinearImpulse(
+        new pl.Vec2((dx / d) * force, (dy / d) * force),
+        p.body.getWorldCenter(),
+        true,
+      );
+    }
+    // O hexagono leva um empurrao bem menor: ele ja pousou, e a celebracao
+    // existe para comemorar isso, nao para arrancar ele do pedestal.
+    if (this.hexBody) {
+      const c = this.hexBody.getPosition();
+      const dx = c.x - x;
+      const dy = c.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= r2) {
+        const d = Math.sqrt(d2) || 0.001;
+        this.hexBody.setAwake(true);
+        this.hexBody.applyLinearImpulse(
+          new pl.Vec2((dx / d) * force * 0.3, (dy / d) * force * 0.3),
+          this.hexBody.getWorldCenter(),
+          true,
+        );
+      }
+    }
+    this.wakeAround(x, y, radius + 2);
+  }
+
   _resolveExplosions() {
     while (this._pendingExplosions.length) {
       const boom = this._pendingExplosions.shift();

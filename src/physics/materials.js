@@ -9,12 +9,17 @@
 /**
  * Orcamento de tempo dos materiais que cedem por contato.
  *
- * O solucionador roda no maximo MAX_SETTLE = 420 passos por toque. Cada carga
- * custa holdTime * 60 passos que antes nao existiam, mais o reassentamento
- * depois da quebra. No pior caso o hexagono cai de um material temporal em
- * outro dentro do mesmo assentamento:
+ * O solucionador roda no maximo MAX_SETTLE passos por toque. Cada carga custa
+ * holdTime * 60 passos que antes nao existiam, mais o reassentamento depois da
+ * quebra. No pior caso o hexagono cai de um material temporal em outro dentro
+ * do mesmo assentamento:
  *
- *     2 * holdTime * 60 + 120 < 420   =>   holdTime < 2.5 s
+ *     2 * holdTime * 60 + 120 < MAX_SETTLE
+ *
+ * Com os 420 passos originais isso dava holdTime < 2.5 s, que e o limite que os
+ * valores abaixo respeitam. O orcamento subiu para 600 junto com o teto de
+ * altura das torres, entao hoje sobra folga - mas os valores ficam onde estao:
+ * 2,5 s ja e o limite do que o jogador aguenta esperar parado.
  *
  * Estourar esse teto faz o assentamento truncar no meio do movimento e o
  * validador julgar a fase com a cena ainda em queda. Nenhum holdTime aqui pode

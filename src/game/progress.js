@@ -8,7 +8,10 @@
 
 import { load, save, isPersistent } from '../core/storage.js';
 import { LEVEL_COUNT } from './levelgen.js';
-import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars } from './content.js';
+import {
+  rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars,
+  BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE,
+} from './content.js';
 
 const BASE_HEARTS = 5;
 /** Um coracao a cada dez minutos de relogio real. */
@@ -29,6 +32,7 @@ const SAVE_VERSION = 1;
  * @property {Record<string, number>} upgrades
  * @property {Record<string, number>} boosts consumiveis restantes, por id
  * @property {number[]} gatesSeen mundos cuja abertura ja foi encenada
+ * @property {number[]} skipped fases passadas por video, sem estrela
  * @property {number} dailyAt
  * @property {number} plays
  */
@@ -48,6 +52,7 @@ function blank() {
     upgrades: {},
     boosts: Object.fromEntries(BOOSTS.map((b) => [b.id, b.inicial])),
     gatesSeen: [],
+    skipped: [],
     dailyAt: 0,
     plays: 0,
   };
@@ -116,12 +121,6 @@ export class Progress {
     this.data.hearts--;
     this.flush();
     return true;
-  }
-
-  refillHearts() {
-    this.data.hearts = this.maxHearts;
-    this.data.heartsAt = Date.now();
-    this.flush();
   }
 
   /** @returns {boolean} recompensas pela metade quando sem coracoes */
@@ -229,7 +228,11 @@ export class Progress {
    * @param {boolean} o.won
    * @param {number} o.taps
    * @param {number} o.par
-   * @returns {{coins:number, xp:number, halved:boolean, best:boolean, rankUp:boolean}}
+   * @param {number} [o.bonusPieces] pecas que sobraram e estouraram na celebracao
+   * @param {number} [o.comboScore] soma de n^2 dos combos da fase
+   * @param {number} [o.comboPieces] soma de n dos combos da fase
+   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number,
+   *   halved:boolean, best:boolean, rankUp:boolean}}
    */
   finishLevel(o) {
     const d = this.data;
@@ -251,19 +254,59 @@ export class Progress {
       if (best) coins += 4;
     }
 
+    // Perica: cada peca que o jogador NAO precisou gastar rende, e cada combo
+    // rende pelo quadrado do tamanho. E o que faz "sobrou peca" virar meta em
+    // vez de sobra. Nao toca em estrela nenhuma - os portoes de mundo continuam
+    // pedindo exatamente o que pediam antes.
+    const bonusPieces = Math.max(0, o.bonusPieces || 0);
+    const comboScore = Math.max(0, o.comboScore || 0);
+    const comboPieces = Math.max(0, o.comboPieces || 0);
+    let bonusCoins = 0;
+    let bonusXp = 0;
+    if (o.stars > 0) {
+      bonusCoins = bonusPieces * BONUS_COINS_PER_PIECE + comboScore;
+      bonusXp = bonusPieces * BONUS_XP_PER_PIECE + comboPieces;
+    }
+
     const halved = this.depleted;
     if (halved) {
       coins = Math.floor(coins / 2);
       xp = Math.floor(xp / 2);
+      bonusCoins = Math.floor(bonusCoins / 2);
+      bonusXp = Math.floor(bonusXp / 2);
     }
-    coins = Math.round(coins * upgradeEffects(d.upgrades).coinMultiplier);
+    const mult = upgradeEffects(d.upgrades).coinMultiplier;
+    coins = Math.round(coins * mult);
+    bonusCoins = Math.round(bonusCoins * mult);
 
     const rankBefore = this.rank;
-    d.coins += coins;
-    d.xp += xp;
+    d.coins += coins + bonusCoins;
+    d.xp += xp + bonusXp;
     const rankUp = this.rank > rankBefore;
     this.flush();
-    return { coins, xp, halved, best, rankUp };
+    return { coins, xp, bonusCoins, bonusXp, halved, best, rankUp };
+  }
+
+  /**
+   * Marca uma fase como passada por video.
+   *
+   * Nao grava estrela, e e essa a razao de existir: o mapa precisa distinguir
+   * "pulei" de "nunca joguei", e o portao seguinte continua cobrando as
+   * estrelas que essa fase nao deu.
+   *
+   * @param {number} level
+   */
+  markSkipped(level) {
+    if (!Array.isArray(this.data.skipped)) this.data.skipped = [];
+    if (!this.data.skipped.includes(level)) {
+      this.data.skipped.push(level);
+      this.flush();
+    }
+  }
+
+  /** @param {number} level @returns {boolean} */
+  wasSkipped(level) {
+    return Array.isArray(this.data.skipped) && this.data.skipped.includes(level);
   }
 
   /** @param {number} amount */

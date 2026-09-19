@@ -20,7 +20,9 @@ const STEP = 1 / 60;
 const MIN_SETTLE = 12;
 // Um colapso de torre alta leva bem mais que dois segundos. Cortar cedo faz
 // o solucionador tocar no meio do caos e julgar a fase impossivel sem razao.
-const MAX_SETTLE = 420;
+// Com o teto de altura em 24 linhas os sete segundos de antes ficaram curtos:
+// uma torre do fim do jogo ainda esta desabando quando o orcamento acabava.
+const MAX_SETTLE = 600;
 
 /**
  * @param {PhysicsWorld} world
@@ -427,7 +429,10 @@ export function settle(world) {
  */
 export function rollout(layout, opts) {
   const rng = new Rng(opts.seed >>> 0);
-  const maxTaps = opts.maxTaps || 60;
+  // Uma torre de 24 linhas por 5 colunas passa de quarenta pecas. Com sessenta
+  // toques as politicas ingenuas - que existem para medir o quanto a fase
+  // perdoa erro - esbarravam no teto antes de errar o bastante.
+  const maxTaps = opts.maxTaps || 85;
   const world = new PhysicsWorld();
   world.build(layout);
 
