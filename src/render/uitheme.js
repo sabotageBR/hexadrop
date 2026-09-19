@@ -11,6 +11,8 @@
  * que nao dao para resolver so trocando cor.
  */
 
+import { kitForTheme } from './uikit.js';
+
 /**
  * Luminancia aproximada de uma cor #rgb ou #rrggbb.
  * @param {string} hex
@@ -93,5 +95,6 @@ export function applyUiTheme(theme) {
   set('--wash', dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)');
 
   root.setAttribute('data-ui', dark ? 'dark' : 'light');
+  root.setAttribute('data-kit', kitForTheme(theme.id));
   root.style.colorScheme = dark ? 'dark' : 'light';
 }

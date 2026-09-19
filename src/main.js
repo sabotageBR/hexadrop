@@ -14,6 +14,7 @@ import { Progress } from './game/progress.js';
 import { UPGRADES, BOOSTS, gateStars, xpForRank, skin as getSkin } from './game/content.js';
 import { THEMES } from './render/themes.js';
 import { applyUiTheme } from './render/uitheme.js';
+import { loadTextures } from './render/textures.js';
 import { material as getMaterial } from './physics/materials.js';
 import { audio } from './core/audio.js';
 import { poki } from './poki.js';
@@ -54,6 +55,8 @@ class Game {
     this.toastTimer = 0;
     this.tutTimer = 0;
     this.pendingHeart = false;
+    this.homeWorld = Math.floor((this.level - 1) / 10);
+    this.homeSwiped = false;
   }
 
   // ---------------------------------------------------------------- boot
@@ -75,7 +78,7 @@ class Game {
     };
 
     $('loaderBar').style.width = '35%';
-    await poki.init();
+    await Promise.all([poki.init(), loadTextures()]);
     $('loaderBar').style.width = '75%';
 
     // Cena de fundo da tela inicial: uma fase real rodando atras do menu.
@@ -95,6 +98,32 @@ class Game {
     window.setInterval(() => this.tickHearts(), 5000);
   }
 
+  bindHomeSwipe() {
+    const el = $('s-home');
+    let x0 = 0;
+    let y0 = 0;
+    let armado = false;
+    el.addEventListener('pointerdown', (e) => {
+      // Sem a bandeira, apertar um botao guardava a origem do gesto anterior:
+      // o pointerup do botao virava um deslize e trocava de mundo sozinho.
+      armado = !(/** @type {HTMLElement} */ (e.target).closest('button'));
+      x0 = e.clientX;
+      y0 = e.clientY;
+    });
+    el.addEventListener('pointerup', (e) => {
+      const valia = armado;
+      armado = false;
+      if (!valia || this.screen !== 'home') return;
+      const dx = e.clientX - x0;
+      const dy = e.clientY - y0;
+      if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy)) return;
+      const dir = dx < 0 ? 1 : -1;
+      let w = this.homeWorld + dir;
+      while (w >= 0 && w < WORLD_COUNT && !this.progress.worldOpen(w)) w += dir;
+      if (w >= 0 && w < WORLD_COUNT) this.previewWorld(w);
+    });
+  }
+
   // -------------------------------------------------------------- telas
 
   /** @param {string} name */
@@ -103,6 +132,10 @@ class Game {
     const el = document.getElementById('s-' + name);
     if (el) el.classList.add('on');
     this.screen = name;
+    if (name !== 'game') {
+      const tut = $('tut');
+      if (tut) tut.classList.add('hide');
+    }
     this.refreshScreen();
     // No mobile, afasta o botao flutuante da Poki da HUD do topo.
     poki.movePill(name === 'game' ? 0 : 0, name === 'game' ? 64 : 24);
@@ -138,9 +171,7 @@ class Game {
       else this.scrollMapToCurrent();
     }
     if (this.screen === 'shop') this.buildShop();
-    if (this.screen === 'home') {
-      $('btnPlay').textContent = `${t('play')}  ${this.level}`;
-    }
+    if (this.screen === 'home') this.buildHomeWorlds();
     const daily = $('btnDaily');
     if (daily) {
       daily.textContent = p.dailyReady ? t('dailyBonus') : t('comeBackTomorrow');
@@ -165,7 +196,8 @@ class Game {
     set('tagline', t('credits'));
     set('btnMap', t('levels'));
     set('btnShop', t('shop'));
-    set('btnSettings', t('settings'));
+    const gear = document.getElementById('btnSettings');
+    if (gear) gear.setAttribute('aria-label', t('settings'));
     set('rankLabel', t('playerLevel'));
     set('mapTitle', t('levels'));
     set('shopTitle', t('shop'));
@@ -210,8 +242,15 @@ class Game {
     $('btnPlay').onclick = () => {
       audio.unlock();
       audio.button();
-      this.startLevel(this.level);
+      this.startLevel(this.homeTarget());
     };
+    $('homeWorldDots').onclick = (ev) => {
+      const btn = ev.target && /** @type {HTMLElement} */ (ev.target).closest('button[data-world]');
+      if (!btn) return;
+      audio.unlock();
+      this.previewWorld(Number(btn.dataset.world));
+    };
+    this.bindHomeSwipe();
     $('btnMap').onclick = go('map');
     $('btnShop').onclick = go('shop');
     $('btnSettings').onclick = go('settings');
@@ -285,6 +324,7 @@ class Game {
       }
       this.progress.reset();
       this.level = 1;
+      this.homeWorld = 0;
       this._confirmReset = false;
       $('setReset').textContent = t('reset');
       this.toast(t('reset'));
@@ -335,10 +375,10 @@ class Game {
     return { session, theme: config.theme };
   }
 
-  /** Cena de fundo do menu: uma fase real, sem interacao relevante. */
+  /** Cena de fundo do menu: uma fase real do mundo em preview. */
   showAmbient() {
-    // Uma fase alta rende um cenario melhor atras do menu do que a fase 1.
-    const level = Math.max(12, Math.min(LEVEL_COUNT, this.level));
+    const w = Math.max(0, Math.min(WORLD_COUNT - 1, this.homeWorld | 0));
+    const level = Math.min(LEVEL_COUNT, w * 10 + 6);
     const { session, theme } = this.makeSession(level);
     session.onEnd = null;
     session.onStar = null;
@@ -346,6 +386,70 @@ class Game {
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
     applyUiTheme(this.scene.theme);
     audio.setMusic_(MUSIC[theme] || MUSIC.neon);
+    this.buildHomeWorlds();
+  }
+
+  /**
+   * Fase que o botao de jogar abre: a atual, ou a primeira do mundo que o
+   * jogador esta olhando no carrossel. O rotulo le daqui tambem - senao o
+   * botao dizia "Jogar 100" e comecava a fase 61.
+   * @returns {number}
+   */
+  homeTarget() {
+    const w = Math.max(0, Math.min(WORLD_COUNT - 1, this.homeWorld | 0));
+    if (w === Math.floor((this.level - 1) / 10)) return this.level;
+    const first = w * 10 + 1;
+    return this.progress.isUnlocked(first) ? first : this.level;
+  }
+
+  /** Bolinhas do carrossel de mundos na tela inicial. */
+  buildHomeWorlds() {
+    const host = $('homeWorldDots');
+    const label = $('homeWorld');
+    const play = $('btnPlay');
+    // O rotulo do botao sai daqui, e nao de refreshScreen: deslizar o
+    // carrossel nao passa por la, e o botao ficava dizendo a fase do mundo
+    // anterior enquanto abria a primeira fase do mundo em cartaz.
+    if (play) play.textContent = `${t('play')}  ${this.homeTarget()}`;
+    if (!host) return;
+    const w = Math.max(0, Math.min(WORLD_COUNT - 1, this.homeWorld | 0));
+    const themeId = levelConfig(w * 10).theme;
+    if (label) label.textContent = `${t('world')} ${w + 1} · ${THEMES[themeId].label}`;
+    if (host.childElementCount !== WORLD_COUNT) {
+      host.innerHTML = '';
+      for (let i = 0; i < WORLD_COUNT; i++) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.world = String(i);
+        host.appendChild(b);
+      }
+    }
+    let abertos = 0;
+    for (let i = 0; i < host.children.length; i++) {
+      const b = /** @type {HTMLButtonElement} */ (host.children[i]);
+      const aberto = this.progress.worldOpen(i);
+      if (aberto) abertos++;
+      b.classList.toggle('on', i === w);
+      b.classList.toggle('locked', !aberto);
+      b.setAttribute('aria-label', `${t('world')} ${i + 1}`);
+    }
+    // A dica some assim que o gesto e descoberto: repetir vira ruido.
+    const dica = $('homeSwipeHint');
+    if (dica) dica.textContent = abertos > 1 && !this.homeSwiped ? t('swipeWorlds') : '';
+  }
+
+  /** @param {number} world */
+  previewWorld(world) {
+    const w = Math.max(0, Math.min(WORLD_COUNT - 1, world | 0));
+    if (!this.progress.worldOpen(w)) {
+      this.toast(t('gateLocked'));
+      return;
+    }
+    if (w === this.homeWorld) return;
+    this.homeWorld = w;
+    this.homeSwiped = true;
+    audio.button();
+    this.showAmbient();
   }
 
   /** @param {number} level */
@@ -363,7 +467,9 @@ class Game {
     applyUiTheme(this.scene.theme);
     audio.setMusic_(MUSIC[theme] || MUSIC.neon);
     this.setStars('gameStars', 0);
-    $('gameLevel').textContent = `${t('level')} ${this.level}`;
+    const themeId = levelConfig(this.level - 1).theme;
+    $('gameLevel').textContent = `${THEMES[themeId].label} · ${this.level}`;
+    this.homeWorld = Math.floor((this.level - 1) / 10);
     // A dica so aparece depois de tropecar duas vezes na mesma fase, e sempre
     // ao lado de um botao padrao. Nunca e condicao para progredir.
     const showHelp = this.lossStreak >= 2;

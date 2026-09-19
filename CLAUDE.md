@@ -123,6 +123,24 @@ fora da tela, com o brilho embutido; cada quadro é `drawImage` sob transformaç
 (`render/sprites.js`). **Isso só funciona porque o zoom é fixo durante a fase** — o
 cache é remontado em `GameScene.refit()`, que roda no resize e ao carregar a fase.
 
+O material é uma **foto**, não um estilo de pintura por tema. `render/textures.js`
+carrega os doze JPGs de `render/tex/` (192x192, `import.meta.glob`, embutidos no
+bundle porque cabem no `assetsInlineLimit` — nenhuma requisição nova) e devolve um
+ladrilho na escala da peça, que `paintPiece` usa como `createPattern` recortado na
+silhueta do poliminó. Três armadilhas já pagas:
+
+- **O ladrilho é espelhado em quatro quadrantes.** As fotos não são sem emenda; repetidas
+  cruas deixavam uma borda clara atravessando a pedra como um remendo.
+- **O desvio de fase do padrão tem que ser somado de volta no `fillRect`.** Só
+  transladar o contexto deixava a direita e a base de qualquer peça menor que o desvio
+  sem textura nenhuma.
+- **`loadTextures()` é esperado antes da primeira cena** (`main.js`, `proto.js`): o cache
+  de sprites é montado uma vez e não se refaz sozinho quando a imagem chega depois.
+
+Por cima da foto vai um véu da cor do horizonte do tema em `soft-light` — luz do mundo,
+não da peça. Ele é homogêneo de propósito: a peça gira, e um gradiente denunciaria onde
+era o "cima" do sprite.
+
 No mundo **neon** as peças têm corpo opaco, não só contorno. O preenchimento
 translúcido de antes deixava o sol listrado do cenário aparecer através da peça, e
 duas peças vizinhas viravam a mesma mancha — por isso o fundo desse mundo também é
@@ -140,6 +158,17 @@ TNT: a bomba espera o dedo do jogador e o vidro não espalha nada.
 CSS a cada `scene.load`. Três temas (classic, candy, paper) pedem interface clara: a
 polaridade vai em `data-ui` no root, e superfícies usam `var(--wash)` em vez de branco
 cravado. `.btn.ad` fica fora do tema — a Poki exige que o botão de vídeo seja constante.
+
+Além da paleta, o mundo escolhe um **kit** de cromado (`render/uikit.js` → `data-kit` no
+root): `atelier`, `hexdeck`, `ficha` ou `queda` mudam o botão primário, o cartão de fim
+de fase e onde ficam as estrelas do HUD. São quatro e não oito porque o kit é a cara de
+uma família de mundos, não da fase. O kit muda o cromado, nunca o que cabe na tela: em
+paisagem baixa a regra de `@media` recoloca as estrelas no canto para qualquer kit.
+
+A tela inicial é um **carrossel de mundos** — a cena de fundo é uma fase real do mundo em
+cartaz, e deslizar (ou tocar nas bolinhas) troca de mundo entre os já abertos. O rótulo
+do botão de jogar sai de `buildHomeWorlds()`, junto com as bolinhas, e não de
+`refreshScreen()`: deslizar não passa por lá, e o botão prometia uma fase e abria outra.
 
 ### Materiais que cedem com o tempo
 

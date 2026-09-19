@@ -7,7 +7,7 @@
  */
 
 const MAX = 640;
-const STRIDE = 8; // x, y, vx, vy, vida, duracao, tamanho, indiceDeCor
+const STRIDE = 11; // x, y, vx, vy, vida, duracao, w, h, angulo, giro, indiceDeCor
 
 export class Particles {
   constructor() {
@@ -39,6 +39,7 @@ export class Particles {
    * @param {number} o.cw largura em celulas
    * @param {number} o.ch
    * @param {string} o.color
+   * @param {string} [o.shape] chunk | splinter | shard | drip
    * @param {number} [o.vx] velocidade herdada do corpo
    * @param {number} [o.vy]
    * @param {number} [o.density] particulas por celula
@@ -60,14 +61,30 @@ export class Particles {
         const i = this.count * STRIDE;
         const d = this.data;
         const dur = 0.42 + o.rand(1) * 0.5;
+        const shape = o.shape || 'chunk';
+        let pw = 0.14 + o.rand(1) * 0.06;
+        let ph = 0.12 + o.rand(1) * 0.05;
+        if (shape === 'splinter') {
+          pw = 0.28 + o.rand(1) * 0.1;
+          ph = 0.07 + o.rand(1) * 0.04;
+        } else if (shape === 'shard') {
+          pw = 0.1 + o.rand(1) * 0.06;
+          ph = 0.08 + o.rand(1) * 0.05;
+        } else if (shape === 'drip') {
+          pw = 0.08 + o.rand(1) * 0.04;
+          ph = 0.18 + o.rand(1) * 0.08;
+        }
         d[i] = wx;
         d[i + 1] = wy;
         d[i + 2] = (o.vx || 0) * 0.4 + (o.rand(1) - 0.5) * (o.spread === undefined ? 5.5 : o.spread);
         d[i + 3] = (o.vy || 0) * 0.4 + o.rand(1) * (o.lift === undefined ? 4.2 : o.lift);
         d[i + 4] = dur;
         d[i + 5] = dur;
-        d[i + 6] = 0.1 + o.rand(1) * 0.13;
-        d[i + 7] = ci;
+        d[i + 6] = pw;
+        d[i + 7] = ph;
+        d[i + 8] = o.rand(1) * Math.PI * 2;
+        d[i + 9] = (o.rand(1) - 0.5) * 8;
+        d[i + 10] = ci;
         this.count++;
       }
     }
@@ -94,8 +111,11 @@ export class Particles {
       d[i + 3] = rand(1) * 3;
       d[i + 4] = dur;
       d[i + 5] = dur;
-      d[i + 6] = 0.05 + rand(1) * 0.07;
-      d[i + 7] = ci;
+      d[i + 6] = 0.05 + rand(1) * 0.05;
+      d[i + 7] = 0.05 + rand(1) * 0.04;
+      d[i + 8] = rand(1) * Math.PI * 2;
+      d[i + 9] = (rand(1) - 0.5) * 10;
+      d[i + 10] = ci;
       this.count++;
     }
   }
@@ -119,6 +139,7 @@ export class Particles {
       d[o] += d[o + 2] * dt;
       d[o + 1] += d[o + 3] * dt;
       d[o + 2] *= 1 - dt * 1.4;
+      d[o + 8] += d[o + 9] * dt;
       i++;
     }
   }
@@ -135,7 +156,7 @@ export class Particles {
       let opened = false;
       for (let i = 0; i < this.count; i++) {
         const o = i * STRIDE;
-        if (d[o + 7] !== c) continue;
+        if (d[o + 10] !== c) continue;
         if (!opened) {
           ctx.fillStyle = this.colors[c];
           opened = true;
@@ -143,8 +164,13 @@ export class Particles {
         const life = d[o + 4] / d[o + 5];
         ctx.globalAlpha = Math.min(1, life * 1.6);
         const [sx, sy] = toScreen(d[o], d[o + 1]);
-        const size = d[o + 6] * pxPerMeter * (0.4 + life * 0.6);
-        ctx.fillRect(sx - size / 2, sy - size / 2, size, size);
+        const pw = d[o + 6] * pxPerMeter * (0.45 + life * 0.55);
+        const ph = d[o + 7] * pxPerMeter * (0.45 + life * 0.55);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(-d[o + 8]);
+        ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+        ctx.restore();
       }
     }
     ctx.globalAlpha = 1;

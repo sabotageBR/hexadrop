@@ -6,3 +6,7 @@ dist/
 
 # Prints de referencia de outro jogo: material de estudo, nao entra no repo.
 inspiration/
+
+# Estudo de layout e as fotos originais das texturas: material de trabalho,
+# nao entra no repo. As versoes usadas pelo jogo vivem em src/render/tex/.
+proposals/

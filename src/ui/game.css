@@ -377,50 +377,52 @@ html, body {
 .btn.ghost { background: var(--wash); backdrop-filter: none; }
 
 /* ------------------------------------------------------------ tela inicial */
-/* A abertura tem identidade propria e nao segue o tema da fase: e a capa do
-   jogo, nao do mundo. Por isso as cores aqui sao fixas. */
+/* O fundo e a fase viva do mundo atual. O veu so segura o texto. */
 #s-home {
-  --ink: #f8f5ff;
-  --ink-soft: #9a92b8;
-  --accent: #ffc43c;
-  --accent-deep: #c97f14;
-  --edge: #332a52;
-  --veil-rgb: 13, 10, 31;
-  /* A capa tambem fixa a fonte: senao o titulo virava monoespacado quando a
-     ultima fase jogada era de um mundo que usa a fonte tecnica. */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --panel: #191233;
-  background: #0d0a1f;
   padding-bottom: calc(10px + var(--safe-b));
 }
-/* O veu generico das telas de menu nao vale aqui: a arte-chave e o fundo. */
-#s-home::before { display: none; }
-/* O jogo e feito para celular; numa janela larga a coluna se mantem e a arte
-   centraliza, em vez de esticar ate o hexagono sair do quadro. */
+#s-home::before {
+  display: block;
+  background: linear-gradient(180deg, rgba(var(--sheet-rgb), 0.55) 0%, rgba(var(--sheet-rgb), 0.18) 42%,
+    rgba(var(--sheet-rgb), 0.55) 100%);
+}
 #s-home > .hud-top,
 #s-home > .home-mid,
 #s-home > .home-actions,
 #s-home > .home-foot { width: 100%; max-width: 430px; margin-inline: auto; }
 #s-home > .home-foot { max-width: 386px; }
 
-#s-home > .keyart {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translateX(-50%);
-  width: min(100%, 470px);
-  height: min(540px, 60%);
-  pointer-events: none;
-}
-
 .home-mid { position: relative; text-align: center; padding: 0 22px; }
+.world-loc {
+  margin: 0 0 8px;
+  font: 800 12px/1 var(--font);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+.world-dots { display: flex; justify-content: center; gap: 7px; margin: 0 0 14px; }
+.world-dots button {
+  width: 8px; height: 8px; padding: 0; border-radius: 50%;
+  border: 0; background: rgba(255, 255, 255, 0.32); cursor: pointer;
+}
+html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
+.world-dots button.on { background: var(--accent); transform: scale(1.35); }
+.world-dots button.locked { opacity: 0.45; cursor: default; }
+.world-hint {
+  margin: -6px 0 12px;
+  font: 700 10px/1 var(--font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.world-hint:empty { display: none; }
 .logo {
   margin: 0;
-  /* Sem fonte de fora: a Poki reprova qualquer requisicao externa, entao o peso
-     vem do proprio sistema, apertado no espacamento. */
   font: 900 clamp(38px, 12vw, 54px)/0.92 var(--font);
   letter-spacing: -0.035em;
-  color: #f8f5ff;
+  color: var(--ink);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
 }
 .tagline { color: var(--ink-soft); font-size: 13px; margin: 12px 0 0; }
 
@@ -494,7 +496,6 @@ html, body {
 @media (orientation: landscape) and (max-height: 620px) {
   /* So a fileira do HUD vai para o canto. A regra generica arrastava junto as
      estrelas de DENTRO do cartao de vitoria, que iam parar fora dele. */
-  #s-home > .keyart { height: min(300px, 52%); }
   #s-home .logo { font-size: clamp(30px, 7vw, 40px); }
   #s-home .home-actions { padding-top: 12px; }
   #gameStars { position: fixed; left: calc(14px + var(--safe-l)); top: calc(66px + var(--safe-t)); margin: 0; gap: 7px; }
@@ -523,4 +524,112 @@ html, body {
   pointer-events: none;
   z-index: 40;
   will-change: transform, opacity;
+}
+
+/* ------------------------------------------------------------- kits por mundo */
+html[data-kit="atelier"] .btn.primary {
+  background: #c9842a;
+  color: #1a1208;
+  border-radius: 12px;
+  box-shadow: 0 5px 0 #6d4310;
+}
+html[data-kit="atelier"] .btn.primary:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #6d4310;
+}
+html[data-kit="atelier"] #s-win .end-card,
+html[data-kit="atelier"] #s-lose .end-card,
+html[data-kit="atelier"] #s-pause .card {
+  background: linear-gradient(180deg, #3a2c18, #1c140c);
+  border-color: #c9842a;
+}
+html[data-kit="atelier"] #gameStars {
+  position: absolute;
+  left: calc(12px + var(--safe-l));
+  top: calc(70px + var(--safe-t));
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+html[data-kit="hexdeck"] .btn.primary {
+  border-radius: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+html[data-kit="hexdeck"] #s-win .end-card,
+html[data-kit="hexdeck"] #s-lose .end-card,
+html[data-kit="hexdeck"] #s-pause .card {
+  border-radius: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+html[data-kit="hexdeck"] .level-name {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 13px;
+}
+html[data-kit="hexdeck"] #s-game .stat {
+  letter-spacing: 0.04em;
+}
+
+html[data-kit="ficha"] .btn.primary {
+  background: #e8c56a;
+  color: #1a1408;
+  border-color: transparent;
+}
+html[data-kit="ficha"] #s-win .end-card,
+html[data-kit="ficha"] #s-lose .end-card,
+html[data-kit="ficha"] #s-pause .card {
+  background: #16301c;
+  color: #f4efe0;
+  border-color: #c9a227;
+}
+html[data-kit="ficha"] #s-win .end-card h2,
+html[data-kit="ficha"] #s-lose .end-card h2,
+html[data-kit="ficha"] #s-pause .card h2,
+html[data-kit="ficha"] #s-win .end-card .reward b { color: #f4efe0; }
+html[data-kit="ficha"] #s-win .end-card .reward span,
+html[data-kit="ficha"] #s-win .end-card p,
+html[data-kit="ficha"] #s-lose .end-card p { color: rgba(244, 239, 224, 0.72); }
+html[data-kit="ficha"] #s-game .hud-bottom.bare {
+  background: linear-gradient(0deg, #16301c 0%, transparent 100%);
+  padding-bottom: 8px;
+}
+html[data-kit="ficha"] #gameStars {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: calc(58px + var(--safe-b));
+  margin: 0;
+}
+
+html[data-kit="queda"] #s-win .veil,
+html[data-kit="queda"] #s-lose .veil { background: rgba(var(--veil-rgb), 0.35); }
+html[data-kit="queda"] #s-win .end-card,
+html[data-kit="queda"] #s-lose .end-card,
+html[data-kit="queda"] #s-pause .card {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+html[data-kit="queda"] #s-game .shade { opacity: 0.45; }
+html[data-kit="queda"] #s-game .level-name {
+  letter-spacing: 0.2em;
+  font-size: 12px;
+  opacity: 0.8;
+}
+html[data-kit="queda"] .crown { display: none; }
+
+/* O kit troca o cromado, nao o lugar onde a coisa cabe: em paisagem baixa a
+   fileira de estrelas volta para o canto, venha de que mundo vier. */
+@media (orientation: landscape) and (max-height: 620px) {
+  html[data-kit] #gameStars {
+    position: fixed;
+    left: calc(14px + var(--safe-l));
+    right: auto;
+    top: calc(66px + var(--safe-t));
+    bottom: auto;
+    flex-direction: row;
+    margin: 0;
+    gap: 7px;
+  }
 }

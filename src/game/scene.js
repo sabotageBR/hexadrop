@@ -131,6 +131,10 @@ export class GameScene {
     const pos = piece.body.getPosition();
     const vel = piece.body.getLinearVelocity();
     const dense = this.quality === 'low' ? 2 : 3;
+    let shape = 'chunk';
+    if (cause === 'melt') shape = 'drip';
+    else if (piece.material === 'wood' || piece.material === 'tnt') shape = 'splinter';
+    else if (piece.material === 'glass' || piece.material === 'ice' || piece.material === 'crystal') shape = 'shard';
     this.particles.burst({
       cells: piece.cells,
       x: pos.x,
@@ -139,6 +143,7 @@ export class GameScene {
       cw: piece.cw,
       ch: piece.ch,
       color,
+      shape,
       vx: vel.x,
       vy: vel.y,
       density: cause === 'explosion' || cause === 'blast' ? dense + 2 : cause === 'melt' ? 1 : dense,

@@ -11,6 +11,7 @@ import { Session, createSession } from '../src/game/session.js';
 import { levelConfig, generateLayout } from '../src/game/levelgen.js';
 import { LEVELS } from '../src/game/levels.gen.js';
 import { THEMES, THEME_IDS, theme as getTheme } from '../src/render/themes.js';
+import { loadTextures } from '../src/render/textures.js';
 import { MATERIALS } from '../src/physics/materials.js';
 import { audio } from '../src/core/audio.js';
 import { SKINS, skin as getSkin } from '../src/game/content.js';
@@ -67,6 +68,7 @@ function tortureLayout() {
  * @param {string} themeId
  */
 export function startPrototype(themeId) {
+  loadTextures();
   const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('game'));
   const els = {
     title: /** @type {HTMLElement} */ (document.getElementById('title')),
@@ -93,6 +95,7 @@ export function startPrototype(themeId) {
 
   let hintTimer = 0;
   const scene = new GameScene(canvas, { topInset: 108, bottomInset: 92 });
+  loadTextures().then(() => scene.refit());
 
   /** Aplica as cores do tema na interface HTML. */
   function paintUi() {

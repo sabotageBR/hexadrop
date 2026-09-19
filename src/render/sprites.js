@@ -10,7 +10,8 @@
 
 import { outlineLoops, bounds } from '../physics/shapes.js';
 import { material as getMaterial } from '../physics/materials.js';
-import { Rng, hashSeed } from '../core/rng.js';
+import { hashSeed } from '../core/rng.js';
+import { tileOf } from './textures.js';
 
 /**
  * Desenha um poligono fechado com cantos arredondados.
@@ -121,231 +122,82 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed) {
   const b = bounds(cells);
   const w = b.w * scale;
   const h = b.h * scale;
-  const rng = new Rng(seed);
+  const mat = getMaterial(materialId);
 
   tracePiece(ctx, loops, scale, radius, ox, oy);
+  ctx.fillStyle = style.fill;
+  ctx.fill('evenodd');
 
-  switch (th.style) {
-    case 'neon': {
-      // Corpo primeiro, e opaco: o tubo de neon so le bem quando tem uma
-      // massa escura por tras. Antes o cenario atravessava a peca.
-      ctx.fillStyle = style.fill;
-      ctx.fill('evenodd');
+  ctx.save();
+  ctx.clip('evenodd');
+  const tile = tileOf(materialId, Math.max(40, scale * 2.2));
+  if (tile) {
+    const pat = ctx.createPattern(tile, 'repeat');
+    if (pat) {
+      ctx.fillStyle = pat;
+      // O desvio troca a fase do veio de peca para peca. O retangulo anda
+      // junto: sem somar o desvio de volta, a translacao deixava a direita e
+      // a base de toda peca menor que o desvio sem textura nenhuma - o corte
+      // reto aparecia no meio da pedra e do obsidiano.
+      const off = (seed >>> 0) % 72;
       ctx.save();
-      ctx.clip('evenodd');
-      // A luz do traco escorre para dentro: clareia o topo, escurece a base.
-      // E o que da volume sem inventar cor fora da paleta do material.
-      const luz = ctx.createLinearGradient(ox, oy - h, ox, oy);
-      luz.addColorStop(0, withAlpha(style.top || style.stroke, 0.42));
-      luz.addColorStop(0.45, withAlpha(style.stroke, 0.07));
-      luz.addColorStop(1, 'rgba(0,0,0,0.3)');
-      ctx.fillStyle = luz;
-      ctx.fillRect(ox, oy - h, w, h);
-      // Varredura fina, a marca do estilo, agora contida dentro da peca.
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = style.stroke;
-      for (let y = oy - h; y < oy; y += Math.max(3, scale * 0.14)) {
-        ctx.fillRect(ox, y, w, Math.max(1, scale * 0.03));
-      }
+      ctx.translate(-off, -off);
+      ctx.fillRect(ox - scale + off, oy - h - scale + off, w + scale * 2, h + scale * 2);
       ctx.restore();
-      ctx.save();
-      ctx.shadowColor = style.stroke;
-      ctx.shadowBlur = scale * 0.42;
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1.6, scale * 0.075);
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-      ctx.stroke();
-      ctx.restore();
-      if (style.inner) {
-        ctx.save();
-        ctx.strokeStyle = style.inner;
-        ctx.lineWidth = Math.max(1, scale * 0.03);
-        ctx.globalAlpha = 0.9;
-        ctx.stroke();
-        ctx.restore();
-      }
-      break;
-    }
-
-    case 'plate': {
-      const grad = ctx.createLinearGradient(ox, oy - h, ox, oy);
-      grad.addColorStop(0, withAlpha(style.fill, 1));
-      grad.addColorStop(1, withAlpha(style.stroke, 0.32));
-      ctx.fillStyle = grad;
-      ctx.fill('evenodd');
-      ctx.save();
-      ctx.clip('evenodd');
-      ctx.strokeStyle = withAlpha(style.stroke, 0.22);
-      ctx.lineWidth = 1;
-      for (let i = 1; i < b.h * 3; i++) {
-        const y = oy - (i * scale) / 3;
-        ctx.beginPath();
-        ctx.moveTo(ox, y);
-        ctx.lineTo(ox + w, y);
-        ctx.stroke();
-      }
-      ctx.restore();
-      tracePiece(ctx, loops, scale, radius, ox, oy);
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1.4, scale * 0.05);
-      ctx.stroke();
-      break;
-    }
-
-    case 'grain': {
-      ctx.fillStyle = style.fill;
-      ctx.fill('evenodd');
-      ctx.save();
-      ctx.clip('evenodd');
-      ctx.globalAlpha = 0.22;
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1, scale * 0.035);
-      for (let i = 0; i < b.h * 4 + 3; i++) {
-        const y = oy - rng.range(0, h);
-        ctx.beginPath();
-        ctx.moveTo(ox, y);
-        for (let x = 0; x <= w; x += scale * 0.28) {
-          ctx.lineTo(ox + x, y + Math.sin(x * 0.07 + i) * scale * 0.035);
-        }
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 0.16;
-      for (let i = 0; i < 4; i++) {
-        ctx.beginPath();
-        ctx.arc(ox + rng.range(0, w), oy - rng.range(0, h), scale * rng.range(0.05, 0.12), 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.restore();
-      tracePiece(ctx, loops, scale, radius, ox, oy);
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1.6, scale * 0.065);
-      ctx.stroke();
-      break;
-    }
-
-    case 'gloss': {
-      ctx.fillStyle = style.fill;
-      ctx.fill('evenodd');
-      ctx.save();
-      ctx.clip('evenodd');
-      const g = ctx.createLinearGradient(ox, oy - h, ox, oy - h * 0.35);
-      g.addColorStop(0, withAlpha(style.top || '#ffffff', 0.85));
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(ox, oy - h, w, h * 0.65);
-      ctx.restore();
-      tracePiece(ctx, loops, scale, radius, ox, oy);
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1.8, scale * 0.07);
-      ctx.stroke();
-      break;
-    }
-
-    case 'frost': {
-      ctx.fillStyle = style.fill;
-      ctx.fill('evenodd');
-      ctx.save();
-      ctx.clip('evenodd');
-      ctx.fillStyle = withAlpha(style.top || '#ffffff', 0.5);
-      for (let i = 0; i < 14; i++) {
-        const px = ox + rng.range(0, w);
-        const py = oy - rng.range(0, h);
-        const s = scale * rng.range(0.02, 0.06);
-        ctx.fillRect(px, py, s, s);
-      }
-      const g = ctx.createLinearGradient(ox, oy - h, ox, oy);
-      g.addColorStop(0, 'rgba(255,255,255,0.32)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(ox, oy - h, w, h);
-      ctx.restore();
-      tracePiece(ctx, loops, scale, radius, ox, oy);
-      ctx.save();
-      ctx.shadowColor = style.stroke;
-      ctx.shadowBlur = scale * 0.2;
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1.5, scale * 0.06);
-      ctx.stroke();
-      ctx.restore();
-      break;
-    }
-
-    case 'ember': {
-      ctx.fillStyle = style.fill;
-      ctx.fill('evenodd');
-      ctx.save();
-      ctx.clip('evenodd');
-      ctx.strokeStyle = withAlpha(style.stroke, 0.75);
-      ctx.lineWidth = Math.max(1, scale * 0.045);
-      ctx.shadowColor = style.stroke;
-      ctx.shadowBlur = scale * 0.25;
-      for (let i = 0; i < 3; i++) {
-        let px = ox + rng.range(0, w);
-        let py = oy - rng.range(0, h);
-        ctx.beginPath();
-        ctx.moveTo(px, py);
-        for (let k = 0; k < 4; k++) {
-          px += rng.range(-scale * 0.4, scale * 0.4);
-          py += rng.range(-scale * 0.4, scale * 0.4);
-          ctx.lineTo(px, py);
-        }
-        ctx.stroke();
-      }
-      ctx.restore();
-      tracePiece(ctx, loops, scale, radius, ox, oy);
-      ctx.save();
-      ctx.shadowColor = style.stroke;
-      ctx.shadowBlur = scale * 0.2;
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1.6, scale * 0.07);
-      ctx.stroke();
-      ctx.restore();
-      break;
-    }
-
-    case 'paper': {
-      ctx.save();
-      ctx.shadowColor = 'rgba(70,55,35,0.42)';
-      ctx.shadowBlur = scale * 0.16;
-      ctx.shadowOffsetY = scale * 0.08;
-      ctx.fillStyle = style.fill;
-      ctx.fill('evenodd');
-      ctx.restore();
-      ctx.save();
-      ctx.clip('evenodd');
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = style.stroke;
-      for (let i = 0; i < 26; i++) {
-        ctx.fillRect(ox + rng.range(0, w), oy - rng.range(0, h), 1.4, 1.4);
-      }
-      ctx.restore();
-      tracePiece(ctx, loops, scale, radius, ox, oy);
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1.4, scale * 0.045);
-      ctx.stroke();
-      break;
-    }
-
-    default: {
-      // flat
-      ctx.fillStyle = style.fill;
-      ctx.fill('evenodd');
-      ctx.save();
-      ctx.clip('evenodd');
-      ctx.fillStyle = withAlpha(style.top || '#ffffff', 0.35);
-      ctx.fillRect(ox, oy - h, w, Math.max(2, scale * 0.12));
-      ctx.restore();
-      tracePiece(ctx, loops, scale, radius, ox, oy);
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = Math.max(1.6, scale * 0.065);
-      ctx.stroke();
     }
   }
+  // Luz do mundo, nao da peca: um velo da cor do horizonte. A peca vira e
+  // o veio vai junto; o velo e homogeneo, entao nao denuncia o "cima".
+  ctx.globalCompositeOperation = 'soft-light';
+  ctx.fillStyle = withAlpha(th.horizon, 0.22);
+  ctx.fillRect(ox, oy - h, w, h);
+  ctx.globalCompositeOperation = 'source-over';
+  if (materialId === 'tnt') {
+    ctx.fillStyle = 'rgba(196, 90, 24, 0.28)';
+    ctx.fillRect(ox, oy - h, w, h);
+  }
+  if (materialId === 'bomb') {
+    let sx = 0;
+    let sy = 0;
+    for (const [cx, cy] of cells) {
+      sx += cx + 0.5;
+      sy += cy + 0.5;
+    }
+    const n = cells.length || 1;
+    const bx = ox + (sx / n) * scale;
+    const by = oy - (sy / n) * scale;
+    ctx.fillStyle = '#140a08';
+    ctx.beginPath();
+    ctx.arc(bx, by, scale * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffb347';
+    ctx.lineWidth = Math.max(1.2, scale * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(bx, by - scale * 0.16);
+    ctx.lineTo(bx + scale * 0.1, by - scale * 0.34);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = Math.max(1, scale * 0.05);
+  tracePiece(ctx, loops, scale, radius, ox, oy);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  if (th.glow > 0.3) {
+    ctx.shadowColor = style.stroke;
+    ctx.shadowBlur = scale * (0.22 + th.glow * 0.28);
+  }
+  ctx.strokeStyle = style.stroke;
+  ctx.lineWidth = Math.max(1.6, scale * 0.07);
+  ctx.lineJoin = 'round';
+  tracePiece(ctx, loops, scale, radius, ox, oy);
+  ctx.stroke();
+  if (th.glow > 0.55) ctx.stroke();
+  ctx.restore();
 
   // Quem quebra com pancada E explode: so a TNT. A bomba nao entra - ela
   // espera o dedo do jogador, e o vidro quebra sem espalhar nada.
-  const mat = getMaterial(materialId);
   if (mat.breakSpeed > 0 && mat.explodeRadius > 0) {
     tracePiece(ctx, loops, scale, radius, ox, oy);
     hazardStripes(ctx, style, ox, oy, w, h, scale);
