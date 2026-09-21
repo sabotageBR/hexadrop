@@ -255,13 +255,24 @@ const SMART_RULER_FROM = 80;
  * Faixa de vitoria do jogador competente, do mundo 8 ao 15.
  *
  * Reta em escala logaritmica, como a do perdao, pelo mesmo motivo: taxa de
- * dificuldade constante. Comeca em 0,60 na fase 81 - abaixo dos 88% que ela tem
- * hoje, para tirar a queda de dificuldade na virada do mundo 8 - e fecha em
- * 0,35 na fase 160.
+ * dificuldade constante.
  *
- * O piso nao vai abaixo de 2/6: o gerador so aceita variante que um jogador
- * competente vence pelo menos duas vezes em seis (`minSmartWins`), e uma fase
- * que nem ele vence nao e fase difícil, e fase quebrada.
+ * **Esta regua nao consegue ser uma rampa lisa, e o motivo e granularidade.**
+ * Com `smartRuns: 6` a medida por seed so assume 0, 1/6, 2/6 ... 1 - e como o
+ * piso de aceitacao e 2/6, sobram quatro valores para oito mundos. Medido, em
+ * duas rodadas completas: pedindo 0,60 a 0,35 os mundos 8 a 15 sairam em 67,
+ * 62, 57, 47, 48, 58, 50, 61; pedindo 0,67 a 0,47 sairam em 68, 62, 66, 56, 64,
+ * 68, 51, 61, e as fases afrouxadas subiram de 12 para 19. Mudar o alvo nao
+ * conserta: entre 0,47 e 0,67 existem DOIS valores atingiveis, e uma rampa de
+ * oito mundos com dois degraus so pode alternar.
+ *
+ * Ficaram os 0,60 a 0,35 da primeira rodada, que derivou menos (soma dos
+ * degraus para cima: 22 contra 26) e afrouxou sete fases a menos. Para uma
+ * descida lisa de verdade aqui seria preciso subir `smartRuns` de 6 para ~24,
+ * o que multiplica por quatro o custo de gerar estas oitenta fases.
+ *
+ * O piso nao vai abaixo de 2/6 porque uma fase que nem o jogador competente
+ * vence nao e fase difícil, e fase quebrada.
  *
  * @param {number} i indice 0-based da fase
  * @returns {[number, number, number]} piso, teto e alvo
