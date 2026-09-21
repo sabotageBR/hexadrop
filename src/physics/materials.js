@@ -226,11 +226,17 @@ export const MATERIAL_IDS = Object.keys(MATERIALS);
 /**
  * Fase em que cada material aparece pela primeira vez, base para a tela
  * de "material novo" e para a curva de dificuldade.
+ *
+ * A pedra estreia na fase 4, e nao na 10: com ela so no fim do mundo inicial,
+ * as nove primeiras fases eram um monte de madeira igual, e o jogador saia
+ * antes de descobrir que os materiais se comportam de forma diferente. Mudar
+ * esta data muda tambem a fase que ganha a legenda de material novo - e com
+ * ela o desconto de linhas e o excesso de barras que toda estreia carrega.
  * @type {Record<string, number>}
  */
 export const MATERIAL_DEBUT = {
   wood: 1,
-  stone: 10,
+  stone: 4,
   obsidian: 12,
   ice: 22,
   rubber: 32,

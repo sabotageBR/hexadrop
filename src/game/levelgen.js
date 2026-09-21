@@ -29,6 +29,50 @@ export const WORLD_THEMES = [
 ];
 
 /**
+ * A rampa de entrada: uma entrada por fase, da 1 a 20.
+ *
+ * As vinte primeiras fases decidem se o jogador fica, e a versao anterior as
+ * entregava sem curva nenhuma. Medido pelo validador, com um jogador que toca
+ * em pecas ao acaso: o mundo 1 era torre de quatro a seis linhas, so madeira,
+ * quase so barras e um pedestal com quase o dobro da largura da torre - e
+ * perdoava 79% das partidas, contra 44% do mundo 2 e 27% do mundo 3. O mundo 2
+ * era pior que facil, era serrilhado: a fase 12 perdoava 94% e a 19 perdoava
+ * 15%, uma ao lado da outra.
+ *
+ * Tres regras amarram estes numeros:
+ *
+ * - **As fases 1 e 2 ficam intocadas.** E nelas que o tutorial fala, e uma
+ *   torre de barras que desce reto e o unico lugar onde da para explicar o
+ *   toque sem o jogador perder por causa da explicacao.
+ * - **Cada mundo termina encostado no proximo.** A fase 10 fecha em 1,3 m de
+ *   folga de pedestal, a 11 abre em 1,28; a 20 fecha em 1,1 m, que e a folga
+ *   mais larga que o mundo 3 usa. Apertar um mundo nao pode fazer o seguinte
+ *   parecer ferias.
+ * - **Cada mundo mantem o que o apresenta.** A fase 4 estreia a pedra e a 12
+ *   estreia a obsidiana; as duas descontam altura e ganham barras, porque uma
+ *   mecanica nova se aprende numa fase mansa.
+ */
+const RAMP_ROWS = [4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 6, 7, 7, 8, 8, 8, 9, 9, 9, 10];
+const RAMP_BARS = [
+  1, 1, 0.7, 0.6, 0.5, 0.42, 0.34, 0.28, 0.22, 0.16,
+  0.14, 0.13, 0.12, 0.11, 0.1, 0.09, 0.08, 0.07, 0.06, 0.05,
+];
+/**
+ * Folga do pedestal, em metros de cada lado da torre.
+ *
+ * Aqui a rede de seguranca e medida em metros, e nao em fracao da largura como
+ * no resto do jogo: as fases 9, 10, 12, 15, 16 e 20 sorteiam uma torre de cinco
+ * colunas, e uma fracao fixa devolveria em metros justamente a folga que a
+ * rampa acabou de tirar - era parte do serrilhado do mundo 2.
+ */
+const RAMP_SLACK = [
+  1.8, 1.8, 1.65, 1.55, 1.5, 1.45, 1.4, 1.35, 1.32, 1.3,
+  1.28, 1.26, 1.24, 1.22, 1.2, 1.18, 1.16, 1.14, 1.12, 1.1,
+];
+/** Ate onde a rampa de entrada manda. */
+const RAMP_END = RAMP_ROWS.length;
+
+/**
  * @typedef {object} LevelConfig
  * @property {number} index 0 a 99
  * @property {number} level 1 a 100
@@ -93,9 +137,13 @@ export function levelConfig(index, soften = 0) {
   rows = Math.max(4, Math.min(24, rows));
 
   // --- complexidade das formas -------------------------------------------
+  // Tier 2 entra na fase 5, e nao na 7: as formas de uma celula so sao o
+  // alfabeto do tutorial, e tres fases bastam para aprende-lo.
   let tierMax = 1;
-  if (i >= 6) tierMax = 2;
-  if (i >= 18) tierMax = 3;
+  if (i >= 4) tierMax = 2;
+  // Tier 3 na metade do mundo 2, e nao nas suas duas ultimas fases: entrar a
+  // duas fases do fim do mundo dava um degrau em vez de uma novidade.
+  if (i >= 14) tierMax = 3;
   if (i >= 44) tierMax = 4;
 
   const theme = WORLD_THEMES[Math.floor(i / 10) % WORLD_THEMES.length];
@@ -125,14 +173,6 @@ export function levelConfig(index, soften = 0) {
   materialWeights.wood = Math.max(4, 10 - (Object.keys(materialWeights).length - 1) * 0.9);
 
   // --- pecas especiais ----------------------------------------------------
-  let obsidian = 0;
-  if (level >= MATERIAL_DEBUT.obsidian) {
-    obsidian = 1 + Math.floor((level - MATERIAL_DEBUT.obsidian) / 30);
-    // Poucas e boas. Cada peca ancorada e um lugar a mais onde o hexagono
-    // pode terminar empoleirado sem ter como descer.
-    obsidian = Math.min(2, obsidian);
-    if (width < 4 || rows < 7) obsidian = 0;
-  }
   let bombs = 0;
   if (level >= MATERIAL_DEBUT.bomb) bombs = r.chance(0.55) ? 1 : 0;
   let tnt = 0;
@@ -141,16 +181,18 @@ export function levelConfig(index, soften = 0) {
   // --- pedestal -----------------------------------------------------------
   // O pedestal comeca bem mais largo que a torre e vai encolhendo. Nas
   // primeiras fases ele funciona como rede de seguranca, o que a Poki pede
-  // em "comece facil e suba gradualmente".
+  // em "comece facil e suba gradualmente" - mas rede nao e chao: nos dois
+  // primeiros mundos ela encolhe fase a fase (RAMP_SLACK) ate a medida do
+  // mundo 3.
   let pedestalFrac;
-  if (i < 10) pedestalFrac = 0.95;
-  else if (i < 20) pedestalFrac = 0.82;
+  if (i < 20) pedestalFrac = 0.82;
   else if (i < 35) pedestalFrac = 0.72;
   else if (i < 50) pedestalFrac = 0.62;
   else if (i < 70) pedestalFrac = 0.54;
   else if (i < 85) pedestalFrac = 0.46;
   else pedestalFrac = 0.4;
-  const pedestalHalf = Math.max(1.35, width * pedestalFrac);
+  let pedestalHalf = Math.max(1.35, width * pedestalFrac);
+  if (i < RAMP_END) pedestalHalf = Math.max(1.35, width / 2 + RAMP_SLACK[i]);
 
   const oscillate = level >= 65 ? 0.35 + Math.min(0.55, (level - 65) * 0.018) : 0;
   const wind = level >= 75 ? (r.chance(0.5) ? 1 : -1) * (0.7 + (level - 75) * 0.035) : 0;
@@ -165,10 +207,7 @@ export function levelConfig(index, soften = 0) {
   // tirar uma faz tudo acima descer reto, sem degrau para o hexagono tombar.
   // As primeiras fases sao feitas quase so delas, e a mistura entra devagar.
   let barBias = 0;
-  if (level <= 2) barBias = 1;
-  else if (level <= 5) barBias = 0.6;
-  else if (level <= 10) barBias = 0.3;
-  else if (level <= 18) barBias = 0.12;
+  if (i < RAMP_END) barBias = RAMP_BARS[i];
 
   const newMaterials = Object.keys(MATERIAL_DEBUT).filter((m) => MATERIAL_DEBUT[m] === level);
   // Uma mecanica nova de cada vez, e sempre numa fase facil. A fase de estreia
@@ -178,6 +217,27 @@ export function levelConfig(index, soften = 0) {
     barBias = Math.max(barBias, 0.45);
     rows = Math.max(4, rows - 2);
     tierMax = Math.max(1, tierMax - 1);
+  }
+
+  // O piso do mundo inicial vem por ultimo, depois do desconto da estreia:
+  // a pedra estreia na fase 4, bem no meio da rampa, e sem isto o desconto
+  // apagaria justamente o degrau que a rampa acabou de construir.
+  if (i < RAMP_END) rows = Math.max(rows, RAMP_ROWS[i]);
+
+  // --- obsidiana ----------------------------------------------------------
+  // Fica aqui, e nao junto das outras pecas especiais, porque o corte por
+  // altura tem que olhar a torre que a fase realmente vai ter. Julgando a
+  // altura antes do desconto de estreia, a fase 12 - a fase que apresenta a
+  // obsidiana - anunciava o material e montava uma torre sem nenhuma peca
+  // dele. Pela mesma razao, uma fase de estreia baixa demais continua sem
+  // obsidiana: peca ancorada em torre curta e beco sem saida, nao licao.
+  let obsidian = 0;
+  if (level >= MATERIAL_DEBUT.obsidian) {
+    obsidian = 1 + Math.floor((level - MATERIAL_DEBUT.obsidian) / 30);
+    // Poucas e boas. Cada peca ancorada e um lugar a mais onde o hexagono
+    // pode terminar empoleirado sem ter como descer.
+    obsidian = Math.min(2, obsidian);
+    if (width < 4 || rows < 7) obsidian = 0;
   }
 
   /** @type {LevelConfig} */

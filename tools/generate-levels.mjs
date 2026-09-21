@@ -11,6 +11,9 @@
  * Quando nenhuma variante passa, a configuracao da fase e afrouxada em degraus
  * ate passar. Melhor uma fase um pouco mais facil do que uma fase impossivel.
  *
+ * Nas vinte primeiras fases o programa ainda escolhe entre as variantes que
+ * passaram, em vez de ficar com as primeiras: ver RAMP_FORGIVENESS.
+ *
  * Uso:
  *   node tools/generate-levels.mjs            geracao completa
  *   node tools/generate-levels.mjs --quick    menos seeds, para iterar rapido
@@ -51,18 +54,116 @@ function seedFor(index, soften, attempt) {
 }
 
 /**
+ * Toques minimos exigidos de uma variante.
+ *
+ * Uma fase que se resolve em um toque nao e uma fase. As duas primeiras sao a
+ * excecao porque sao o tutorial: ali o toque unico e a licao.
+ *
+ * @param {number} index
+ * @returns {number}
+ */
+function minPar(index) {
+  return index < 2 ? 1 : 2;
+}
+
+/**
+ * Quanto cada fase da rampa de entrada deve perdoar, de 1 (um jogador que toca
+ * ao acaso vence sempre) a 0.
+ *
+ * O tamanho da torre e a largura do pedestal dizem o quanto a fase cobra, mas
+ * nao o quanto ela perdoa: duas seeds do mesmo tamanho podem ser um corredor
+ * unico ou uma pilha que desaba sozinha em qualquer ordem. Por isso as vinte
+ * primeiras fases nao ficam com a primeira variante que passa - o gerador
+ * varre um orcamento maior de seeds e monta o conjunto cuja media cai nesta
+ * curva. Duas fases para ensinar, oito para descer ate onde o mundo 2 abre, e
+ * o mundo 2 inteiro para chegar aos 30% com que o mundo 3 trabalha.
+ *
+ * Sem a curva, o mundo 2 era um serrilhado: 94% na fase 12, 15% na 19.
+ */
+const RAMP_FORGIVENESS = [
+  1, 1, 0.85, 0.8, 0.75, 0.68, 0.62, 0.56, 0.5, 0.45,
+  0.42, 0.4, 0.38, 0.37, 0.36, 0.35, 0.34, 0.33, 0.32, 0.3,
+];
+
+/**
+ * Toques que cada fase da rampa deveria pedir, no minimo.
+ *
+ * Perdao e duracao sao coisas diferentes, e so o alvo de perdao deixava passar
+ * uma fase mansa de dois toques - que e o retrato do comeco que fazia o
+ * jogador sair. Isto e uma preferencia, e nao um filtro: se a fase nao tiver
+ * variantes longas o bastante, vale a mansa, porque a alternativa e o gerador
+ * afrouxar a fase inteira e entregar algo ainda menor.
+ *
+ * Os numeros param em sete. Fase longa nao e fase dificil - o mundo 3, que
+ * perdoa menos que qualquer fase daqui, tem par medio de 3,9: quando uma boa
+ * jogada derruba a torre inteira, o par cai e a fase continua dura.
+ */
+const RAMP_MIN_PAR = [1, 1, 4, 4, 4, 4, 4, 5, 5, 5, 4, 4, 5, 5, 5, 6, 6, 6, 6, 7];
+
+/**
+ * Fases em que o gerador escolhe, em vez de aceitar a primeira que passa.
+ * @param {number} index
+ * @returns {boolean}
+ */
+function isPicky(index) {
+  return index < RAMP_FORGIVENESS.length;
+}
+
+/**
+ * Escolhe as variantes cuja media de perdao mais se aproxima do alvo da fase.
+ *
+ * Guloso, uma variante por vez, porque as candidatas costumam ser bimodais: a
+ * mesma fase produz seeds que perdoam tudo e seeds que nao perdoam nada, e
+ * quase nenhuma no meio. Escolher as quatro individualmente mais proximas do
+ * alvo pegaria as quatro perdoadoras; olhar a media aceita uma dura ao lado de
+ * uma mansa, que e tambem a variedade que o jogador ve ao repetir a fase.
+ *
+ * @param {*[]} pool
+ * @param {number} target
+ * @param {number} floorPar
+ * @param {number} want
+ * @returns {*[]}
+ */
+function pickByForgiveness(pool, target, floorPar, want) {
+  const longas = pool.filter((v) => v.par >= floorPar);
+  const rest = (longas.length >= want ? longas : pool).slice();
+  const picked = [];
+  let sum = 0;
+  while (picked.length < want && rest.length) {
+    let best = 0;
+    let bestDist = Infinity;
+    for (let k = 0; k < rest.length; k++) {
+      const dist = Math.abs((sum + rest[k].forgiveness) / (picked.length + 1) - target);
+      // Empate resolvido pela fase mais longa: mesmo perdao, mais jogo.
+      if (dist < bestDist - 1e-9 || (dist < bestDist + 1e-9 && rest[k].par > rest[best].par)) {
+        best = k;
+        bestDist = dist;
+      }
+    }
+    sum += rest[best].forgiveness;
+    picked.push(rest.splice(best, 1)[0]);
+  }
+  return picked;
+}
+
+/**
  * Procura variantes validas para uma fase.
  * @param {number} index
  * @returns {*}
  */
 function bakeLevel(index) {
+  // A escolha por alvo so e boa quando ha de onde escolher: no mundo inicial o
+  // orcamento de seeds e maior, e as fases sao pequenas o bastante para isso
+  // custar segundos.
+  const budget = isPicky(index) ? Math.round(SEED_BUDGET * 2.5) : SEED_BUDGET;
+
   for (let soften = 0; soften <= 3; soften++) {
     const config = levelConfig(index, soften);
     /** @type {*[]} */
     const accepted = [];
     let screened = 0;
 
-    for (let attempt = 0; attempt < SEED_BUDGET; attempt++) {
+    for (let attempt = 0; attempt < budget; attempt++) {
       const seed = seedFor(index, soften, attempt);
       const layout = generateLayout(config, seed);
 
@@ -77,14 +178,16 @@ function bakeLevel(index) {
 
       const report = evaluateVariant(layout, seed, {
         smartRuns: SMART_RUNS,
-        naiveRuns: 3,
+        // Tres partidas ingenuas medem o perdao em degraus de 33 pontos, o que
+        // basta para reprovar uma fase impossivel e nao basta para escolher
+        // entre duas aceitas.
+        naiveRuns: isPicky(index) ? 9 : 3,
         minSmartWins: 2,
       });
       if (!report.accepted) continue;
-      // Uma fase que se resolve em um toque nao e uma fase. Com materiais que
-      // somem sozinhos isso deixa de ser hipotetico - e o bonus de moedas por
-      // bater o par ficaria inatingivel.
-      if (index >= 9 && report.par < 2) continue;
+      // Com materiais que somem sozinhos a fase de um toque deixa de ser
+      // hipotetica - e o bonus de moedas por bater o par ficaria inatingivel.
+      if (report.par < minPar(index)) continue;
 
       accepted.push({
         seed,
@@ -93,11 +196,22 @@ function bakeLevel(index) {
         forgiveness: report.forgiveness,
         pieces: layout.pieces.length,
       });
-      if (accepted.length >= VARIANTS_WANTED) break;
+      if (!isPicky(index) && accepted.length >= VARIANTS_WANTED) break;
+      // Com o orcamento varrido ate o fim, um punhado de candidatas ja da a
+      // media pedida; passar disso e so tempo de geracao.
+      if (isPicky(index) && accepted.length >= VARIANTS_WANTED * 4) break;
     }
 
     if (accepted.length > 0) {
-      return { index, soften, variants: accepted, screened, fallback: false };
+      const variants = isPicky(index)
+        ? pickByForgiveness(
+            accepted,
+            RAMP_FORGIVENESS[index],
+            RAMP_MIN_PAR[index],
+            VARIANTS_WANTED,
+          )
+        : accepted;
+      return { index, soften, variants, screened, fallback: false };
     }
   }
 

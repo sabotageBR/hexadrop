@@ -123,6 +123,53 @@ Consequências práticas:
 `src/game/solver.js` serve aos dois lados: prova a jogabilidade no validador e escolhe
 a peça destacada quando o jogador pede dica no jogo.
 
+### A rampa de entrada (fases 1 a 20)
+
+As vinte primeiras fases decidem se o jogador fica, e por isso não saem da curva geral:
+saem de três tabelas no topo de `levelgen.js` (`RAMP_ROWS`, `RAMP_BARS`, `RAMP_SLACK`),
+uma entrada por fase. Medido pelo validador, com um jogador que toca em peças **ao
+acaso**: o mundo 1 perdoava 79% das partidas e o mundo 2, 44% — contra 27% do mundo 3.
+E o mundo 2 era pior que fácil, era serrilhado: a fase 12 perdoava 94% e a 19 perdoava
+15%, uma ao lado da outra. Hoje a rampa vai de 100% (fase 1) a 42% (fase 10) e daí a
+23% (fase 20), e a melhor solução sobe de 3,1 para 5,3 e 6,1 toques por mundo.
+
+Três coisas que essa faixa precisa respeitar:
+
+- **As fases 1 e 2 não se mexem.** É nelas que o tutorial fala, e uma torre de barras
+  que desce reto é o único lugar onde dá para explicar o toque sem o jogador perder por
+  causa da explicação. As duas seeds continuam sendo as mesmas de sempre.
+- **Cada mundo termina encostado no seguinte.** A fase 10 fecha com 1,3 m de folga de
+  pedestal e a 11 abre com 1,28 m; a 20 fecha com 1,1 m, que é a folga mais larga que o
+  mundo 3 usa. Apertar um mundo não pode fazer o próximo parecer férias.
+- **O pedestal da rampa é medido em metros de folga, não em fração da largura**
+  (`RAMP_SLACK`), porque metade dessas fases sorteia torre de cinco colunas e a fração
+  devolveria em metros justo a folga que a rampa tinha tirado — era parte do serrilhado
+  do mundo 2.
+
+A pedra estreia na **fase 4** e a obsidiana na **12** (`MATERIAL_DEBUT`); a pedra estava
+na 10, e com ela lá as nove primeiras fases eram um monte de madeira igual. Mover uma
+data de estreia move junto a legenda de material novo, e com ela o desconto de linhas e
+o excesso de barras que toda fase de estreia carrega — é por isso que o piso de altura
+da rampa é aplicado depois desse desconto, e não antes.
+
+**O corte de altura da obsidiana olha a torre final.** Ele mora depois do piso da rampa,
+e não junto das outras peças especiais, porque julgando a altura antes do desconto de
+estreia a fase 12 anunciava "material novo: obsidiana" e montava uma torre sem nenhuma
+peça dele — o jogador via a legenda de uma mecânica que não estava ali, e a primeira
+obsidiana de verdade aparecia sem aviso na fase 17. Pela mesma regra, as fases 22 e 32,
+que são estreias baixas, deixaram de receber obsidiana: peça ancorada em torre curta é
+beco sem saída, não lição.
+
+O tamanho da torre diz o quanto a fase cobra, mas não o quanto ela perdoa: duas seeds
+do mesmo tamanho podem ser um corredor único ou uma pilha que desaba em qualquer ordem.
+Então, só nessas vinte fases, o gerador não fica com a primeira variante que passa — ele
+varre um orçamento maior de seeds e monta o conjunto cuja **média** de perdão cai em
+`RAMP_FORGIVENESS` (`tools/generate-levels.mjs`), com um piso de toques por fase em
+`RAMP_MIN_PAR`. A média, e não a variante mais próxima do alvo, porque as candidatas são
+bimodais — quase todas perdoam tudo ou não perdoam nada. O piso de toques para em sete
+de propósito: fase longa não é fase difícil, e o mundo 3, que perdoa menos que qualquer
+fase da rampa, tem par médio de 3,9.
+
 ### Física
 
 Planck.js (Box2D 2.4 em JS puro, sem WebAssembly). Uma célula da grade é um metro;
