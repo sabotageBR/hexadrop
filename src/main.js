@@ -1156,8 +1156,37 @@ class Game {
     this.paused = false;
     audio.releaseMusic();
     if (this.scene.session) this.scene.session.paused = false;
+    // Sair no meio da celebracao nao pode custar a fase vencida, e tem que ser
+    // ANTES de showAmbient(): ele troca a sessao da cena, e a gravacao le os
+    // toques e as pecas intactas dela. Fechando aqui, o finishWin que ainda
+    // esta agendado nao acha vitoria pendente e nao faz nada.
+    if (this.pendingWin) this.commitPendingWin();
     this.showAmbient();
     this.show('home');
+  }
+
+  /**
+   * Grava uma vitoria pendente sem abrir cartao nem disparar o fluxo.
+   *
+   * Conta as pecas que a celebracao ja estourou (`bonusDone`), e nao as que
+   * sobraram (`bonusTotal`): o jogador saiu no meio da contagem, e o premio e
+   * o que ele viu somar.
+   */
+  commitPendingWin() {
+    const session = this.scene.session;
+    const pend = this.pendingWin;
+    if (!session || !pend) return;
+    this.pendingWin = null;
+    this.lastResult = this.progress.finishLevel({
+      level: this.level,
+      stars: pend.stars,
+      won: pend.won,
+      taps: session.taps,
+      par: session.par || 0,
+      bonusPieces: session.bonusDone,
+      comboScore: session.comboScore,
+      comboPieces: session.comboPieces,
+    });
   }
 
   async nextLevel() {
