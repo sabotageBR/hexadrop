@@ -10,6 +10,7 @@ import { GameScene } from './game/scene.js';
 import { createSession } from './game/session.js';
 import {
   levelConfig, LEVEL_COUNT, WORLD_THEMES, WORLD_COUNT, worldOf, worldStart, worldSize,
+  indexInWorld,
 } from './game/levelgen.js';
 import { LEVELS } from './game/levels.gen.js';
 import { Progress } from './game/progress.js';
@@ -40,6 +41,19 @@ const GAME_INSET_BOTTOM = 40;
  * progresso salvo, nao a sessao: quem volta ja passou dessa decisao.
  */
 const FASES_SEM_INTERVALO = 5;
+
+/**
+ * Quanto tempo o selo de recompensa fica sobre a cena antes do corte, e quanto
+ * dura o corte - igual a transicao de .wipe no CSS.
+ *
+ * Dentro de um mundo, vencer nao abre tela: a fase seguinte entra sozinha
+ * atras desse corte. A fronteira de mundo continua sendo WORLD_SIZES, a unica
+ * fonte de verdade sobre isso - e e la que o cartao ainda tem trabalho a
+ * fazer, porque e onde o tema, a musica, o portao e o video de dobrar
+ * recompensa entram.
+ */
+const FLOW_SEAL_MS = 1000;
+const WIPE_MS = 200;
 
 /** Trilha sonora por tema. */
 const MUSIC = {
@@ -77,6 +91,15 @@ const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.get
 class Game {
   constructor() {
     this.progress = new Progress();
+    /**
+     * Fluxo continuo entre fases. A automacao desliga: com o cartao de volta,
+     * o playsweep mede uma fase por vez em vez de correr atras do avanco.
+     */
+    this.flowLevels = true;
+    /** Temporizador do selo de recompensa; zero quando nao ha transicao. */
+    this.flowTimer = 0;
+    /** true entre o fim do selo e a fase seguinte estar no ar. */
+    this.advancing = false;
     this.rng = new Rng(Date.now() & 0x7fffffff);
     this.canvas = /** @type {HTMLCanvasElement} */ ($('game'));
     this.scene = new GameScene(this.canvas, { topInset: GAME_INSET_TOP, bottomInset: GAME_INSET_BOTTOM });
@@ -182,8 +205,12 @@ class Game {
   /** @param {string} name */
   show(name) {
     // Sair da tela de jogo por qualquer caminho fecha o contador da
-    // celebracao: ele vive sobre a cena, nao sobre o menu.
-    if (name !== 'game') this.hideBonusCounter();
+    // celebracao e o selo do fluxo: os dois vivem sobre a cena, nao sobre o
+    // menu.
+    if (name !== 'game') {
+      this.hideBonusCounter();
+      this.hideFlowSeal();
+    }
     // A folha de estilo precisa saber qual tela esta no ar: em paisagem baixa
     // a cena de fundo da home cede lugar para a logo.
     document.documentElement.dataset.tela = name;
@@ -235,7 +262,7 @@ class Game {
       const el = document.getElementById(id);
       if (el) el.textContent = hearts;
     }
-    for (const id of ['homeCoins', 'mapCoins', 'shopCoins']) {
+    for (const id of ['homeCoins', 'mapCoins', 'shopCoins', 'gameCoins']) {
       const el = document.getElementById(id);
       if (el) el.textContent = coins;
     }
@@ -580,6 +607,7 @@ class Game {
     // Fecha o gameplay anterior antes de abrir o proximo: a Poki reprova
     // gameplayStart repetido sem um gameplayStop entre eles.
     poki.gameplayStop();
+    this.cancelFlow();
     const mudouDeFase = this.level !== Math.max(1, Math.min(LEVEL_COUNT, level));
     this.level = Math.max(1, Math.min(LEVEL_COUNT, level));
     if (mudouDeFase) this.lossStreak = 0;
@@ -696,7 +724,6 @@ class Game {
     const pend = this.pendingWin;
     if (!session || !pend) return;
     this.pendingWin = null;
-    this.hideBonusCounter();
     const result = this.progress.finishLevel({
       level: this.level,
       stars: pend.stars,
@@ -708,7 +735,119 @@ class Game {
       comboPieces: session.comboPieces,
     });
     this.lastResult = result;
+    // Dentro de um mundo o jogo nao para: o premio vira um selo sobre a cena e
+    // a fase seguinte entra sozinha. Quem reabilita os botoes do HUD nesse
+    // caminho e o hideBonusCounter() de startLevel, no fim da transicao.
+    if (this.flowContinues()) {
+      // A contagem sai e o selo entra no mesmo lugar: sao o mesmo recado em
+      // dois tempos, e empilhados viravam duas caixas sobre a torre.
+      this.hideBonusCounter(false);
+      this.flowToNext(result, session);
+      return;
+    }
+    this.hideBonusCounter();
     this.showWin(pend.stars, result, session);
+  }
+
+  /** Fase que fecha um mundo: e onde o cartao de fim de fase ainda para. */
+  atWorldEnd() {
+    const i = this.level - 1;
+    return indexInWorld(i) === worldSize(worldOf(i)) - 1;
+  }
+
+  /**
+   * A fase seguinte entra sozinha?
+   *
+   * Nao entra no fim de um mundo nem na ultima fase do jogo: sao as duas
+   * paradas que valem um cartao, e a fronteira sai de WORLD_SIZES, nao de um
+   * "10" cravado aqui. E nao entra quando a automacao desliga o fluxo.
+   * @returns {boolean}
+   */
+  flowContinues() {
+    if (!this.flowLevels) return false;
+    if (this.level >= LEVEL_COUNT) return false;
+    return !this.atWorldEnd();
+  }
+
+  /**
+   * Fluxo continuo: mostra o recibo da fase sobre a cena e agenda a seguinte.
+   *
+   * Tudo que o cartao dizia continua sendo dito, so nao em tela cheia - as
+   * estrelas na fileira do HUD, as moedas no selo e no contador do topo, e o
+   * resto (recorde, patente, premio pela metade) nos toasts que o jogo ja usa
+   * em qualquer outra tela. O que nao cabe no selo e o video de dobrar
+   * recompensa: ele exige um botao padrao do mesmo tamanho ao lado, e um par
+   * de botoes e o cartao de volta. Ele fica no fim de mundo.
+   *
+   * @param {*} result
+   * @param {*} session
+   */
+  flowToNext(result, session) {
+    audio.win();
+    const box = $('flowSeal');
+    const moedas = result.coins + (result.bonusCoins || 0);
+    $('flowCoins').textContent = moedas > 0 ? `+${moedas}` : '';
+    // De onde veio o extra, com o mesmo texto do cartao: peca intacta e combo
+    // sao coisas que o jogador pode repetir de proposito na fase seguinte.
+    const sobraram = session && session.bonusTotal ? session.bonusTotal : result.bonusPieces || 0;
+    const partes = [];
+    if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
+    if (session && session.bestCombo > 1) partes.push(`${t('combo')} x${session.bestCombo}`);
+    $('flowWhat').textContent = partes.join('  \u00b7  ');
+    box.hidden = false;
+
+    // As moedas pousam no contador do HUD, nao numa bolsa de cartao: o premio
+    // fica onde o jogador vai continuar olhando.
+    const bolsaAntes = this.progress.data.coins - moedas;
+    this.flyCoins($('flowCoins'), Math.min(12, Math.max(4, Math.round(moedas / 3))), 200, $('gameCoins'));
+    this.countUp($('gameCoins'), this.progress.data.coins, 260, false, bolsaAntes);
+
+    if (result.halved) this.toast(t('noHeartsBody'));
+    else if (result.best) this.toast(t('newRecord'));
+    if (result.rankUp) {
+      window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), 700);
+    }
+
+    window.clearTimeout(this.flowTimer);
+    this.flowTimer = window.setTimeout(() => this.advanceLevel(), FLOW_SEAL_MS);
+  }
+
+  /** Esconde o selo do fluxo. */
+  hideFlowSeal() {
+    const box = document.getElementById('flowSeal');
+    if (box) box.hidden = true;
+  }
+
+  /** Cancela uma transicao em curso e devolve a tela ao estado normal. */
+  cancelFlow() {
+    window.clearTimeout(this.flowTimer);
+    this.flowTimer = 0;
+    this.advancing = false;
+    this.hideFlowSeal();
+    const wipe = document.getElementById('wipe');
+    if (wipe) wipe.classList.remove('on');
+  }
+
+  /**
+   * Leva o jogador para a fase seguinte, com ou sem cartao antes.
+   *
+   * A ordem aqui e obrigatoria: o intervalo comercial tem que terminar ANTES
+   * de startLevel, porque startLevel dispara measure('level', N, 'start') e a
+   * Poki nao aceita evento nenhum dentro de um intervalo. E passa pelo
+   * commercialBreak() da classe, nao pelo do poki, senao pula a carencia.
+   */
+  async advanceLevel() {
+    this.flowTimer = 0;
+    this.advancing = true;
+    const target = this.level + 1;
+    this.level = target;
+    await this.commercialBreak();
+    // O corte cobre o quadro em que a cena e remontada: sobe, troca a fase
+    // escondido e desce sobre a torre nova. Quem baixa a cortina e o
+    // cancelFlow() de startLevel, ja com a fase nova montada.
+    $('wipe').classList.add('on');
+    await new Promise((resolve) => window.setTimeout(resolve, WIPE_MS));
+    this.startLevel(target);
   }
 
   /**
@@ -732,9 +871,14 @@ class Game {
     /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = true;
   }
 
-  hideBonusCounter() {
+  /**
+   * @param {boolean} [reabilitar] devolve o HUD ao jogador; falso no fluxo
+   *   continuo, onde a contagem sai de cena mas a fase ainda vai trocar
+   */
+  hideBonusCounter(reabilitar = true) {
     const box = $('bonusBox');
     if (box) box.hidden = true;
+    if (!reabilitar) return;
     /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = false;
     /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = false;
   }
@@ -804,7 +948,10 @@ class Game {
 
   showWin(stars, result, session) {
     audio.win();
-    $('winTitle').textContent = t('victory');
+    // No fim de um mundo o cartao fecha um capitulo, e nao uma fase; a ultima
+    // fase do jogo tambem cai aqui, e ali "vitoria" e o que se quer dizer.
+    $('winTitle').textContent =
+      this.atWorldEnd() && this.level < LEVEL_COUNT ? t('worldClear') : t('victory');
     this.setStars('winStars', 0);
     $('winCoins').textContent = '0';
     $('winXp').textContent = '0';
@@ -859,13 +1006,13 @@ class Game {
   }
 
   /**
-   * Lanca moedas do bloco de recompensa ate o contador do topo.
+   * Lanca moedas do bloco de recompensa ate um contador.
    * @param {HTMLElement} from
    * @param {number} count
    * @param {number} delay
+   * @param {HTMLElement} [target] contador de destino; a bolsa do cartao por padrao
    */
-  flyCoins(from, count, delay) {
-    const target = $('winPurse');
+  flyCoins(from, count, delay, target = $('winPurse')) {
     if (!target || !from) return;
     window.setTimeout(() => {
       const a = from.getBoundingClientRect();
@@ -945,6 +1092,9 @@ class Game {
 
   pauseLevel() {
     if (this.screen !== 'game' || !this.scene.session) return;
+    // Celebracao e transicao nao se pausam: a fase ja acabou e os botoes do
+    // HUD estao fora do ar. Sem esta guarda, Escape entrava por tras deles.
+    if (this.pendingWin || this.flowTimer || this.advancing) return;
     this.paused = true;
     this.scene.session.paused = true;
     poki.gameplayStop();
@@ -1002,6 +1152,7 @@ class Game {
   quitLevel() {
     audio.buttonBack();
     poki.gameplayStop();
+    this.cancelFlow();
     this.paused = false;
     audio.releaseMusic();
     if (this.scene.session) this.scene.session.paused = false;
@@ -1011,15 +1162,12 @@ class Game {
 
   async nextLevel() {
     audio.button();
-    const target = this.level + 1;
-    if (target > LEVEL_COUNT) {
+    if (this.level + 1 > LEVEL_COUNT) {
       this.showAmbient();
       this.show('home');
       return;
     }
-    this.level = target;
-    await this.commercialBreak();
-    this.startLevel(target);
+    await this.advanceLevel();
   }
 
   /**

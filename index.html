@@ -85,6 +85,9 @@
       <div class="grow"></div>
       <div class="level-name" id="gameLevel"></div>
       <div class="grow"></div>
+      <!-- A bolsa fica a vista DENTRO da fase: e onde as moedas do premio
+           pousam, e e o que permite a recompensa existir sem um cartao. -->
+      <div class="stat coins"><span class="ico">&#9679;</span><span id="gameCoins">0</span></div>
       <div class="stat hearts"><span class="ico">&#10084;</span><span id="gameHearts">5</span></div>
       <button class="iconbtn" id="gamePause" aria-label="Pausar">&#9208;</button>
     </div>
@@ -95,6 +98,13 @@
       <span class="bonus-label" id="bonusLabel"></span>
       <b class="bonus-count" id="bonusCount">0</b>
       <span class="bonus-gain" id="bonusGain"></span>
+    </div>
+    <!-- Selo do fluxo continuo: o recibo da fase vencida, sobre a cena e sem
+         botao nenhum. Sai sozinho quando a fase seguinte entra. Nao repete as
+         estrelas: as do HUD acendem durante a jogada e ja estao logo acima. -->
+    <div class="flow" id="flowSeal" hidden>
+      <b class="flow-coins" id="flowCoins"></b>
+      <span class="flow-what" id="flowWhat"></span>
     </div>
     <div class="grow"></div>
     <div class="shade bottom"></div>
@@ -223,6 +233,10 @@
       </div>
     </div>
   </section>
+
+  <!-- Corte entre fases. A troca de cena remonta o cache de sprites e troca a
+       torre no mesmo quadro; sem este vao escuro a passagem e um salto seco. -->
+  <div class="wipe" id="wipe"></div>
 
 </div>
 

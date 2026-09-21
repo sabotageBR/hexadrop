@@ -270,7 +270,49 @@ onde o jogador quer ir. Escondido, "próxima" ocupa a fileira inteira sozinha �
 O ritmo acelera pela posição na fila e pelo tempo restante, com teto em
 `BONUS_MAX_TIME`: com trinta peças sobrando a celebração aperta o passo em vez de
 arrastar. `tools/playsweep.mjs` espera a tela sair de `game` antes de anotar o
-resultado — sem isso toda vitória com muitas peças vira "ainda jogando".
+resultado — sem isso toda vitória com muitas peças vira "ainda jogando"; é por isso
+que ele desliga o fluxo contínuo (abaixo).
+
+### Fluxo contínuo entre fases
+
+**Dentro de um mundo, vencer não abre tela.** `finishWin()` grava o prêmio, a contagem
+da celebração sai, um selo entra no lugar dela com o `+moedas` e a linha de bônus, as
+moedas voam para o contador `#gameCoins` do HUD, e um segundo depois a fase seguinte
+entra atrás de um corte de 200 ms (`.wipe`). Ninguém clica em nada.
+
+A régua é `WORLD_SIZES`, a mesma fonte de verdade de todo o resto: `flowContinues()`
+para na **última fase de cada mundo** e na fase final do jogo, e em nenhum outro lugar.
+Como o mundo 1 tem vinte fases, o primeiro cartão do jogo aparece na fase 20.
+
+A medida vem de um playtest da Poki relatado por outro desenvolvedor: tirando as telas
+de "fase concluída", o tempo médio de sessão dele foi de 3 min 49 s para 7 min 05 s em
+quatro dias, e cerca de dois minutos do salto vieram só dessa mudança. O benchmark da
+Poki é 3 minutos de mínimo aceitável e 5 de jogo que dá certo — e o cartão a cada fase
+cobrava cinco segundos de parada mais um clique, cento e sessenta vezes.
+
+Quatro coisas que esse fluxo precisa respeitar:
+
+- **O intervalo comercial termina antes de `startLevel`, e passa pelo funil da classe.**
+  `startLevel` dispara `measure('level', N, 'start')`, e a Poki não aceita evento nenhum
+  dentro de um intervalo — por isso o `await this.commercialBreak()` mora em
+  `advanceLevel()`, antes da troca de cena. E é `this.commercialBreak()`, não
+  `poki.commercialBreak()`: o direto pularia a carência de `FASES_SEM_INTERVALO`.
+- **O vídeo de dobrar prêmio não cabe no selo.** A Poki exige um botão padrão de tamanho
+  igual ou maior ao lado do vídeo, e um par de botões sobre a cena é o cartão de volta.
+  Então `#winDouble` continua só no cartão — ou seja, no fim de cada mundo. É o custo
+  desta mudança, e a régua de quanto ele custa é o tamanho do mundo em `WORLD_SIZES`.
+- **O selo não repete as estrelas.** A fileira do HUD já acende durante a jogada, e o kit
+  do mundo decide se ela fica em cima ou embaixo; uma fileira própria no selo era o mesmo
+  recado duas vezes, às vezes colado nela.
+- **O HUD fica fora do ar da celebração até a fase seguinte.** `hideBonusCounter(false)`
+  esconde a contagem sem devolver `gameBack` e `gamePause`; quem os devolve é o
+  `hideBonusCounter()` de `startLevel`. `pauseLevel()` também recusa enquanto
+  `pendingWin`, `flowTimer` ou `advancing` estiverem de pé — senão `Escape` entrava por
+  trás dos botões desabilitados.
+
+`flowLevels = false` é o que mantém o `playsweep` medindo uma fase por vez. Quem cobre o
+caminho do fluxo é o `sdkcheck`: ele joga a fase 1 (a 2 tem que entrar sozinha) e a 20
+(o cartão tem que voltar), e reprova se algum dos dois se inverter.
 
 ### Renderização
 

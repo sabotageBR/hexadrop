@@ -7,6 +7,10 @@
  * nenhum evento durante um intervalo e nenhum par repetido em sequencia. Cobra
  * tambem a carencia do comeco: nenhum intervalo antes de o jogador vencer as
  * primeiras fases, e o intervalo de volta depois delas.
+ *
+ * E cobra o fluxo continuo, que e a outra metade do desenho: dentro de um mundo
+ * vencer nao abre tela e a fase seguinte entra sozinha; no fim do mundo o cartao
+ * volta. Se um dos dois se inverter, o teste reprova.
  */
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -77,17 +81,37 @@ async function tocar() {
   return true;
 }
 
+/** Toca ate a fase acabar ou o orcamento de toques esgotar. */
+async function jogarFase(maxToques = 30) {
+  for (let t = 0; t < maxToques; t++) {
+    if ((await js('window.__game.screen')) !== 'game') break;
+    if (!(await tocar())) break;
+    await sleep(700);
+  }
+}
+
+/** Espera o desfecho: celebracao, selo e transicao levam alguns segundos. */
+async function esperarDesfecho(deLevel) {
+  for (let t = 0; t < 40; t++) {
+    const st = await js('({screen: window.__game.screen, level: window.__game.level, advancing: window.__game.advancing})');
+    if (st && st.screen !== 'game') return st;
+    if (st && st.level !== deLevel && !st.advancing) return st;
+    await sleep(250);
+  }
+  return await js('({screen: window.__game.screen, level: window.__game.level})');
+}
+
 await js('document.getElementById("btnPlay").click()');
 await sleep(1500);
-for (let t = 0; t < 30; t++) {
-  if ((await js('window.__game.screen')) !== 'game') break;
-  if (!(await tocar())) break;
-  await sleep(700);
-}
-await sleep(1600);
-// avanca ou tenta de novo, o que estiver na tela
-await js('(document.getElementById("winNext").offsetParent ? document.getElementById("winNext") : document.getElementById("loseRetry")).click()');
-await sleep(1800);
+await jogarFase();
+// Fluxo continuo: a fase 1 nao abre cartao nenhum e a 2 entra sozinha, sem
+// ninguem clicar em nada. Se alguma coisa parou o jogador, segue pelo cartao
+// para o resto do roteiro continuar valendo.
+const fluxo = await esperarDesfecho(1);
+await sleep(700);
+if (fluxo && fluxo.screen === 'win') await js('document.getElementById("winNext").click()');
+else if (fluxo && fluxo.screen === 'lose') await js('document.getElementById("loseRetry").click()');
+await sleep(1200);
 await js('window.__game.pauseLevel()');
 await sleep(400);
 await js('document.getElementById("pauseResume").click()');
@@ -106,6 +130,18 @@ await js('window.__game.pauseLevel()');
 await sleep(400);
 await js('document.getElementById("pauseResume").click()');
 await sleep(1200);
+
+// Fim de mundo: a fronteira sai de WORLD_SIZES, e o mundo 1 tem vinte fases.
+// Ali o cartao volta - e com ele o video de dobrar recompensa, que nao cabe no
+// selo do fluxo.
+await js('window.__game.startLevel(20)');
+await sleep(1200);
+await jogarFase();
+const parada = await esperarDesfecho(20);
+await sleep(500);
+if (parada && parada.screen === 'win') await js('document.getElementById("winNext").click()');
+else if (parada && parada.screen === 'lose') await js('document.getElementById("loseRetry").click()');
+await sleep(1500);
 
 const log = await js('JSON.stringify(window.__sdkLog)');
 sock.close(); chrome.kill();
@@ -160,6 +196,17 @@ for (let i = 0; i < names.length; i++) {
 check('gameplayStop antes de cada intervalo', okBefore);
 
 const measures = events.filter((e) => e.name === 'measure').map((e) => e.extra || '');
+// Fluxo continuo: dentro de um mundo o jogo nao para, e no fim dele para.
+check(
+  'fase seguinte entra sozinha',
+  !!fluxo && fluxo.screen === 'game' && fluxo.level === 2,
+  fluxo ? `tela ${fluxo.screen}, fase ${fluxo.level}` : 'sem estado',
+);
+check(
+  'fim de mundo para o jogador',
+  !!parada && parada.screen !== 'game',
+  parada ? `tela ${parada.screen}, fase ${parada.level}` : 'sem estado',
+);
 check('telemetria de fase registrada', measures.some((m) => m.startsWith('level/')), measures.slice(0, 3).join(' '));
 const lvl = measures.filter((m) => m.startsWith('level/'));
 const byLevel = new Map();
