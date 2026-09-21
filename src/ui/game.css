@@ -523,6 +523,12 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   #s-home .home-foot { margin-top: 8px; padding-top: 8px; }
   #gameStars { position: fixed; left: calc(14px + var(--safe-l)); top: calc(66px + var(--safe-t)); margin: 0; gap: 7px; }
   #gameStars i { width: 19px; height: 19px; }
+  /* As estrelas do HUD ocuparam o canto de cima; o selo e a contagem descem
+     para nao ficarem em cima delas. */
+  .bonus { margin-top: 4px; padding: 5px 16px; }
+  .bonus-count { font-size: clamp(26px, 7vh, 36px); }
+  .flow { margin-top: 4px; padding: 6px 18px; gap: 4px; }
+  .flow-coins { font-size: clamp(20px, 6vh, 26px); }
   .trail { height: 520px; }
   .tut { top: auto; bottom: calc(14px + var(--safe-b)); }
   .card { width: min(520px, 100%); padding: 16px; }
@@ -582,6 +588,52 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   to { transform: scale(1); }
 }
 .bonus-gain { font: 800 16px/1 var(--font); color: var(--gold); }
+
+/* ------------------------------------------------- selo do fluxo continuo */
+/* O recibo da fase vencida quando nao ha cartao: entra sobre a cena, sem
+   botao, e sai quando a fase seguinte carrega. Deliberadamente mais discreto
+   que a contagem da celebracao - quem tem que chamar atencao e a torre nova. */
+.flow {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+  padding: 10px 26px;
+  border-radius: 20px;
+  background: rgba(var(--sheet-rgb), 0.46);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
+  animation: flowIn 0.26s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.flow-coins { font: 900 clamp(24px, 7vw, 34px)/1 var(--font); color: var(--gold); letter-spacing: -0.02em; }
+.flow-coins:empty { display: none; }
+.flow-what {
+  font: 800 11px/1 var(--font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.flow-what:empty { display: none; }
+/* Nao ha animacao de saida: quem tira o selo de cena e o corte por cima. */
+@keyframes flowIn {
+  from { transform: scale(0.82); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Corte entre fases: cobre o quadro em que a cena e remontada. */
+.wipe {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: rgb(var(--sheet-rgb));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.wipe.on { opacity: 1; }
 
 /* Texto que sobe do ponto da quebra: combo e moeda do bonus. */
 .floater {

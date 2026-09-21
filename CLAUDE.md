@@ -91,6 +91,41 @@ para contar; `GameScene.load()` embrulha essa função, então a contagem sobrev
 Peça intacta e combo valem moedas **e** XP (`progress.finishLevel`), nunca estrelas: os
 portões de mundo continuam cobrando exatamente o que cobravam.
 
+### Fluxo contínuo entre fases
+
+**Vencer não abre tela.** Dentro de um mundo, `finishWin()` grava o prêmio e chama
+`flowToNext()`: a contagem da celebração sai, um selo entra no lugar dela com o `+moedas`
+e a linha de bônus, as moedas voam para o contador `#gameCoins` do HUD, e um segundo
+depois a fase seguinte entra atrás de um corte de 200 ms (`.wipe`). Ninguém clica em nada.
+O cartão `#s-win` continua existindo, mas só nas paradas que são de verdade: o fim de um
+mundo (`FLOW_STOP_EVERY`, de dez em dez, onde ele diz "mundo concluído") e a fase 100.
+
+A medida vem de um playtest da Poki relatado por outro desenvolvedor: tirando as telas de
+"fase concluída", o tempo médio de sessão dele foi de 3 min 49 s para 7 min 05 s em quatro
+dias, e cerca de dois minutos desse salto foram só dessa mudança. O benchmark da Poki é 3
+minutos de mínimo aceitável e 5 de jogo que dá certo — e o cartão a cada fase cobrava
+cinco segundos de parada mais um clique, cem vezes.
+
+Quatro coisas que esse fluxo precisa respeitar:
+
+- **O intervalo comercial termina antes de `startLevel`.** `startLevel` dispara
+  `measure('level', N, 'start')`, e a Poki não aceita evento nenhum dentro de um
+  intervalo — é por isso que o `await poki.commercialBreak()` mora em `advanceLevel()`,
+  antes da troca de cena, e não depois. A frequência continua sendo decisão da Poki: o
+  jogo sinaliza a oportunidade em toda transição e não tem cooldown próprio.
+- **O selo não repete as estrelas.** A fileira do HUD já acende durante a jogada, logo
+  acima de onde o selo aparece; com uma fileira própria eram seis estrelas em duas linhas
+  coladas, e nenhuma delas dizia nada de novo.
+- **O HUD fica fora do ar da celebração até a fase seguinte.** `hideBonusCounter(false)`
+  esconde a contagem sem devolver `gameBack` e `gamePause`; quem os devolve é o
+  `hideBonusCounter()` de `startLevel`. `pauseLevel()` também recusa enquanto
+  `pendingWin`, `flowTimer` ou `advancing` estiverem de pé — senão `Escape` entrava por
+  trás dos botões desabilitados.
+- **`flowLevels = false` é o que mantém o `playsweep` medindo uma fase por vez.** Com o
+  cartão de volta, a tela volta a sair de `game` para `win`/`lose` e o sweep não lê a
+  sessão da fase seguinte. Quem cobre o caminho do fluxo é o `sdkcheck`, que joga a fase 1
+  (segue sozinho) e a 10 (para no cartão) e reprova se algum dos dois se inverter.
+
 ### Determinismo e as fases assadas
 
 A altura das torres vai de 4 a **24 linhas**, por duas curvas das quais vale a maior

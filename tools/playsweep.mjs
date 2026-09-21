@@ -34,6 +34,10 @@ const js = async (e) => (await send('Runtime.evaluate', { expression: e, returnB
 
 // libera todas as fases para o teste
 await js('window.__game.progress.data.unlocked = 100; window.__game.progress.flush();');
+// Desliga o fluxo continuo: com o cartao de fim de fase de volta, a tela para
+// de 'game' para 'win'/'lose' e o sweep mede uma fase por vez, em vez de
+// correr atras do avanco automatico e ler a sessao da fase seguinte.
+await js('window.__game.flowLevels = false;');
 
 let wins = 0, losses = 0;
 const rows = [];
