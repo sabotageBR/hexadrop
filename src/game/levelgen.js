@@ -12,11 +12,62 @@ import { SHAPE_LIST, orientations, bounds, normalize } from '../physics/shapes.j
 import { MATERIAL_DEBUT, HOLD_MATERIALS } from '../physics/materials.js';
 import { HEX_RADIUS, CELL } from '../physics/world.js';
 
-export const LEVEL_COUNT = 100;
+/**
+ * Fases de cada mundo.
+ *
+ * O primeiro e um tutorial longo: vinte fases para apresentar o toque, a
+ * estrela, o pedestal, a pedra e a obsidiana sem pressa. Os demais mantem as
+ * dez de sempre, que e o tamanho em que um mundo cabe numa sessao.
+ *
+ * Esta lista e a UNICA fonte de verdade sobre fronteira de mundo. Antes o "10"
+ * estava literal em dezenove lugares de cinco arquivos, e bastava esquecer um
+ * para o mapa abrir uma fase e o portao cobrar outra.
+ */
+export const WORLD_SIZES = [20, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10];
 
-/** Tema de cada dezena de fases. */
+export const WORLD_COUNT = WORLD_SIZES.length;
+
+export const LEVEL_COUNT = WORLD_SIZES.reduce((a, b) => a + b, 0);
+
+/** Indice 0-based da primeira fase de cada mundo, mais o total no fim. */
+const WORLD_START = WORLD_SIZES.reduce(
+  (acc, n) => {
+    acc.push(acc[acc.length - 1] + n);
+    return acc;
+  },
+  [0],
+);
+
+/**
+ * @param {number} index indice 0-based da fase
+ * @returns {number} mundo 0-based
+ */
+export function worldOf(index) {
+  const i = Math.max(0, Math.min(LEVEL_COUNT - 1, index | 0));
+  let w = 0;
+  while (w + 1 < WORLD_COUNT && i >= WORLD_START[w + 1]) w++;
+  return w;
+}
+
+/** @param {number} world @returns {number} indice 0-based da primeira fase */
+export function worldStart(world) {
+  return WORLD_START[Math.max(0, Math.min(WORLD_COUNT - 1, world | 0))];
+}
+
+/** @param {number} world @returns {number} quantas fases o mundo tem */
+export function worldSize(world) {
+  return WORLD_SIZES[Math.max(0, Math.min(WORLD_COUNT - 1, world | 0))];
+}
+
+/** @param {number} index @returns {number} posicao da fase dentro do mundo */
+export function indexInWorld(index) {
+  const i = Math.max(0, Math.min(LEVEL_COUNT - 1, index | 0));
+  return i - worldStart(worldOf(i));
+}
+
+/** Tema de cada mundo. */
 export const WORLD_THEMES = [
-  'neon',
+  'puzzle',
   'classic',
   'ice',
   'candy',
@@ -26,6 +77,96 @@ export const WORLD_THEMES = [
   'lava',
   'neon',
   'futuristic',
+  // Segunda volta: os mesmos cenarios em outra ordem, nunca dois iguais
+  // seguidos, e o neon fecha o jogo como fechava a primeira volta.
+  'candy',
+  'ice',
+  'rustic',
+  'lava',
+  'neon',
+];
+
+/**
+ * A peca que define cada mundo.
+ *
+ * `base` e a peca dominante da torre, `apoio` e o que a sustenta (e o que
+ * assume enquanto a base ainda nao estreou), e `assinatura` e o material que
+ * aquele cenario empurra para frente.
+ *
+ * Antes daqui isto era uma funcao de dois valores que devolvia madeira para
+ * CATORZE dos quinze mundos: trocar de mundo trocava o ceu e a paleta, nunca a
+ * peca. Medido sobre as seeds aprovadas, o mundo 2 inteiro era 68% madeira e
+ * 27% pedra, e nada mais.
+ *
+ * O `teto` existe porque nem toda peca aguenta ser maioria. Gelo tem atrito
+ * 0,09 e vidro quebra por pancada: uma torre feita quase so deles vira um
+ * escorregador que o validador so aprova no degrau 3 de afrouxamento - o
+ * degrau que apaga toda a variedade de materiais.
+ */
+const THEME_MATERIALS = {
+  puzzle: { base: 'block', apoio: 'stone', assinatura: '', teto: 10 },
+  classic: { base: 'wood', apoio: 'stone', assinatura: 'ice', teto: 10 },
+  ice: { base: 'ice', apoio: 'stone', assinatura: 'rubber', teto: 6.5 },
+  candy: { base: 'rubber', apoio: 'wood', assinatura: 'foam', teto: 8 },
+  futuristic: { base: 'metal', apoio: 'stone', assinatura: 'glass', teto: 9 },
+  rustic: { base: 'wood', apoio: 'stone', assinatura: 'crystal', teto: 10 },
+  paper: { base: 'foam', apoio: 'wood', assinatura: 'glass', teto: 6.5 },
+  lava: { base: 'stone', apoio: 'wood', assinatura: 'wax', teto: 10 },
+  neon: { base: 'glass', apoio: 'metal', assinatura: 'crystal', teto: 6.5 },
+};
+
+/**
+ * Peca dominante de um mundo, respeitando o calendario de estreias.
+ *
+ * Antes de a base estrear o mundo se apoia no material de apoio - senao o
+ * mundo do gelo abriria feito de gelo numa fase em que o jogador ainda nao viu
+ * gelo nenhum. Com `seguro`, bases frageis cedem lugar ao apoio: e o que o
+ * degrau 3 de afrouxamento precisa, porque ali o objetivo e so a fase existir.
+ *
+ * @param {string} theme
+ * @param {number} [level] 1-based; sem ele assume o fim do jogo
+ * @param {boolean} [seguro]
+ * @returns {string}
+ */
+export function baseMaterial(theme, level = LEVEL_COUNT, seguro = false) {
+  const kit = THEME_MATERIALS[theme] || THEME_MATERIALS.classic;
+  const alvo = seguro && kit.teto < 10 ? kit.apoio : kit.base;
+  if (level >= (MATERIAL_DEBUT[alvo] || 1)) return alvo;
+  if (level >= (MATERIAL_DEBUT[kit.apoio] || 1)) return kit.apoio;
+  return 'wood';
+}
+
+/**
+ * As tres primeiras fases sao roteiro, e nao ponto da curva.
+ *
+ * Pela curva elas eram a MESMA fase tres vezes: quatro colunas, quatro linhas
+ * e so barras, ou seja, quatro toques sem nada cair de verdade. O jogador
+ * concluia que o jogo era aquilo, o primeiro intervalo comercial chegava em
+ * seguida e ele ia embora ali.
+ *
+ * A saida nao foi so misturar formas numa torre de quatro colunas: medido no
+ * validador, nessa largura qualquer peca que nao seja barra deixa o hexagono
+ * rolar para fora com um toque ingenuo, e as unicas seeds que perdoavam tudo
+ * eram as de barras de novo. Com seis colunas a torre tem apoio dos dois
+ * lados, e cerca de uma seed em quatro sai variada (doze a dezessete pecas,
+ * seis a oito toques) e ainda vence com o jogador tocando ao acaso. As pecas
+ * que caem de lado ficam no pedestal largo e viram a cascata de bonus do fim,
+ * que a pilha de barras nunca mostrava.
+ *
+ * `minForgiveness`, `minPieces` e `minPar` nao mudam o layout: sao exigencias
+ * que tools/generate-levels.mjs cobra antes de aceitar uma seed. O `minPar`
+ * tira as torres que desabam inteiras em dois toques - bonitas, mas de novo
+ * uma fase que acaba antes de o jogador entender o que fez.
+ */
+const PRIMEIRAS_FASES = [
+  // "Toque nas pecas": base quase sempre de barras, formas soltas por cima.
+  { width: 6, rows: 6, barBias: 0.3, tierMax: 1, minForgiveness: 1, minPieces: 9, minPar: 3 },
+  // "Leve o hexagono": a torre inteira de formas, o caminho e escolha.
+  { width: 6, rows: 6, barBias: 0.15, tierMax: 1, minForgiveness: 1, minPieces: 9, minPar: 3 },
+  // "Cruze as linhas": uma linha a mais, para as estrelas acenderem espacadas,
+  // e as formas de quatro blocos. Com sete linhas e so as formas basicas quase
+  // nenhuma seed perdoava tudo; o L, o T e o J dao mais encaixe e mais apoio.
+  { width: 6, rows: 7, barBias: 0.25, tierMax: 2, minForgiveness: 1, minPieces: 9, minPar: 3 },
 ];
 
 /**
@@ -48,6 +189,9 @@ export const WORLD_THEMES = [
  * @property {number} hexOffset deslocamento inicial do hexagono em celulas
  * @property {string} theme
  * @property {string[]} newMaterials materiais que estreiam nesta fase
+ * @property {number} [minForgiveness] o validador so aceita seed com perdao igual ou maior
+ * @property {number} [minPieces] o validador so aceita layout com pelo menos tantas pecas
+ * @property {number} [minPar] o validador so aceita seed cuja melhor solucao pede tantos toques
  * @property {number} [softened] degrau de afrouxamento aplicado
  */
 
@@ -68,37 +212,59 @@ export function levelConfig(index, soften = 0) {
   // de 3 ele fica com margem de meia celula para cada lado, o que transforma
   // qualquer desabamento em queda certa.
   let width;
-  if (i < 8) width = 4;
-  else if (i < 20) width = r.chance(0.55) ? 4 : 5;
-  else if (i < 45) width = 4 + r.int(0, 1);
-  else if (i < 70) width = 4 + r.int(0, 2);
-  else width = r.chance(0.4) ? 4 : 5 + r.int(0, 1);
+  if (i < 6) width = 4;
+  else if (i < 16) width = r.chance(0.45) ? 4 : 5;
+  else if (i < 45) width = r.chance(0.25) ? 6 : 5;
+  else if (i < 75) width = 5 + r.int(0, 1);
+  else width = r.chance(0.3) ? 5 : 6;
 
   // --- altura, com dente de serra e fases de folego -----------------------
   // A altura e o eixo que mais gasta toques, mas tambem o que mais acumula
   // risco: cada degrau e uma chance de o hexagono tombar. Por isso ela para em
   // 16 e o resto da dificuldade vem de pedestal estreito, materiais e vento.
-  let rows = 4 + Math.round(Math.pow(p, 0.8) * 11);
-  const inWorld = i % 10;
-  if (inWorld === 9) rows += 2; // fase final de cada mundo
+  // Dois trechos: o mundo 1 inteiro fica baixo, para ensinar, e dali em
+  // diante a torre sobe depressa. E a silhueta alta e cheia de pecas
+  // encaixadas que faz a torre parecer uma torre, e nao tres barras.
+  //
+  // O trecho de ensino acompanha o tamanho do mundo 1, e nao um "10" cravado:
+  // quando ele dobrou para vinte fases, a rampa dobrou junto em vez de deixar
+  // dez fases de tutorial ja na altura de mundo 2.
+  const mundo = worldOf(i);
+  const fimDoTutorial = worldStart(1);
+  let rows =
+    i < fimDoTutorial
+      ? 4 + Math.round((i / (fimDoTutorial - 1)) * 4)
+      : 8 +
+        Math.round(
+          Math.pow((i - fimDoTutorial) / (LEVEL_COUNT - fimDoTutorial - 1), 0.65) * 8,
+        );
+  const inWorld = indexInWorld(i);
+  if (inWorld === worldSize(mundo) - 1) rows += 2; // fase final de cada mundo
   else if (inWorld === 0 && i > 0) rows -= 1; // alivio depois do chefe
   rows = Math.max(4, Math.min(16, rows));
 
   // --- complexidade das formas -------------------------------------------
   let tierMax = 1;
-  if (i >= 6) tierMax = 2;
-  if (i >= 18) tierMax = 3;
-  if (i >= 44) tierMax = 4;
+  if (i >= 5) tierMax = 2;
+  if (i >= 20) tierMax = 3;
+  if (i >= 45) tierMax = 4;
 
-  const theme = WORLD_THEMES[Math.floor(i / 10) % WORLD_THEMES.length];
+  const theme = WORLD_THEMES[mundo];
 
   // --- materiais ----------------------------------------------------------
+  const kit = THEME_MATERIALS[theme] || THEME_MATERIALS.classic;
+  const base = baseMaterial(theme, level);
+  // O teto so vale quando o mundo de fato conseguiu a peca que queria. Se ele
+  // ainda esta no material de apoio, nao ha fragilidade nenhuma a limitar.
+  const teto = base === kit.base ? kit.teto : 10;
   /** @type {Record<string, number>} */
-  const materialWeights = { wood: 10 };
+  const materialWeights = { [base]: teto };
   const add = (id, weight) => {
-    if (level >= MATERIAL_DEBUT[id]) materialWeights[id] = weight;
+    if (!id || id === base) return;
+    if (level < MATERIAL_DEBUT[id]) return;
+    materialWeights[id] = Math.max(materialWeights[id] || 0, weight);
   };
-  add('stone', level >= 20 ? 6 : 4);
+  add('stone', level > worldStart(1) ? 6 : 4);
   add('ice', Math.min(6, 2 + (level - MATERIAL_DEBUT.ice) * 0.12));
   add('rubber', Math.min(5, 2 + (level - MATERIAL_DEBUT.rubber) * 0.1));
   add('metal', Math.min(5, 2 + (level - MATERIAL_DEBUT.metal) * 0.1));
@@ -113,8 +279,32 @@ export function levelConfig(index, soften = 0) {
   // A cera so existe onde a lava justifica. Fora do mundo 8 ela seria um
   // material sem historia, e o jogador leria "derrete" como regra universal.
   if (theme === 'lava') add('wax', 1.6);
-  // A madeira perde espaco conforme os materiais especiais entram.
-  materialWeights.wood = Math.max(4, 10 - (Object.keys(materialWeights).length - 1) * 0.9);
+
+  // O material de apoio segura a torre quando a base e leve, escorregadia ou
+  // quebradica. Sem ele o mundo do papel seria uma pilha de espuma que cede
+  // inteira no primeiro toque.
+  add(kit.apoio, teto < 10 ? 5.5 : 3);
+  // A assinatura do mundo. Cristal e cera entram baixo mesmo sendo assinatura:
+  // eles cedem sozinhos sob o hexagono e, em quantidade, resolvem a fase no
+  // lugar do jogador - medido, com peso 4 as fases de cristal cairam de doze
+  // para seis toques.
+  if (kit.assinatura) {
+    add(kit.assinatura, HOLD_MATERIALS.has(kit.assinatura) ? 2 : 4.5);
+  }
+
+  // O material-base perde espaco conforme os especiais entram.
+  const outros = Object.keys(materialWeights).filter((id) => id !== base);
+  materialWeights[base] = Math.max(teto * 0.55, teto - outros.length * 0.7);
+  if (teto < 10) {
+    // Base fragil: em vez de inflar a base ate a torre virar um escorregador,
+    // os outros encolhem. "Este e o mundo do gelo" sai da proporcao, e nao de
+    // um numero absoluto grande.
+    for (const id of outros) materialWeights[id] *= 0.7;
+  }
+  // A peca do mundo precisa LER como a peca do mundo: a pedra cresce com o
+  // nivel e roubava o papel principal justamente nos mundos de gelo e vidro.
+  const maiorOutro = outros.reduce((m, id) => Math.max(m, materialWeights[id]), 0);
+  materialWeights[base] = Math.max(materialWeights[base], maiorOutro * 1.35);
 
   // --- pecas especiais ----------------------------------------------------
   let obsidian = 0;
@@ -136,33 +326,44 @@ export function levelConfig(index, soften = 0) {
   // em "comece facil e suba gradualmente".
   let pedestalFrac;
   if (i < 10) pedestalFrac = 0.95;
-  else if (i < 20) pedestalFrac = 0.82;
-  else if (i < 35) pedestalFrac = 0.72;
-  else if (i < 50) pedestalFrac = 0.62;
-  else if (i < 70) pedestalFrac = 0.54;
-  else if (i < 85) pedestalFrac = 0.46;
+  else if (i < 20) pedestalFrac = 0.86;
+  else if (i < 30) pedestalFrac = 0.78;
+  else if (i < 45) pedestalFrac = 0.7;
+  else if (i < 60) pedestalFrac = 0.62;
+  else if (i < 80) pedestalFrac = 0.54;
+  else if (i < 95) pedestalFrac = 0.46;
   else pedestalFrac = 0.4;
   const pedestalHalf = Math.max(1.35, width * pedestalFrac);
 
-  const oscillate = level >= 65 ? 0.35 + Math.min(0.55, (level - 65) * 0.018) : 0;
-  const wind = level >= 75 ? (r.chance(0.5) ? 1 : -1) * (0.7 + (level - 75) * 0.035) : 0;
+  // Os limiares abaixo acompanharam o deslocamento de dez fases que o tutorial
+  // longo produziu: o jogador chega em cada novidade com a mesma bagagem de
+  // antes, e nao dez fases mais cedo na curva.
+  const oscillate = level >= 75 ? 0.35 + Math.min(0.55, (level - 75) * 0.018) : 0;
+  const wind = level >= 85 ? (r.chance(0.5) ? 1 : -1) * (0.7 + (level - 85) * 0.035) : 0;
 
   let hexScale = 1;
-  if (level >= 28 && r.chance(0.16)) hexScale = 1.16;
-  else if (level >= 40 && r.chance(0.14)) hexScale = 0.86;
+  if (level >= 38 && r.chance(0.16)) hexScale = 1.16;
+  else if (level >= 50 && r.chance(0.14)) hexScale = 0.86;
 
-  const hexOffset = level >= 24 && r.chance(0.3) ? (r.chance(0.5) ? -0.7 : 0.7) : 0;
+  const hexOffset = level >= 34 && r.chance(0.3) ? (r.chance(0.5) ? -0.7 : 0.7) : 0;
 
   // Barras que atravessam a torre inteira sao o encaixe mais seguro que existe:
   // tirar uma faz tudo acima descer reto, sem degrau para o hexagono tombar.
   // As primeiras fases sao feitas quase so delas, e a mistura entra devagar.
   let barBias = 0;
-  if (level <= 2) barBias = 1;
-  else if (level <= 5) barBias = 0.6;
-  else if (level <= 10) barBias = 0.3;
-  else if (level <= 18) barBias = 0.12;
+  if (level <= 3) barBias = 1;
+  else if (level <= 8) barBias = 0.5;
+  else if (level <= 14) barBias = 0.22;
+  else if (level <= 22) barBias = 0.08;
 
-  const newMaterials = Object.keys(MATERIAL_DEBUT).filter((m) => MATERIAL_DEBUT[m] === level);
+  const newMaterials = Object.keys(MATERIAL_DEBUT).filter((m) => {
+    if (MATERIAL_DEBUT[m] !== level) return false;
+    // Bloco e madeira estreiam juntos no calendario, e agora cada mundo tem a
+    // sua propria peca dominante: o mundo so apresenta o que de fato coloca na
+    // torre. Anunciar "gelo!" num mundo sem gelo seria mentira.
+    if (m === 'obsidian' || m === 'bomb' || m === 'tnt') return true;
+    return m in materialWeights;
+  });
   // Uma mecanica nova de cada vez, e sempre numa fase facil. A fase de estreia
   // de um material ganha mais barras e perde uma linha, para o jogador aprender
   // como ele se comporta antes de precisar dele sob pressao.
@@ -183,7 +384,7 @@ export function levelConfig(index, soften = 0) {
     obsidian,
     bombs,
     tnt,
-    bandMerge: Math.min(0.5, 0.05 + p * 0.45),
+    bandMerge: Math.min(0.55, 0.1 + p * 0.5),
     barBias,
     pedestalHalf,
     oscillate,
@@ -193,6 +394,14 @@ export function levelConfig(index, soften = 0) {
     theme,
     newMaterials,
   };
+  // O roteiro vem por cima da curva e da regra de estreia: o bloco "estreia"
+  // na fase 1, e a regra cortaria duas linhas justo da fase que tem que
+  // mostrar o jogo.
+  const roteiro = PRIMEIRAS_FASES[i];
+  if (roteiro) {
+    Object.assign(config, roteiro);
+    config.pedestalHalf = Math.max(1.35, roteiro.width * pedestalFrac);
+  }
   return soften > 0 ? softenConfig(config, soften) : config;
 }
 
@@ -245,7 +454,11 @@ export function softenConfig(config, step) {
     c.wind = 0;
     c.hexScale = 1;
     c.pedestalHalf = Math.max(config.pedestalHalf * 1.6, c.width * 0.8);
-    c.materialWeights = { wood: 10, stone: 3 };
+    // Aqui o objetivo e so a fase existir, entao base fragil cede lugar ao
+    // apoio: um degrau 3 feito de gelo seria mais dificil que o original.
+    const seguro = baseMaterial(config.theme, config.level, true);
+    c.materialWeights =
+      seguro === 'stone' ? { stone: 10, wood: 3 } : { [seguro]: 10, stone: 3 };
     c.bandMerge = 0.1;
     c.barBias = Math.min(1, (config.barBias || 0) + 0.6);
   }
@@ -401,6 +614,7 @@ function bandHeights(rows, rng, mergeChance) {
 export function generateLayout(config, seed) {
   const rng = new Rng(seed >>> 0);
   const { width, rows } = config;
+  const base = baseMaterial(config.theme, config.level);
 
   const catalog = SHAPE_LIST.filter((s) => {
     if (s.tier > config.tierMax) return false;
@@ -423,7 +637,7 @@ export function generateLayout(config, seed) {
         pieces.push({
           shape: 'bar' + width,
           cells: barCells.map((c) => /** @type {[number,number]} */ ([c[0], c[1]])),
-          material: 'wood',
+          material: base,
           x: 0,
           y: baseY + row,
           band: bandIndex,
@@ -442,7 +656,7 @@ export function generateLayout(config, seed) {
       pieces.push({
         shape: t.id,
         cells: /** @type {[number,number][]} */ (normalize(t.cells)),
-        material: 'wood',
+        material: base,
         x: t.x,
         y: baseY + t.y,
         band: bandIndex,
@@ -533,7 +747,7 @@ export function generateLayout(config, seed) {
   {
     const topo = bands.length - 1;
     for (const p of pieces) {
-      if (p.band === topo && HOLD_MATERIALS.has(p.material)) p.material = 'wood';
+      if (p.band === topo && HOLD_MATERIALS.has(p.material)) p.material = base;
     }
   }
 

@@ -12,6 +12,24 @@
  * @property {number} id
  */
 
+/**
+ * Ha uma lista rolavel entre este no e a raiz?
+ *
+ * @param {EventTarget|null} node
+ * @returns {boolean}
+ */
+function rolavelSob(node) {
+  let el = /** @type {Element|null} */ (node instanceof Element ? node : null);
+  while (el && el !== document.body) {
+    if (el.scrollHeight > el.clientHeight + 1) {
+      const y = getComputedStyle(el).overflowY;
+      if (y === 'auto' || y === 'scroll') return true;
+    }
+    el = el.parentElement;
+  }
+  return false;
+}
+
 const SCROLL_KEYS = new Set([
   'ArrowUp',
   'ArrowDown',
@@ -109,6 +127,12 @@ export class Input {
     };
 
     this._onWheel = (/** @type {WheelEvent} */ e) => {
+      // A roda ficava barrada na janela inteira, e no desktop isso prendia o
+      // mapa e a loja: sem toque para arrastar, a roda e a unica forma de
+      // rolar a fita de fases. Onde ha lista rolavel embaixo do ponteiro a
+      // roda passa; no resto - a cena do jogo - continua barrada, senao a
+      // pagina inteira anda dentro do frame da Poki.
+      if (!e.ctrlKey && rolavelSob(e.target)) return;
       e.preventDefault();
     };
 

@@ -7,8 +7,8 @@
  */
 
 import { load, save, isPersistent } from '../core/storage.js';
-import { LEVEL_COUNT } from './levelgen.js';
-import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars } from './content.js';
+import { LEVEL_COUNT, WORLD_COUNT, worldOf } from './levelgen.js';
+import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE } from './content.js';
 
 const BASE_HEARTS = 5;
 /** Um coracao a cada dez minutos de relogio real. */
@@ -118,12 +118,6 @@ export class Progress {
     return true;
   }
 
-  refillHearts() {
-    this.data.hearts = this.maxHearts;
-    this.data.heartsAt = Date.now();
-    this.flush();
-  }
-
   /** @returns {boolean} recompensas pela metade quando sem coracoes */
   get depleted() {
     this.refreshHearts();
@@ -140,7 +134,7 @@ export class Progress {
   /** @param {number} level @returns {boolean} */
   isUnlocked(level) {
     if (level > this.data.unlocked) return false;
-    return this.worldOpen(Math.floor((level - 1) / 10));
+    return this.worldOpen(worldOf(level - 1));
   }
 
   /**
@@ -151,7 +145,7 @@ export class Progress {
    * jogador precisa voltar e melhorar alguma fase. E o que torna o "volte e
    * preencha as estrelas" uma regra e nao um pedido.
    *
-   * @param {number} world 0 a 9
+   * @param {number} world 0 a WORLD_COUNT-1
    * @returns {boolean}
    */
   worldOpen(world) {
@@ -169,7 +163,10 @@ export class Progress {
   freshlyOpenedWorlds() {
     /** @type {number[]} */
     const out = [];
-    for (let w = 1; w < 10; w++) {
+    // Era `w < 10` cravado enquanto o jogo tinha quinze mundos: do decimo em
+    // diante o portao abria em silencio, sem animacao e sem entrar em
+    // gatesSeen.
+    for (let w = 1; w < WORLD_COUNT; w++) {
       if (this.worldOpen(w) && !this.data.gatesSeen.includes(w)) out.push(w);
     }
     return out;
@@ -251,19 +248,53 @@ export class Progress {
       if (best) coins += 4;
     }
 
+    // Pericia: cada peca que o jogador NAO precisou gastar rende. E o que faz
+    // "sobrou peca" virar meta em vez de sobra.
+    const bonusPieces = Math.max(0, o.bonusPieces || 0);
+    const comboScore = Math.max(0, o.comboScore || 0);
+    const comboPieces = Math.max(0, o.comboPieces || 0);
+    let bonusCoins = 0;
+    let bonusXp = 0;
+    if (o.stars > 0) {
+      bonusCoins = bonusPieces * BONUS_COINS_PER_PIECE + comboScore;
+      bonusXp = bonusPieces * BONUS_XP_PER_PIECE + comboPieces;
+    }
+
     const halved = this.depleted;
     if (halved) {
       coins = Math.floor(coins / 2);
       xp = Math.floor(xp / 2);
+      bonusCoins = Math.floor(bonusCoins / 2);
+      bonusXp = Math.floor(bonusXp / 2);
     }
-    coins = Math.round(coins * upgradeEffects(d.upgrades).coinMultiplier);
+    const mult = upgradeEffects(d.upgrades).coinMultiplier;
+    coins = Math.round(coins * mult);
+    bonusCoins = Math.round(bonusCoins * mult);
 
     const rankBefore = this.rank;
-    d.coins += coins;
-    d.xp += xp;
+    d.coins += coins + bonusCoins;
+    d.xp += xp + bonusXp;
     const rankUp = this.rank > rankBefore;
     this.flush();
-    return { coins, xp, halved, best, rankUp };
+    return { coins, xp, bonusCoins, bonusXp, bonusPieces, halved, best, rankUp };
+  }
+
+  /**
+   * Fase aberta por video, sem estrela. Fica marcada para o mapa poder mostrar
+   * que ela esta em aberto sem fingir que foi vencida.
+   * @param {number} level
+   */
+  markSkipped(level) {
+    if (!Array.isArray(this.data.skipped)) this.data.skipped = [];
+    if (!this.data.skipped.includes(level)) {
+      this.data.skipped.push(level);
+      this.flush();
+    }
+  }
+
+  /** @param {number} level @returns {boolean} */
+  wasSkipped(level) {
+    return Array.isArray(this.data.skipped) && this.data.skipped.includes(level);
   }
 
   /** @param {number} amount */

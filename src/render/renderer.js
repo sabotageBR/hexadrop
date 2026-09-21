@@ -9,7 +9,7 @@
 import { paintBackground } from './backgrounds.js';
 import { roundRect } from './draw2d.js';
 import { paintPedestal } from './pedestal.js';
-import { tracePiece } from './sprites.js';
+import { tracePiece, TUBO, usaTubo, pieceHighlight } from './sprites.js';
 import { outlineLoops } from '../physics/shapes.js';
 import { material as getMaterial } from '../physics/materials.js';
 import { PEDESTAL_HALF_H } from '../physics/world.js';
@@ -90,7 +90,7 @@ export class Renderer {
       if (!piece.alive) continue;
       const pos = piece.body.getPosition();
       const angle = piece.body.getAngle();
-      const sprite = sprites.piece(piece.cells, piece.material);
+      const sprite = sprites.piece(piece.cells, piece.material, piece.spawnX, piece.spawnY);
       const [sx, sy] = toScreen(pos.x, pos.y);
       if (sx < -sprite.w || sx > vp.width + sprite.w || sy < -sprite.h || sy > vp.height + sprite.h) {
         continue;
@@ -101,6 +101,8 @@ export class Renderer {
       ctx.drawImage(sprite.canvas, -sprite.w / 2, -sprite.h / 2, sprite.w, sprite.h);
       ctx.restore();
     }
+
+    const tubo = usaTubo(theme);
 
     // --- aviso dos perigos -------------------------------------------------
     // O sprite e cacheado por forma+material, entao nao pode mudar com o tempo:
@@ -113,23 +115,29 @@ export class Renderer {
       const estilo = theme.materials[piece.material];
       const cor = estilo ? estilo.stroke : mat.color;
       if (mat.explodeRadius > 0 && mat.breakSpeed > 0) {
-        this.outlinePiece(ctx, piece, toScreen, px, cor, 0.25 + 0.25 * Math.sin(scene.time * 4), theme.corner);
+        this.outlinePiece(ctx, piece, toScreen, px, cor, 0.25 + 0.25 * Math.sin(scene.time * 4), theme.corner, tubo);
       } else if (mat.holdTime > 0 && piece.holdTimer > 0) {
         const k = piece.holdTimer / mat.holdTime;
         if (k > 0.3) {
           const alpha = ((k - 0.3) / 0.7) * (0.55 + 0.45 * Math.sin(scene.time * (6 + k * 14)));
-          this.outlinePiece(ctx, piece, toScreen, px, cor, Math.max(0, alpha), theme.corner);
+          this.outlinePiece(ctx, piece, toScreen, px, cor, Math.max(0, alpha), theme.corner, tubo);
         }
       }
     }
 
     // --- realce de dica e de peca sob o ponteiro --------------------------
     if (session.hintPiece && session.hintPiece.alive) {
-      this.outlinePiece(ctx, session.hintPiece, toScreen, px, theme.accent2, 0.5 + 0.5 * Math.sin(scene.time * 6), theme.corner);
+      this.outlinePiece(ctx, session.hintPiece, toScreen, px, theme.accent2, 0.5 + 0.5 * Math.sin(scene.time * 6), theme.corner, tubo);
     }
     if (scene.hovered && scene.hovered.alive && scene.hovered !== session.hintPiece) {
       const mat = getMaterial(scene.hovered.material);
-      this.outlinePiece(ctx, scene.hovered, toScreen, px, mat.destructible ? theme.accent : '#ff5050', 0.55, theme.corner);
+      const cor =
+        !mat.destructible
+          ? '#ff5050'
+          : tubo
+            ? pieceHighlight(theme, scene.hovered.material, scene.hovered.spawnX, scene.hovered.spawnY)
+            : theme.accent;
+      this.outlinePiece(ctx, scene.hovered, toScreen, px, cor, 0.85, theme.corner, tubo);
     }
 
     // --- hexagono ---------------------------------------------------------
@@ -156,16 +164,35 @@ export class Renderer {
    * @param {string} color
    * @param {number} alpha
    * @param {number} corner raio dos cantos do tema, em fracao da celula
+   * @param {boolean} [tubo] tema que desenha a peca como tubo de neon
    */
-  outlinePiece(ctx, piece, toScreen, px, color, alpha, corner) {
+  outlinePiece(ctx, piece, toScreen, px, color, alpha, corner, tubo = false) {
     const pos = piece.body.getPosition();
     const angle = piece.body.getAngle();
     const [sx, sy] = toScreen(pos.x, pos.y);
+    const ox = -(piece.cw / 2) * px;
+    const oy = (piece.ch / 2) * px;
     ctx.save();
     ctx.translate(sx, sy);
     ctx.rotate(-angle);
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = color;
+
+    // No tubo de neon o realce entra POR DENTRO da silhueta, na mesma
+    // geometria do sprite: o fio da peca acende na cor do realce. Desenhado por
+    // fora, com a quina do tema (bem mais redonda que a do tubo) e com sombra,
+    // ele virava uma moldura solta e borrada em volta da peca.
+    if (tubo) {
+      ctx.lineJoin = 'miter';
+      tracePiece(ctx, outlineLoops(piece.cells), px, px * TUBO.raio, ox, oy);
+      ctx.clip('evenodd');
+      tracePiece(ctx, outlineLoops(piece.cells), px, px * TUBO.raio, ox, oy);
+      ctx.lineWidth = 2 * px * (TUBO.vao + TUBO.fio);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
     ctx.lineWidth = Math.max(2, px * 0.06);
     ctx.shadowColor = color;
     ctx.shadowBlur = px * 0.3;

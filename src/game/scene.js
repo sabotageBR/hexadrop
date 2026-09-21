@@ -9,7 +9,7 @@ import { Input } from '../core/input.js';
 import { Loop } from '../core/loop.js';
 import { Camera } from '../render/camera.js';
 import { Renderer } from '../render/renderer.js';
-import { SpriteCache } from '../render/sprites.js';
+import { SpriteCache, pieceColor } from '../render/sprites.js';
 import { Particles } from '../render/particles.js';
 import { theme as getTheme } from '../render/themes.js';
 import { material as getMaterial } from '../physics/materials.js';
@@ -38,6 +38,8 @@ export class GameScene {
     this.touch = isTouchDevice();
     this.topInset = opts.topInset || 96;
     this.bottomInset = opts.bottomInset || 24;
+    /** Enquadrar a cena inteira, sem piso de zoom. A home usa; o jogo, nao. */
+    this.fitWhole = false;
     this.onUpdate = opts.onUpdate || null;
     this.onOverlay = opts.onOverlay || null;
 
@@ -97,6 +99,25 @@ export class GameScene {
     };
   }
 
+  /**
+   * Troca as margens reservadas e reenquadra.
+   *
+   * A home e o jogo reservam faixas diferentes: no jogo e a HUD, na tela
+   * inicial e o titulo em cima e a pilha de botoes embaixo. Sem isto a torre
+   * da home volta a ficar atras dos botoes.
+   *
+   * @param {number} top
+   * @param {number} bottom
+   * @param {boolean} [fitWhole]
+   */
+  setInsets(top, bottom, fitWhole = false) {
+    if (this.topInset === top && this.bottomInset === bottom && this.fitWhole === fitWhole) return;
+    this.topInset = top;
+    this.bottomInset = bottom;
+    this.fitWhole = fitWhole;
+    this.refit();
+  }
+
   refit() {
     if (!this.session) return;
     const world = this.session.world;
@@ -113,6 +134,7 @@ export class GameScene {
       pedestalHalf: world.pedestalHalfWidth,
       topInset: top,
       bottomInset: bottom,
+      fitWhole: this.fitWhole,
     });
     const dpr = this.quality === 'low' ? 1 : this.viewport.dpr;
     this.sprites = new SpriteCache(this.theme, this.camera.pxPerMeter, dpr);
@@ -126,8 +148,7 @@ export class GameScene {
   spawnDebris(piece, cause) {
     if (cause === 'cleanup') return;
     const mat = getMaterial(piece.material);
-    const style = this.theme.materials[piece.material];
-    const color = style ? style.stroke : mat.color;
+    const color = pieceColor(this.theme, piece.material, piece.spawnX, piece.spawnY);
     const pos = piece.body.getPosition();
     const vel = piece.body.getLinearVelocity();
     const dense = this.quality === 'low' ? 2 : 3;
@@ -146,15 +167,25 @@ export class GameScene {
       shape,
       vx: vel.x,
       vy: vel.y,
-      density: cause === 'explosion' || cause === 'blast' ? dense + 2 : cause === 'melt' ? 1 : dense,
+      density:
+        cause === 'explosion' || cause === 'blast' || cause === 'bonus'
+          ? dense + 2
+          : cause === 'melt'
+            ? 1
+            : dense,
       // Derretimento escorre; nao voa. Os dois parametros existem so para este
       // caso - todos os outros usam os valores de sempre.
       lift: cause === 'melt' ? -0.5 : undefined,
       spread: cause === 'melt' ? 1.2 : undefined,
       rand: () => this.rng.next(),
     });
-    audio.breakPiece(piece.material, Math.min(1, piece.area / 6));
-    if (cause === 'blast') {
+    // Na celebracao o som vem do contador (audio.bonusPop), um por peca e
+    // afinado: somar o estalo de quebra por cima vira ruido.
+    if (cause !== 'bonus') audio.breakPiece(piece.material, Math.min(1, piece.area / 6));
+    if (cause === 'bonus') {
+      this.camera.addTrauma(0.22);
+      this.particles.spark(pos.x, pos.y, color, 6, () => this.rng.next());
+    } else if (cause === 'blast') {
       this.camera.addTrauma(0.5);
       this.particles.spark(pos.x, pos.y, '#ffd24a', 10, () => this.rng.next());
     } else if (cause === 'explosion') this.camera.addTrauma(0.45);

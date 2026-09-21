@@ -20,6 +20,17 @@
   --sheet-rgb: 6, 3, 15;
   --wash: rgba(255, 255, 255, 0.08);
   --accent-deep: #8a2bff;
+  --felt: #1c1030;
+  --felt-deep: #0d0718;
+  --accent-lite: #ff7fd0;
+  --accent-vivid: #ff43b8;
+  --gold-lite: #ffe89a;
+  --gold-deep: #8c7320;
+  --on-accent: #fff;
+  /* Silhueta do hexagono do jogo - topo e base planos, vertices a esquerda e
+     a direita -, a mesma de physics/world.js. Os nos do mapa, o numero do
+     mundo e o hexagono que sobe a trilha usam todos esta forma. */
+  --hex: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
@@ -88,9 +99,9 @@ html, body {
     rgba(var(--sheet-rgb), 0.7) 66%, rgba(var(--sheet-rgb), 0.94) 100%);
   pointer-events: none;
 }
-/* Mapa e loja sao telas de leitura: o cenario vivo atrapalharia, entao ali o
-   veu e quase opaco e so deixa passar um brilho do tema. */
-#s-map::before,
+/* A loja e tela de leitura: o cenario vivo atrapalharia, entao ali o veu e
+   quase opaco e so deixa passar um brilho do tema. O mapa tem fundo proprio,
+   definido no bloco dele. */
 #s-shop::before { background: rgba(var(--sheet-rgb), 0.95); }
 #s-home > *, #s-map > *, #s-shop > * { position: relative; z-index: 1; }
 
@@ -210,99 +221,295 @@ html, body {
 /* ------------------------------------------------------- tela de vitoria */
 /* Cartao simples: coroa, titulo, estrelas e as duas recompensas em texto. O
    que muda com o mundo e a paleta, que vem das variaveis. */
+/* ------------------------------------------------------------ tela de pausa */
+.pause-card { text-align: center; }
+.pause-where {
+  margin: 0 0 10px !important;
+  font: 800 11px/1 var(--font);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.pause-taps {
+  margin: 10px 0 0 !important;
+  font: 700 12px/1 var(--font);
+  color: var(--ink-soft);
+  letter-spacing: 0.06em;
+}
+.pause-toggles { display: flex; gap: 10px; margin-top: 16px; }
+.toggle {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--edge);
+  background: var(--wash);
+  color: var(--ink);
+  font: 700 13px/1 var(--font);
+  cursor: pointer;
+}
+.toggle .ico { font-size: 15px; line-height: 1; color: var(--accent2); }
+.toggle.off { color: var(--ink-soft); opacity: 0.55; }
+.toggle.off .ico { color: var(--ink-soft); text-decoration: line-through; }
+.card .col { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.card .col .btn { flex: 0 0 auto; width: 100%; }
+
 .crown { font-size: 34px; line-height: 1; margin-bottom: 2px; color: var(--gold); }
+/* A marca no alto do cartao de fim de fase. Pequena de proposito: quem manda
+   no cartao e o resultado, a logo so assina. */
+.card-logo {
+  display: block;
+  width: min(52%, 190px);
+  height: auto;
+  margin: -4px auto 6px;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4));
+}
 .rewards { display: flex; justify-content: center; gap: 18px; margin: 12px 0 16px; }
 .reward { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .reward b { font-size: 22px; }
 .reward span { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.1em; }
 /* -------------------------------------------------------------------- mapa */
-.map-scroll { position: relative; flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 2px 20px; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
-/* Cada mundo e uma caixa com a trilha ao fundo e os nos posicionados por
-   porcentagem sobre ela. Os mundos sao empilhados do ultimo para o primeiro,
-   entao progredir e subir na pagina. */
-.world, .gate {
-  /* O mapa e uma coluna: numa janela larga a serpentina esticaria de ponta a
-     ponta e viraria uma linha quase reta. */
-  max-width: 440px;
-  margin-left: auto;
-  margin-right: auto;
+/* A tela de fases e uma FITA: uma rolagem so, mas cada mundo e uma faixa com
+   a propria pele. Antes ela herdava as variaveis de applyUiTheme, que so roda
+   ao carregar uma cena - vindo do mundo puzzle, que e claro, o mapa inteiro
+   saia branco sobre branco. Aqui o fundo e fixo e a cor vem de cada faixa. */
+#s-map { background: #070d1f; }
+#s-map::before {
+  background:
+    radial-gradient(120% 60% at 50% -8%, rgba(120, 90, 255, 0.24), transparent 70%),
+    linear-gradient(180deg, #0a1030, #070d1f 60%);
 }
-.world { position: relative; margin-bottom: 6px; }
-.world.locked { opacity: 0.5; filter: saturate(0.35); }
-.world-head {
-  display: flex; align-items: center; gap: 10px;
-  margin: 14px 4px 6px; font: 700 12px/1 var(--font);
-  letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-soft);
-}
-.world-head::after { content: ""; flex: 1; height: 1px; background: var(--edge); }
 
-.trail { position: relative; height: 620px; }
+/* O cromado do mapa nao pode seguir a paleta da ultima fase carregada: sobre
+   o fundo escuro fixo, um tema claro deixava o botao de voltar quase invisivel
+   e um tema escuro sumia de vez. O titulo, sim, segue o mundo em que a rolagem
+   esta - e para isso que watchMapWorlds pinta o pilulo. */
+#s-map .hud-top .btn.icon,
+#s-map > .map-here,
+#s-map .badge {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #eef3ff;
+}
+#s-map #mapTitle {
+  background: var(--w-node, rgba(255, 255, 255, 0.08));
+  border-color: var(--w-edge, rgba(255, 255, 255, 0.2));
+  color: var(--w-ink, #eef3ff);
+}
+
+.map-scroll {
+  position: relative; flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: 6px 0 22px; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+  scrollbar-width: none;
+}
+.map-scroll::-webkit-scrollbar { display: none; }
+/* No celular a barra e ruido: o dedo arrasta e pronto. No desktop ela e a
+   unica pista de que a fita rola - sem ela o jogador olha uma tela cheia de
+   mundos e nao sabe que ha mais embaixo. */
+@media (pointer: fine) {
+  .map-scroll { scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+  .map-scroll::-webkit-scrollbar { display: block; width: 10px; }
+  .map-scroll::-webkit-scrollbar-track { background: transparent; }
+  .map-scroll::-webkit-scrollbar-thumb {
+    background: var(--edge);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  .map-scroll:hover::-webkit-scrollbar-thumb { background: var(--ink-soft); background-clip: content-box; }
+}
+
+/* Numa janela larga a serpentina esticaria de ponta a ponta e viraria uma
+   linha quase reta, entao o mapa e sempre uma coluna centrada. O `margin`
+   curto de cada bloco vem DEPOIS e apagaria um `margin-left: auto` posto
+   aqui, entao a centralizacao mora dentro de cada regra. */
+.world, .gate {
+  max-width: 460px;
+}
+
+.world {
+  position: relative;
+  margin: 0 auto 10px;
+  width: calc(100% - 20px);
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--w-sky, #101a3a);
+  border: 1px solid var(--w-edge, rgba(255, 255, 255, 0.12));
+  color: var(--w-ink, #eef3ff);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+/* Vinheta interna: sem ela o gradiente do tema encosta na borda e a faixa
+   perde o volume que a faz parecer um lugar. */
+.world::after {
+  content: "";
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(130% 70% at 50% 108%, rgba(0, 0, 0, 0.22), transparent 62%);
+}
+
+/* A faixa e lida de baixo para cima - progredir e subir -, entao o cabecalho
+   fica na ENTRADA dela. No topo ele so aparecia depois de o jogador ja ter
+   passado pelo mundo inteiro. */
+.world { display: flex; flex-direction: column-reverse; }
+.world-head {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 16px 13px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.26), transparent);
+}
+.world-num {
+  display: grid; place-items: center;
+  width: 30px; height: 30px; flex: none;
+  clip-path: var(--hex);
+  background: var(--w-accent, #ff43b8);
+  color: #fff; font: 800 14px/1 var(--font);
+}
+.world-name {
+  flex: 1; min-width: 0;
+  font: 800 14px/1 var(--font);
+  letter-spacing: 0.16em; text-transform: uppercase;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.world-count {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: 700 13px/1 var(--font); color: var(--w-soft, rgba(255, 255, 255, 0.7));
+}
+
+/* Mundo fechado e cartaz, nao parede cinza: antes os quinze mundos montavam
+   sempre ~150 botoes e os travados so ganhavam opacidade. */
+.world.locked { filter: saturate(0.5); }
+.world.locked .world-name, .world.locked .world-num { opacity: 0.75; }
+/* Faixa de arte com o selo: mostra o cenario que espera, sem repetir a
+   exigencia em estrelas, que o portao logo abaixo ja enuncia. */
+.world-teaser {
+  position: relative; z-index: 1;
+  display: grid; place-items: center;
+  height: 92px;
+}
+.teaser-seal { font-size: 28px; line-height: 1; opacity: 0.8; }
+
+/* A altura acompanha o numero de nos: com o mundo 1 em vinte fases, uma altura
+   fixa empilharia tudo num amontoado. */
+.trail {
+  position: relative; z-index: 1;
+  height: calc(var(--nos, 10) * 70px);
+  margin: 0 4px 10px;
+}
 /* preserveAspectRatio="none" no SVG: o viewBox de 100x100 se estica para a
    caixa, e assim a curva usa exatamente as mesmas porcentagens dos nos. */
 .trail-line { position: absolute; inset: 0; width: 100%; height: 100%; }
 .trail-line path {
   fill: none;
-  stroke: var(--edge);
-  stroke-width: 1.1;
+  stroke: var(--w-ink, #fff);
+  opacity: 0.32;
+  stroke-width: 2;
   stroke-linecap: round;
-  stroke-dasharray: 3 3.4;
+  stroke-dasharray: 3 4.5;
   vector-effect: non-scaling-stroke;
 }
 
+/* O no e um hexagono, como a peca que o jogo inteiro persegue. clip-path nao
+   aceita borda, entao a moldura e uma camada por tras da outra. */
 .node {
   position: absolute; transform: translate(-50%, -50%);
-  width: 58px; height: 58px; border-radius: 50%;
-  border: 2px solid var(--edge); background: var(--panel);
-  color: var(--ink); font: 700 18px/1 var(--font);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; z-index: 1;
-  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+  width: 54px; height: 54px; padding: 0; border: 0; background: none;
+  color: var(--w-ink, #fff);
+  display: grid; place-items: center;
+  cursor: pointer; z-index: 2;
+  transition: transform 0.12s ease, filter 0.12s ease;
 }
-.node:hover:not(.locked) { transform: translate(-50%, -50%) scale(1.08); border-color: var(--accent); }
-.node.locked { opacity: 0.4; cursor: default; color: var(--ink-soft); }
+.node::before, .node::after { content: ""; position: absolute; clip-path: var(--hex); }
+.node::before { inset: 0; background: var(--w-edge, rgba(255, 255, 255, 0.35)); }
+.node::after { inset: 3px; background: var(--w-node, #12204a); }
+.node-num { position: relative; z-index: 1; font: 800 17px/1 var(--font); }
+.node:hover:not(.locked) { transform: translate(-50%, -50%) scale(1.09); }
+.node:hover:not(.locked)::before { background: var(--w-accent, #ff43b8); }
+
+.node.locked { cursor: default; opacity: 0.55; }
+.node.locked .node-num { font-size: 15px; }
 .node.locked .pips { display: none; }
+/* Pulada por video: aberta, porem sem estrela. A moldura vazada diz "esta em
+   aberto" sem prometer que foi vencida. */
+.node.skipped::before { background: transparent; }
+.node.skipped::after { inset: 0; opacity: 0.55; }
+.node.skipped .node-num { color: var(--w-soft, rgba(255, 255, 255, 0.7)); }
+/* Tres estrelas: a moldura vira dourada, e a fita mostra de longe ate onde o
+   jogador limpou de verdade. */
+.node.perfect::before { background: var(--w-star, #ffd54a); }
 .node.current {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px var(--wash), 0 0 18px var(--accent);
+  filter: drop-shadow(0 0 10px var(--w-accent, #ff43b8));
+  animation: nodePulse 1.8s ease-in-out infinite;
 }
-.node .pips { position: absolute; bottom: -9px; display: flex; gap: 2px; }
+.node.current::before { background: var(--w-accent, #ff43b8); }
+@keyframes nodePulse {
+  50% { transform: translate(-50%, -50%) scale(1.06); }
+}
+
+.node .pips { position: absolute; bottom: -8px; display: flex; gap: 2px; z-index: 1; }
 .st, .node .pips i {
   width: 9px; height: 9px; display: inline-block; background: var(--starOff);
   clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
 }
-.node .pips i.on, .st.on { background: var(--gold); }
+.node .pips i { background: var(--w-staroff, rgba(255, 255, 255, 0.3)); }
+.node .pips i.on { background: var(--w-star, #ffd54a); }
+.st.on { background: var(--gold); }
+.world .st.on, .gate .st.on { background: var(--w-star, var(--gold)); }
 
 /* ---------------------------------------------------------------- portao */
+/* Faixa larga, e nao um cartao solto no meio do caminho: o portao e a
+   fronteira da fita. */
 .gate {
   position: relative;
-  margin: 10px auto;
+  margin: 0 auto 10px;
+  width: calc(100% - 20px);
   padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px dashed var(--edge);
-  background: var(--wash);
+  border-radius: 22px;
+  border: 1px dashed var(--w-edge, rgba(255, 255, 255, 0.2));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.16)),
+    var(--w-sky, #101a3a);
+  color: var(--w-ink, #eef3ff);
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
 }
-.gate.open { border-style: solid; border-color: var(--accent); }
-.gate-seal { font-size: 22px; line-height: 1; filter: grayscale(0.2); }
-.gate.open .gate-seal { color: var(--accent); }
-.gate-text { display: flex; flex-direction: column; gap: 2px; }
-.gate-text b { font-size: 17px; display: flex; align-items: center; gap: 6px; }
-.gate-text span { font-size: 12px; color: var(--ink-soft); }
-.gate-hint { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.gate.open { border-style: solid; border-color: var(--w-accent, #ff43b8); }
+.gate-seal { font-size: 24px; line-height: 1; filter: grayscale(0.2); }
+.gate.open .gate-seal { color: var(--w-accent, #ff43b8); }
+.gate-text { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 150px; }
+.gate-text b {
+  font: 800 13px/1 var(--font);
+  letter-spacing: 0.16em; text-transform: uppercase;
+}
+.gate-text span {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--w-soft, rgba(255, 255, 255, 0.7));
+}
+.gate-bar {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+.gate-bar i {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--w-star, #ffd54a), var(--w-accent, #ff43b8));
+}
+.gate-hint { display: flex; gap: 6px; flex-wrap: wrap; }
 .gate-jump {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 6px 10px; border-radius: 999px;
-  border: 1px solid var(--edge); background: var(--panel);
-  color: var(--ink); font: 700 12px/1 var(--font); cursor: pointer;
+  padding: 7px 11px; border-radius: 999px;
+  border: 1px solid var(--w-edge, rgba(255, 255, 255, 0.2));
+  background: var(--w-node, rgba(0, 0, 0, 0.28));
+  color: var(--w-ink, #fff); font: 700 12px/1 var(--font); cursor: pointer;
 }
-.gate-jump:hover { border-color: var(--accent); }
+.gate-jump:hover { border-color: var(--w-accent, #ff43b8); }
 
 /* Abertura do portao: o tracejado vira linha cheia e o selo gira. */
 .gate.just-open { animation: gateOpen 0.9s ease both; }
 @keyframes gateOpen {
   0% { border-color: var(--edge); transform: scale(1); }
-  35% { border-color: var(--accent); transform: scale(1.03); }
-  100% { border-color: var(--accent); transform: scale(1); }
+  35% { border-color: var(--w-accent, #ff43b8); transform: scale(1.03); }
+  100% { border-color: var(--w-accent, #ff43b8); transform: scale(1); }
 }
 .gate.just-open .gate-seal { animation: sealSpin 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
 @keyframes sealSpin { from { transform: rotate(-180deg) scale(0.2); } }
@@ -311,10 +518,23 @@ html, body {
 .climber {
   position: absolute; z-index: 3;
   width: 44px; height: 44px; margin: -22px 0 0 -22px;
-  border-radius: 50%;
+  clip-path: var(--hex);
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
   pointer-events: none;
 }
+
+/* Atalho de volta a fase atual: so existe quando ela saiu da tela. */
+#s-map > .map-here {
+  position: absolute; right: calc(16px + var(--safe-r)); bottom: 74px;
+  width: 46px; height: 46px; padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 50%;
+  font-size: 20px; line-height: 1; cursor: pointer;
+  opacity: 0; transform: translateY(8px) scale(0.9); pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  backdrop-filter: blur(8px);
+  z-index: 3;
+}
+#s-map > .map-here.on { opacity: 1; transform: none; pointer-events: auto; }
 
 /* -------------------------------------------------------------------- loja */
 .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
@@ -328,7 +548,7 @@ html, body {
   border: 1px solid var(--edge); background: var(--wash);
   text-align: left;
 }
-.item .swatch { width: 40px; height: 40px; flex: none; border-radius: 10px; display: grid; place-items: center; }
+.item .swatch { width: 44px; height: 44px; flex: none; display: block; }
 .item .info { flex: 1; min-width: 0; }
 .item .info b { display: block; font-size: 14px; }
 .item .info span { font-size: 12px; color: var(--ink-soft); }
@@ -376,6 +596,10 @@ html, body {
    definicao suficiente e acompanha a polaridade do mundo. */
 .btn.ghost { background: var(--wash); backdrop-filter: none; }
 
+/* Versao lisa: nao ha plataforma, entao nao ha video. Todo botao de anuncio
+   sai da tela - o caminho padrao ao lado de cada um deles continua ali. */
+html[data-plataforma='lisa'] .btn.ad { display: none; }
+
 /* ------------------------------------------------------------ tela inicial */
 /* O fundo e a fase viva do mundo atual. O veu so segura o texto. */
 #s-home {
@@ -386,13 +610,16 @@ html, body {
   background: linear-gradient(180deg, rgba(var(--sheet-rgb), 0.55) 0%, rgba(var(--sheet-rgb), 0.18) 42%,
     rgba(var(--sheet-rgb), 0.55) 100%);
 }
-#s-home > .hud-top,
-#s-home > .home-mid,
-#s-home > .home-actions,
-#s-home > .home-foot { width: 100%; max-width: 430px; margin-inline: auto; }
-#s-home > .home-foot { max-width: 386px; }
+#s-home > .home-top,
+#s-home > .home-base { width: 100%; max-width: 430px; margin-inline: auto; }
 
-.home-mid { position: relative; text-align: center; padding: 0 22px; }
+/* Tres faixas, sem sobreposicao. A do meio e vazia de proposito: e por ela que
+   a torre do mundo aparece, e fitHomeScene() mede as outras duas para enquadrar
+   a cena exatamente nesse vao. */
+.home-top { flex: 0 0 auto; text-align: center; }
+.home-stage { flex: 1 1 auto; min-height: 96px; pointer-events: none; }
+.home-base { flex: 0 0 auto; text-align: center; padding: 0 22px; }
+.home-base .home-foot { max-width: 386px; margin-inline: auto; }
 .world-loc {
   margin: 0 0 8px;
   font: 800 12px/1 var(--font);
@@ -417,16 +644,19 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   color: var(--ink-soft);
 }
 .world-hint:empty { display: none; }
-.logo {
-  margin: 0;
-  font: 900 clamp(38px, 12vw, 54px)/0.92 var(--font);
-  letter-spacing: -0.035em;
-  color: var(--ink);
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+/* O nome do jogo e a arte, nao tipografia: o h1 continua ali para leitor de
+   tela e para o texto alternativo, mas quem aparece e a imagem. */
+.logo { margin: 10px 0 0; font-size: 0; line-height: 0; }
+.logo img {
+  display: block;
+  width: min(68%, 300px);
+  height: auto;
+  margin: 0 auto;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.45));
 }
-.tagline { color: var(--ink-soft); font-size: 13px; margin: 12px 0 0; }
+.tagline { color: var(--ink-soft); font-size: 13px; margin: 7px 0 0; }
 
-.home-actions { position: relative; padding: 22px 22px 0; display: flex; flex-direction: column; gap: 11px; }
+.home-actions { position: relative; padding: 14px 0 0; display: flex; flex-direction: column; gap: 11px; }
 .home-actions .row { display: flex; gap: 11px; }
 /* A base solida e o que da peso de jogo ao botao principal. */
 .btn.drop { box-shadow: 0 6px 0 rgba(0, 0, 0, 0.3); }
@@ -450,8 +680,8 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   position: relative;
   align-items: center;
   gap: 10px;
-  padding-top: 14px;
-  margin: 18px 22px 0;
+  padding-top: 12px;
+  margin: 14px 0 0;
   border-top: 1px solid var(--edge);
 }
 .rank-label { font: 700 11px/1 var(--font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
@@ -466,6 +696,90 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
 .seg button { height: 32px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--edge);
   background: var(--wash); color: var(--ink-soft); font: 700 12px/1 var(--font); cursor: pointer; }
 .seg button.on { color: var(--ink); border-color: var(--accent2); background: rgba(51, 225, 255, 0.14); }
+
+/* ------------------------------------------------- celebracao de fim de fase */
+/* Sobre a cena, sem cartao: o que interessa ver e a torre estourando atras. */
+.bonus {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  margin-top: 14px;
+  padding: 8px 22px;
+  border-radius: 18px;
+  background: rgba(var(--sheet-rgb), 0.52);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
+}
+.bonus-label {
+  font: 800 11px/1 var(--font);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.bonus-count {
+  font: 900 clamp(38px, 12vw, 58px)/1 var(--font);
+  color: var(--ink);
+  letter-spacing: -0.03em;
+}
+.bonus-count.pop { animation: bonusPop 0.22s cubic-bezier(0.2, 1.5, 0.4, 1); }
+@keyframes bonusPop {
+  from { transform: scale(1.38); color: var(--gold); }
+  to { transform: scale(1); }
+}
+.bonus-gain { font: 800 16px/1 var(--font); color: var(--gold); }
+
+/* Texto que sobe do ponto da quebra: combo e moeda do bonus. */
+.floater {
+  position: fixed;
+  z-index: 35;
+  pointer-events: none;
+  white-space: nowrap;
+  font: 900 15px/1 var(--font);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+  will-change: transform, opacity;
+}
+.floater.coin { color: var(--gold); font-size: 13px; }
+.floater.combo {
+  color: var(--accent2);
+  font-size: clamp(19px, 5.5vw, 26px);
+  letter-spacing: 0.02em;
+}
+
+/* Linha de bonus no cartao de vitoria. */
+.bonus-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--wash);
+  border: 1px solid var(--edge);
+  text-align: left;
+}
+.bonus-line-lbl {
+  font: 800 10px/1 var(--font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  flex: none;
+}
+.bonus-line-what { flex: 1; font: 600 12px/1.3 var(--font); color: var(--ink); min-width: 0; }
+.bonus-line-val { font: 800 17px/1 var(--font); color: var(--gold); flex: none; }
+
+.purse { display: flex; align-items: center; gap: 6px; font: 800 16px/1 var(--font); }
+.purse .ico { color: var(--gold); font-size: 13px; }
+.purse span:last-child {
+  font: 600 10px/1 var(--font);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.card .foot-row { align-items: center; justify-content: space-between; }
+.card .fineprint { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-soft); }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(86px + var(--safe-b)); transform: translate(-50%, 12px);
@@ -496,11 +810,20 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
 @media (orientation: landscape) and (max-height: 620px) {
   /* So a fileira do HUD vai para o canto. A regra generica arrastava junto as
      estrelas de DENTRO do cartao de vitoria, que iam parar fora dele. */
-  #s-home .logo { font-size: clamp(30px, 7vw, 40px); }
-  #s-home .home-actions { padding-top: 12px; }
+  /* A logo e alta (3 para 4): na paisagem baixa, no tamanho de retrato, ela
+     sozinha come metade da tela e cobre a torre. */
+  #s-home .logo { margin-top: 4px; }
+  #s-home .logo img { width: min(22%, 92px); }
+  /* Nesta altura nao sobra faixa livre entre o titulo e os botoes: a torre da
+     home recua para fundo em vez de disputar espaco com a logo. */
+  html[data-tela='home'] #game { opacity: 0.34; }
+  #s-home .tagline { display: none; }
+  #s-home .home-stage { min-height: 40px; }
+  #s-home .home-actions { padding-top: 8px; gap: 8px; }
+  #s-home .home-foot { margin-top: 8px; padding-top: 8px; }
   #gameStars { position: fixed; left: calc(14px + var(--safe-l)); top: calc(66px + var(--safe-t)); margin: 0; gap: 7px; }
   #gameStars i { width: 19px; height: 19px; }
-  .trail { height: 520px; }
+  .trail { height: calc(var(--nos, 10) * 58px); }
   .tut { top: auto; bottom: calc(14px + var(--safe-b)); }
   .card { width: min(520px, 100%); padding: 16px; }
   .card h2 { font-size: 22px; }
@@ -527,22 +850,63 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
 }
 
 /* ------------------------------------------------------------- kits por mundo */
+/* O CARTAO DE FELTRO. Dois kits pintam o cartao escuro venha de que mundo vier:
+   a ficha de cassino e a bancada do atelier. Dentro dele a polaridade da tela
+   nao vale mais - num tema claro --ink e tinta ESCURA -, e era assim que o
+   cartao de pausa do mundo doce saia com "DOCE - NIVEL 48", "Toques 0 - Meta
+   10" e os dois interruptores em roxo escuro sobre escuro, ilegiveis.
+
+   A correcao reabre as variaveis no proprio cartao, em vez de acertar cor por
+   elemento: subtitulo, estrelas vazias, botoes secundarios, interruptores,
+   linha de bonus e bolsa ja pedem --ink, --ink-soft, --panel e --starOff, e
+   passam todos a ler os valores certos de uma vez. O feltro e a borda vem do
+   tema (--felt, --gold), entao o cromado continua sendo o do kit e a cor
+   continua sendo a do mundo. */
+html[data-kit="ficha"] #s-win .end-card,
+html[data-kit="ficha"] #s-lose .end-card,
+html[data-kit="ficha"] #s-pause .card,
+html[data-kit="ficha"] #s-settings .card,
+html[data-kit="atelier"] #s-win .end-card,
+html[data-kit="atelier"] #s-lose .end-card,
+html[data-kit="atelier"] #s-pause .card,
+html[data-kit="atelier"] #s-settings .card {
+  --ink: #f6f1e4;
+  --ink-soft: rgba(246, 241, 228, 0.74);
+  --panel: rgba(255, 255, 255, 0.1);
+  --edge: rgba(246, 241, 228, 0.2);
+  --wash: rgba(255, 255, 255, 0.1);
+  --starOff: rgba(246, 241, 228, 0.24);
+  /* O interruptor pinta o icone com --accent2, que em tres mundos e uma cor
+     media demais para o feltro (o verde do papel some no marrom). O ouro do
+     mundo ja e a cor da borda e da estrela: serve, e sem cravar nada. */
+  --accent2: var(--gold);
+  color: var(--ink);
+  border-color: var(--gold);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* O primario do atelier era um marrom-cobre chapado (#c9842a) com sombra de
+   madeira: ao lado do azul do botao de video ele parecia o botao secundario da
+   dupla, justo na hora em que "proxima" e o que o jogador quer acertar. Agora e
+   a cor do mundo acesa - topo claro, base cheia -, com o degrau escuro por
+   baixo que o kit sempre teve. */
 html[data-kit="atelier"] .btn.primary {
-  background: #c9842a;
-  color: #1a1208;
+  background: linear-gradient(180deg, var(--accent-lite), var(--accent-vivid));
+  color: var(--on-accent);
   border-radius: 12px;
-  box-shadow: 0 5px 0 #6d4310;
+  box-shadow: 0 5px 0 var(--accent-deep), 0 10px 20px rgba(0, 0, 0, 0.3);
 }
 html[data-kit="atelier"] .btn.primary:active:not(:disabled) {
   transform: translateY(3px);
-  box-shadow: 0 2px 0 #6d4310;
+  box-shadow: 0 2px 0 var(--accent-deep);
 }
 html[data-kit="atelier"] #s-win .end-card,
 html[data-kit="atelier"] #s-lose .end-card,
-html[data-kit="atelier"] #s-pause .card {
-  background: linear-gradient(180deg, #3a2c18, #1c140c);
-  border-color: #c9842a;
+html[data-kit="atelier"] #s-pause .card,
+html[data-kit="atelier"] #s-settings .card {
+  background: linear-gradient(180deg, var(--felt), var(--felt-deep));
 }
+html[data-kit="atelier"] .screen > .veil { background: rgba(var(--veil-rgb), 0.9); }
 html[data-kit="atelier"] #gameStars {
   position: absolute;
   left: calc(12px + var(--safe-l));
@@ -573,26 +937,28 @@ html[data-kit="hexdeck"] #s-game .stat {
 }
 
 html[data-kit="ficha"] .btn.primary {
-  background: #e8c56a;
-  color: #1a1408;
+  background: linear-gradient(180deg, var(--gold-lite), var(--gold));
+  color: #1c1408;
   border-color: transparent;
+  box-shadow: 0 5px 0 var(--gold-deep), 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+html[data-kit="ficha"] .btn.primary:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 var(--gold-deep);
 }
 html[data-kit="ficha"] #s-win .end-card,
 html[data-kit="ficha"] #s-lose .end-card,
-html[data-kit="ficha"] #s-pause .card {
-  background: #16301c;
-  color: #f4efe0;
-  border-color: #c9a227;
+html[data-kit="ficha"] #s-pause .card,
+html[data-kit="ficha"] #s-settings .card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.14)), var(--felt);
 }
-html[data-kit="ficha"] #s-win .end-card h2,
-html[data-kit="ficha"] #s-lose .end-card h2,
-html[data-kit="ficha"] #s-pause .card h2,
-html[data-kit="ficha"] #s-win .end-card .reward b { color: #f4efe0; }
-html[data-kit="ficha"] #s-win .end-card .reward span,
-html[data-kit="ficha"] #s-win .end-card p,
-html[data-kit="ficha"] #s-lose .end-card p { color: rgba(244, 239, 224, 0.72); }
+/* O feltro nasce do mesmo veu que escurece a cena atras dele. Com o veu a 72%
+   o cartao ficava a um passo do fundo e so a borda dourada o separava: atras
+   de um cartao de feltro o veu fecha mais, e a mesa fica um degrau acima da
+   cena. */
+html[data-kit="ficha"] .screen > .veil { background: rgba(var(--veil-rgb), 0.9); }
 html[data-kit="ficha"] #s-game .hud-bottom.bare {
-  background: linear-gradient(0deg, #16301c 0%, transparent 100%);
+  background: linear-gradient(0deg, var(--felt) 0%, transparent 100%);
   padding-bottom: 8px;
 }
 html[data-kit="ficha"] #gameStars {
@@ -618,6 +984,18 @@ html[data-kit="queda"] #s-game .level-name {
   opacity: 0.8;
 }
 html[data-kit="queda"] .crown { display: none; }
+
+/* ------------------------------------------------------- tela larga (desktop)
+   A home e uma coluna de 430px, e e assim que ela deve ficar: botao grande,
+   torre no meio. O que nao funciona numa moldura de 16:9 e a faixa de cima ir
+   junto - coracoes, moedas e engrenagem ficavam pendurados no meio do vazio,
+   alinhados a uma coluna invisivel. Numa tela larga eles vao para os cantos da
+   TELA, que e onde o jogador procura por eles; o logo e a chamada continuam
+   centrados e do mesmo tamanho. */
+@media (min-width: 760px) and (orientation: landscape) {
+  #s-home > .home-top { max-width: none; }
+  #s-home .home-top .hud-top { padding: 0 6px; }
+}
 
 /* O kit troca o cromado, nao o lugar onde a coisa cabe: em paisagem baixa a
    fileira de estrelas volta para o canto, venha de que mundo vier. */

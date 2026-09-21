@@ -15,7 +15,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DIST = resolve(HERE, '../dist');
+// Duas saidas de build: dist/ e a da Poki, dist-lisa/ e a versao sem
+// plataforma. DIST_DIR escolhe qual conferir.
+const DIST = resolve(HERE, '..', process.env.DIST_DIR || 'dist');
 const BASE = process.env.VERIFY_URL || 'http://127.0.0.1:5173';
 const ALLOWED_HOST = 'game-cdn.poki.com';
 /** Dominios do proprio SDK da Poki: o jogo nao os chama, o SDK chama. */
@@ -94,10 +96,18 @@ for (const f of files) {
 check('nenhuma URL externa alem do SDK da Poki', external.length === 0, external.slice(0, 4).join(' | '));
 
 const indexHtml = readFileSync(join(DIST, 'index.html'), 'utf8');
-check(
-  'script do Poki SDK v2 presente',
-  indexHtml.includes(`https://${ALLOWED_HOST}/scripts/v2/poki-sdk.js`),
-);
+// A versao lisa e reconhecida pelo que ela nao tem: sem o carregador da Poki no
+// HTML, a exigencia se inverte - nenhum script de fora, de dominio nenhum.
+const COM_PLATAFORMA = indexHtml.includes(`https://${ALLOWED_HOST}/scripts/v2/poki-sdk.js`);
+if (COM_PLATAFORMA) {
+  check('script do Poki SDK v2 presente', true);
+} else {
+  check(
+    'versao lisa: nenhum script externo no HTML',
+    !/<script[^>]*src="https?:/i.test(indexHtml),
+  );
+  check('versao lisa: nenhuma URL externa no build', external.length === 0);
+}
 check('sem links de saida', !/<a\s[^>]*href="https?:/i.test(indexHtml));
 check('viewport com viewport-fit=cover', indexHtml.includes('viewport-fit=cover'));
 

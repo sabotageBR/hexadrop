@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-lisa/
 .vite/
 *.log
 .tmp/
@@ -10,3 +11,10 @@ inspiration/
 # Estudo de layout e as fotos originais das texturas: material de trabalho,
 # nao entra no repo. As versoes usadas pelo jogo vivem em src/render/tex/.
 proposals/
+
+# Copia da sessao paralela (271dd932), preservada do /tmp. Material de
+# consulta: nao entra no git.
+.copia-sessao/
+
+# Pacote de upload para a Poki.
+*.zip

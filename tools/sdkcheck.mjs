@@ -4,7 +4,9 @@
  * Injeta um SDK falso que registra cada chamada, joga uma fase ate o fim e
  * verifica as regras que a revisao da Poki cobra: gameLoadingFinished uma unica
  * vez, gameplayStart so no primeiro toque, gameplayStop em toda interrupcao,
- * nenhum evento durante um intervalo e nenhum par repetido em sequencia.
+ * nenhum evento durante um intervalo e nenhum par repetido em sequencia. Cobra
+ * tambem a carencia do comeco: nenhum intervalo antes de o jogador vencer as
+ * primeiras fases, e o intervalo de volta depois delas.
  */
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -56,10 +58,8 @@ await send('Page.navigate', { url: BASE + '/index.html' }, sessionId);
 await sleep(3800);
 const js = async (e) => (await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, sessionId)).result?.result?.value;
 
-await js('document.getElementById("btnPlay").click()');
-await sleep(1500);
-for (let t = 0; t < 30; t++) {
-  if ((await js('window.__game.screen')) !== 'game') break;
+/** Toca na peca mais alta logo abaixo do hexagono. @returns {Promise<boolean>} */
+async function tocar() {
   const info = await js(`(() => { const g=window.__game.scene; if(!g.session||g.session.finished) return null;
     const w=g.session.world; const dest=w.alivePieces().filter(p=>p.body.isDynamic()&&p.material!=='obsidian');
     if(!dest.length) return null;
@@ -71,15 +71,37 @@ for (let t = 0; t < 30; t++) {
     const pos=best.body.getPosition(), a=best.body.getAngle();
     const wx=pos.x+lx*Math.cos(a)-ly*Math.sin(a), wy=pos.y+lx*Math.sin(a)+ly*Math.cos(a);
     const [sx,sy]=g.camera.toScreen(wx,wy); return {x:Math.round(sx), y:Math.round(sy)}; })()`);
-  if (!info) break;
+  if (!info) return false;
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: info.x, y: info.y, button: 'left', clickCount: 1 }, sessionId);
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: info.x, y: info.y, button: 'left', clickCount: 1 }, sessionId);
+  return true;
+}
+
+await js('document.getElementById("btnPlay").click()');
+await sleep(1500);
+for (let t = 0; t < 30; t++) {
+  if ((await js('window.__game.screen')) !== 'game') break;
+  if (!(await tocar())) break;
   await sleep(700);
 }
 await sleep(1600);
 // avanca ou tenta de novo, o que estiver na tela
 await js('(document.getElementById("winNext").offsetParent ? document.getElementById("winNext") : document.getElementById("loseRetry")).click()');
 await sleep(1800);
+await js('window.__game.pauseLevel()');
+await sleep(400);
+await js('document.getElementById("pauseResume").click()');
+await sleep(1200);
+
+// Ate aqui o perfil e novo e tudo cai na carencia do comeco (main.js,
+// FASES_SEM_INTERVALO): nenhum intervalo pode ter acontecido. Dali em diante o
+// mesmo jogador passa a ter fases vencidas de sobra, e pausar no meio de uma
+// jogada tem que levar ao intervalo - senao este teste nunca mais veria um e
+// as regras de ordem abaixo passariam sem conferir nada.
+const corte = await js('window.__sdkLog.length');
+await js('window.__game.progress.data.unlocked = 160');
+await tocar();
+await sleep(900);
 await js('window.__game.pauseLevel()');
 await sleep(400);
 await js('document.getElementById("pauseResume").click()');
@@ -105,6 +127,11 @@ check('gameLoadingFinished chamado uma vez', names.filter((n) => n === 'gameLoad
 check('gameLoadingFinished depois de init', names.indexOf('gameLoadingFinished') > names.indexOf('init'));
 check('gameplayStart nao ocorre antes de gameLoadingFinished',
   names.indexOf('gameplayStart') === -1 || names.indexOf('gameplayStart') > names.indexOf('gameLoadingFinished'));
+
+check('nenhum intervalo na carencia do comeco',
+  !names.slice(0, corte).includes('commercialBreak:begin'));
+check('intervalo volta depois da carencia',
+  names.slice(corte).includes('commercialBreak:begin'));
 
 // nenhum start/stop repetido em sequencia
 const pair = names.filter((n) => n === 'gameplayStart' || n === 'gameplayStop');

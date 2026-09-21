@@ -12,6 +12,24 @@ import { upgradeEffects } from './content.js';
 import { Rng } from '../core/rng.js';
 import { choosePiece } from './solver.js';
 
+// --- celebracao de fim de fase -------------------------------------------
+/** Intervalo entre os primeiros estouros, em segundos. */
+const BONUS_FIRST = 0.2;
+/** Intervalo dos ultimos: a cascata acelera ate o fim. */
+const BONUS_LAST = 0.07;
+/** Teto de duracao da cascata inteira. */
+const BONUS_MAX_TIME = 3.2;
+const BONUS_BURST_RADIUS = 2.4;
+const BONUS_BURST_FORCE = 3.2;
+/** Tempo depois do ultimo estouro, para os estilhacos cairem. */
+const BONUS_OUTRO = 0.9;
+
+// --- combo ----------------------------------------------------------------
+/** Teto de espera para fechar uma jogada, mesmo sem tudo parar. */
+const COMBO_WINDOW = 1.4;
+/** Piso: sem ele, a jogada fechava no mesmo quadro do toque. */
+const COMBO_MIN = 0.25;
+
 /**
  * @typedef {'ready'|'playing'|'won'|'lost'|'stuck'} SessionState
  */
@@ -27,6 +45,9 @@ export class Session {
    * @param {(index:number)=>void} [opts.onStar]
    * @param {(state:SessionState)=>void} [opts.onEnd]
    * @param {()=>void} [opts.onFirstTap]
+   * @param {(n:number, x:number, y:number)=>void} [opts.onCombo]
+   * @param {(done:number, total:number, x?:number, y?:number)=>void} [opts.onBonusPiece]
+   * @param {(total:number)=>void} [opts.onBonusDone]
    */
   constructor(opts) {
     this.layout = opts.layout;
@@ -35,11 +56,18 @@ export class Session {
     this.onStar = opts.onStar || null;
     this.onEnd = opts.onEnd || null;
     this.onFirstTap = opts.onFirstTap || null;
+    this.onCombo = opts.onCombo || null;
+    this.onBonusPiece = opts.onBonusPiece || null;
+    this.onBonusDone = opts.onBonusDone || null;
+    /** Hook externo de destruicao, chamado depois da contagem de combo. */
+    this._destroyHook = opts.onDestroy || null;
 
     this.world = new PhysicsWorld({
       hexAngularDamping: eff.angularDamping,
       hexFrictionBonus: eff.frictionBonus,
-      onDestroy: opts.onDestroy,
+      // A sessao entra no meio do caminho para contar o combo. GameScene.load()
+      // embrulha ESTA funcao depois, entao a contagem sobrevive ao embrulho.
+      onDestroy: (piece, cause) => this._onDestroy(piece, cause),
       onImpact: opts.onImpact,
     });
     this.world.build(this.layout);
@@ -54,6 +82,142 @@ export class Session {
     this.hintPiece = null;
     this.hintTimer = 0;
     this.paused = false;
+
+    // Celebracao de fim de fase.
+    this.bonus = false;
+    /** @type {*[]} */
+    this.bonusQueue = [];
+    this.bonusTotal = 0;
+    this.bonusDone = 0;
+    this.bonusTimer = 0;
+    this.bonusElapsed = 0;
+    this.bonusOutro = BONUS_OUTRO;
+
+    // --- combo -----------------------------------------------------------
+    this.comboOpen = false;
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.comboX = 0;
+    this.comboY = 0;
+    /** Soma de n^2 de cada combo da fase. Vira moedas no fim. */
+    this.comboScore = 0;
+    /** Soma de n de cada combo da fase. Vira XP no fim. */
+    this.comboPieces = 0;
+    /** Maior combo da fase, so para exibir. */
+    this.bestCombo = 0;
+  }
+
+  /**
+   * @param {*} piece
+   * @param {string} cause
+   */
+  _onDestroy(piece, cause) {
+    // 'cleanup' e peca que caiu para fora da tela e 'bonus' e a celebracao:
+    // nenhum dos dois e merito do jogador, entao nao entram no combo.
+    if (this.comboOpen && cause !== 'cleanup' && cause !== 'bonus') {
+      this.comboCount++;
+      if (piece.body) {
+        const pos = piece.body.getPosition();
+        this.comboX = pos.x;
+        this.comboY = pos.y;
+      }
+    }
+    if (this._destroyHook) this._destroyHook(piece, cause);
+  }
+
+  /**
+   * Fecha a jogada quando a torre para - ou quando a espera estoura.
+   *
+   * Esperar o repouso, e nao o quadro seguinte, e o que faz o combo enxergar
+   * o desabamento inteiro que o toque provocou.
+   *
+   * @param {number} dt
+   */
+  _updateCombo(dt) {
+    if (!this.comboOpen) return;
+    this.comboTimer += dt;
+    const parou = this.comboTimer >= COMBO_MIN && this.world.everythingAtRest();
+    if (!parou && this.comboTimer < COMBO_WINDOW) return;
+    this.comboOpen = false;
+    const n = this.comboCount;
+    this.comboCount = 0;
+    if (n < 2) return;
+    this.comboScore += n * n;
+    this.comboPieces += n;
+    if (n > this.bestCombo) this.bestCombo = n;
+    if (this.onCombo) this.onCombo(n, this.comboX, this.comboY);
+  }
+
+  /**
+   * Celebracao de fim de fase: as pecas que sobraram estouram uma a uma.
+   *
+   * So a vitoria chama isto. O estado ('won' ou 'stuck') fica congelado o tempo
+   * todo - evaluate() nao roda durante a cascata, senao esvaziar a torre
+   * dispararia 'stuck' por cima do resultado que o jogador acabou de conquistar.
+   *
+   * @returns {number} quantas pecas vao estourar
+   */
+  startBonus() {
+    if (this.bonus) return this.bonusTotal;
+    const vivas = this.world.alivePieces().filter((p) => getMaterial(p.material).destructible);
+    // De cima para baixo: a torre desmonta em cascata, e o hexagono ja pousado
+    // nao leva o primeiro estouro na cara.
+    vivas.sort((a, b) => b.body.getPosition().y - a.body.getPosition().y);
+    this.bonusQueue = vivas;
+    this.bonusTotal = vivas.length;
+    this.bonusDone = 0;
+    this.bonusTimer = 0;
+    this.bonusElapsed = 0;
+    this.bonusOutro = BONUS_OUTRO;
+    this.bonus = vivas.length > 0;
+    return this.bonusTotal;
+  }
+
+  /** @param {number} dt */
+  _stepBonus(dt) {
+    this.elapsed += dt;
+    this.bonusElapsed += dt;
+    this.bonusTimer -= dt;
+    this.world.step(dt);
+    if (this.bonusTimer > 0) return;
+
+    if (this.bonusQueue.length === 0) {
+      // Acabou a fila, mas a cena nao: deixa os estilhacos cairem antes de
+      // entregar a tela ao cartao de vitoria.
+      this.bonusOutro -= dt;
+      if (this.bonusOutro > 0) return;
+      this.bonus = false;
+      if (this.onBonusDone) this.onBonusDone(this.bonusTotal);
+      return;
+    }
+    const piece = this.bonusQueue.shift();
+    // Ja foi levada por um estouro anterior (cadeia de TNT, por exemplo): conta
+    // na contagem, mas nao gasta um intervalo so para ela.
+    if (!piece.alive) {
+      this.bonusDone++;
+      // Sem posicao: ela ja estourou junto com outra, e fingir um ponto faria
+      // o texto flutuante nascer num canto qualquer da tela.
+      if (this.onBonusPiece) this.onBonusPiece(this.bonusDone, this.bonusTotal);
+      return;
+    }
+
+    const pos = piece.body.getPosition();
+    const px = pos.x;
+    const py = pos.y;
+    this.world.destroyPiece(piece, 'bonus');
+    this.world.burstAt(px, py, BONUS_BURST_RADIUS, BONUS_BURST_FORCE);
+    this.bonusDone++;
+    if (this.onBonusPiece) this.onBonusPiece(this.bonusDone, this.bonusTotal, px, py);
+
+    // O ritmo acelera de duas formas: pela posicao na fila e pelo tempo que
+    // ainda resta. Com trinta pecas sobrando a celebracao aperta o passo em vez
+    // de arrastar por seis segundos.
+    const restantes = this.bonusQueue.length;
+    const fracao = this.bonusTotal > 0 ? this.bonusDone / this.bonusTotal : 1;
+    const ideal = BONUS_FIRST + (BONUS_LAST - BONUS_FIRST) * fracao;
+    const sobra = Math.max(0, BONUS_MAX_TIME - this.bonusElapsed);
+    const cabe = restantes > 0 ? sobra / restantes : ideal;
+    this.bonusTimer = Math.max(BONUS_LAST, Math.min(ideal, cabe));
   }
 
   /** @returns {number} estrelas conquistadas ate agora */
@@ -86,6 +250,11 @@ export class Session {
     }
     this.taps++;
     this.hintPiece = null;
+    // Abre a jogada ANTES de destruir: a propria peca tocada e a primeira da
+    // conta, e o que a queda dela derrubar entra na mesma.
+    this.comboOpen = true;
+    this.comboCount = 0;
+    this.comboTimer = 0;
     this.world.destroyPiece(piece, 'tap');
     return { piece, ok: true };
   }
@@ -105,6 +274,10 @@ export class Session {
   /** @param {number} dt */
   step(dt) {
     if (this.paused) return;
+    if (this.bonus) {
+      this._stepBonus(dt);
+      return;
+    }
     if (this.finished) {
       // Deixa a cena assentar depois do fim, para a animacao nao congelar.
       if (this.elapsed - this.endedAt < 2.5) this.world.step(dt);
@@ -119,6 +292,7 @@ export class Session {
     if (this.hintPiece && !this.hintPiece.alive) this.hintPiece = null;
 
     this.world.step(dt);
+    this._updateCombo(dt);
 
     while (this.starsShown < this.world.starsCrossed) {
       this.starsShown++;

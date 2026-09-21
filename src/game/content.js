@@ -14,6 +14,7 @@
  * @property {number} cost 0 = gratis
  * @property {number} rank patente minima
  * @property {boolean} [rewarded] desbloqueavel com um video
+ * @property {string} [model] id de HEX_MODELS; ausente = 'liso'
  * @property {string} [fill]
  * @property {string} [stroke]
  * @property {string} [core]
@@ -27,12 +28,14 @@ export const SKINS = [
     name: 'Original',
     cost: 0,
     rank: 0,
+    model: 'liso',
   },
   {
     id: 'ember',
     name: 'Brasa',
     cost: 120,
     rank: 0,
+    model: 'nucleo',
     fill: 'rgba(255,150,60,0.28)',
     stroke: '#ff8a2a',
     core: '#fff0d0',
@@ -42,6 +45,7 @@ export const SKINS = [
     name: 'Menta',
     cost: 180,
     rank: 2,
+    model: 'vidro',
     fill: 'rgba(90,240,190,0.26)',
     stroke: '#3ee0b0',
     core: '#eafff8',
@@ -51,6 +55,7 @@ export const SKINS = [
     name: 'Violeta',
     cost: 260,
     rank: 3,
+    model: 'cristal',
     fill: 'rgba(180,120,255,0.3)',
     stroke: '#b57cff',
     core: '#f5ecff',
@@ -60,24 +65,20 @@ export const SKINS = [
     name: 'Ouro',
     cost: 420,
     rank: 5,
+    model: 'ouro',
     fill: 'rgba(255,205,70,0.32)',
     stroke: '#ffcd46',
     core: '#fff6d8',
-    mark(ctx, cx, cy, r) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.lineWidth = Math.max(1, r * 0.05);
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.52, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    },
+    // Sem marca: o anel branco que havia aqui era um circulo no meio de uma
+    // peca de seis lados, e brigava com a varredura de luz do modelo `ouro` -
+    // o que se via era o circulo, nao o metal polido.
   },
   {
     id: 'circuit',
     name: 'Circuito',
     cost: 0,
     rank: 8,
+    model: 'placa',
     fill: 'rgba(60,220,200,0.24)',
     stroke: '#2ee6c4',
     core: '#dffff8',
@@ -101,6 +102,7 @@ export const SKINS = [
     name: 'Aurora',
     cost: 600,
     rank: 10,
+    model: 'gema',
     fill: 'rgba(120,200,255,0.28)',
     stroke: '#7fd8ff',
     core: '#ffffff',
@@ -123,6 +125,7 @@ export const SKINS = [
     name: 'Sombra',
     cost: 350,
     rank: 0,
+    model: 'selo',
     rewarded: true,
     fill: 'rgba(40,40,60,0.55)',
     stroke: '#8a8ab0',
@@ -133,18 +136,34 @@ export const SKINS = [
 /**
  * Estrelas acumuladas para abrir cada mundo.
  *
- * O teto e 300 (100 fases x 3 estrelas). A curva e folgada no comeco - quem
- * passa raspando pelo mundo 1 entra no 2 sem perceber o portao - e vai
- * apertando, de modo que perto do fim o jogador precisa ter voltado para
- * melhorar fases antigas. Nunca chega a exigir tudo: o ultimo portao pede 270
- * das 300, entao sobra folga para dez fases mal resolvidas.
+ * O teto e 480 (160 fases x 3 estrelas), com o mundo 1 valendo 60 - ele tem
+ * vinte fases, o dobro dos outros. A curva e folgada no comeco - quem passa
+ * raspando pelo mundo 1 entra no 2 sem perceber o portao - e vai apertando, de
+ * modo que perto do fim o jogador precisa ter voltado para melhorar fases
+ * antigas. Nunca chega a exigir tudo: o ultimo portao pede 434 das 480, entao
+ * sobra folga para quinze fases mal resolvidas.
  *
- * Indice = numero do mundo (0 a 9); o mundo 0 nunca e travado.
+ * Cada degrau foi re-escalado pela MESMA fracao do que ja estava disponivel
+ * naquele ponto, para que o aperto percebido continue identico ao de antes.
+ *
+ * Indice = numero do mundo (0 a 14); o mundo 0 nunca e travado.
  */
-export const GATE_STARS = [0, 12, 30, 54, 84, 120, 156, 198, 240, 270];
+/**
+ * Premio por peca que sobrou intacta no fim da fase.
+ *
+ * E o que transforma "sobrou peca" de sobra em meta: quem resolve com menos
+ * toques termina com a torre mais cheia e leva mais moeda. Nao toca em estrela
+ * nenhuma - os portoes de mundo continuam pedindo exatamente o que pediam.
+ */
+export const BONUS_COINS_PER_PIECE = 3;
+export const BONUS_XP_PER_PIECE = 2;
+
+export const GATE_STARS = [
+  0, 24, 42, 64, 90, 120, 153, 187, 224, 262, 301, 338, 373, 405, 434,
+];
 
 /**
- * @param {number} world 0 a 9
+ * @param {number} world 0 a 14
  * @returns {number}
  */
 export function gateStars(world) {

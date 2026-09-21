@@ -1,5 +1,5 @@
 /**
- * Gera e valida as 100 fases, depois grava src/game/levels.gen.js.
+ * Gera e valida as 160 fases, depois grava src/game/levels.gen.js.
  *
  * Para cada fase o programa procura seeds cujo layout seja realmente vencivel,
  * provando isso com um jogador automatico que simula um lance a frente. Uma
@@ -24,7 +24,9 @@ import { cpus } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-import { levelConfig, generateLayout, LEVEL_COUNT } from '../src/game/levelgen.js';
+import {
+  levelConfig, generateLayout, LEVEL_COUNT, WORLD_COUNT, worldStart, worldSize,
+} from '../src/game/levelgen.js';
 import { evaluateVariant, rollout } from '../src/game/solver.js';
 import { hashSeed } from '../src/core/rng.js';
 
@@ -61,10 +63,19 @@ function bakeLevel(index) {
     /** @type {*[]} */
     const accepted = [];
     let screened = 0;
+    // As fases de roteiro (levelgen.js, PRIMEIRAS_FASES) so aceitam seed que
+    // perdoe o jogador tocando ao acaso. Medido, passa de uma seed em quatro
+    // (seis linhas) a uma em dez (sete): o orcamento sextuplica - o laco para
+    // nas quatro variantes, entao so custa onde falta - e cada politica
+    // ingenua joga duas vezes, senao "perdoa tudo" seria sorte de tres partidas.
+    const roteiro = config.minForgiveness !== undefined;
+    const budget = roteiro ? SEED_BUDGET * 6 : SEED_BUDGET;
 
-    for (let attempt = 0; attempt < SEED_BUDGET; attempt++) {
+    for (let attempt = 0; attempt < budget; attempt++) {
       const seed = seedFor(index, soften, attempt);
       const layout = generateLayout(config, seed);
+      // Torre de barras e mais nada e justamente o que o roteiro quer evitar.
+      if (config.minPieces && layout.pieces.length < config.minPieces) continue;
 
       // Triagem barata: se nem uma partida competente vence, nao vale gastar
       // a avaliacao completa nesta seed.
@@ -77,14 +88,16 @@ function bakeLevel(index) {
 
       const report = evaluateVariant(layout, seed, {
         smartRuns: SMART_RUNS,
-        naiveRuns: 3,
+        naiveRuns: roteiro ? 6 : 3,
         minSmartWins: 2,
       });
       if (!report.accepted) continue;
+      if (roteiro && report.forgiveness < (config.minForgiveness || 0)) continue;
       // Uma fase que se resolve em um toque nao e uma fase. Com materiais que
       // somem sozinhos isso deixa de ser hipotetico - e o bonus de moedas por
       // bater o par ficaria inatingivel.
       if (index >= 9 && report.par < 2) continue;
+      if (config.minPar && report.par < config.minPar) continue;
 
       accepted.push({
         seed,
@@ -210,12 +223,20 @@ if (!isMainThread) {
   if (kept) console.log('  preservadas do arquivo ....', kept);
 
   const buckets10 = [];
-  for (let b = 0; b < 10; b++) {
-    const slice = ordered.filter((r) => Math.floor(r.index / 10) === b);
+  // Uma linha por MUNDO, nao por dezena: o mundo 1 tem vinte fases, e um
+  // resumo decenal o partiria ao meio e mentiria sobre a curva do tutorial.
+  for (let b = 0; b < WORLD_COUNT; b++) {
+    const ini = worldStart(b);
+    const fim = ini + worldSize(b) - 1;
+    const slice = ordered.filter((r) => r.index >= ini && r.index <= fim);
     if (!slice.length) continue;
     const forg = slice.reduce((a, r) => a + r.variants.reduce((x, v) => x + v.forgiveness, 0) / r.variants.length, 0) / slice.length;
     const par = slice.reduce((a, r) => a + r.variants.reduce((x, v) => x + v.par, 0) / r.variants.length, 0) / slice.length;
-    buckets10.push(`  fases ${String(b * 10 + 1).padStart(3)}-${String(b * 10 + 10).padStart(3)}  toques ~${par.toFixed(1).padStart(4)}  perdoa ${(forg * 100).toFixed(0).padStart(3)}%`);
+    const tema = levelConfig(ini).theme;
+    buckets10.push(
+      `  mundo ${String(b + 1).padStart(2)} ${tema.padEnd(11)} fases ${String(ini + 1).padStart(3)}-${String(fim + 1).padStart(3)}` +
+        `  toques ~${par.toFixed(1).padStart(4)}  perdoa ${(forg * 100).toFixed(0).padStart(3)}%`,
+    );
   }
   console.log('\nCurva de dificuldade');
   console.log(buckets10.join('\n'));

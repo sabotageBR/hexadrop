@@ -304,7 +304,67 @@ function chapa(b) {
   ctx.stroke();
 }
 
-const ESTILOS = { neon, hangar, tronco, degraus, bolo, gelo, obsidiana, dobra, chapa };
+/** Plataforma de puzzle: um tijolo brilhante largo, da mesma familia das pecas. */
+function bloco(b) {
+  const { ctx, sx, sy, w, h, px, vh, theme } = b;
+  const facho = ctx.createLinearGradient(0, sy, 0, vh);
+  facho.addColorStop(0, withAlphaSafe(theme.pedestal.glow, 0.35));
+  facho.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.save();
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = facho;
+  ctx.beginPath();
+  ctx.moveTo(sx - w * 0.28, sy + h);
+  ctx.lineTo(sx + w * 0.28, sy + h);
+  ctx.lineTo(sx + w * 0.55, vh);
+  ctx.lineTo(sx - w * 0.55, vh);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  const r = Math.min(h * 0.45, px * 0.28);
+  roundRect(ctx, sx - w / 2, sy, w, h, r);
+  const g = ctx.createLinearGradient(0, sy, 0, sy + h);
+  g.addColorStop(0, theme.pedestal.stroke);
+  g.addColorStop(0.4, theme.pedestal.fill);
+  g.addColorStop(1, theme.pedestal.fill);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.save();
+  roundRect(ctx, sx - w / 2, sy, w, h, r);
+  ctx.clip();
+  const spec = ctx.createRadialGradient(
+    sx - w * 0.18,
+    sy + h * 0.2,
+    px * 0.04,
+    sx - w * 0.1,
+    sy + h * 0.28,
+    w * 0.42,
+  );
+  spec.addColorStop(0, 'rgba(255,255,255,0.7)');
+  spec.addColorStop(0.4, 'rgba(255,255,255,0.18)');
+  spec.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = spec;
+  ctx.fillRect(sx - w / 2, sy, w, h);
+  ctx.restore();
+  ctx.strokeStyle = theme.pedestal.stroke;
+  ctx.lineWidth = Math.max(2, px * 0.055);
+  roundRect(ctx, sx - w / 2, sy, w, h, r);
+  ctx.stroke();
+}
+
+/** @param {string} hex @param {number} a */
+function withAlphaSafe(hex, a) {
+  if (!hex) return `rgba(255,255,255,${a})`;
+  if (hex.startsWith('rgba') || hex.startsWith('rgb')) return hex;
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  if (!Number.isFinite(n)) return `rgba(255,255,255,${a})`;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+const ESTILOS = { neon, hangar, tronco, degraus, bolo, gelo, obsidiana, dobra, chapa, bloco };
 
 /**
  * @param {Base} b

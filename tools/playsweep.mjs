@@ -67,6 +67,14 @@ for (const level of LEVELS) {
     await sleep(650);
   }
   await sleep(900);
+  // A celebracao de fim de fase segura o cartao por alguns segundos: ler o
+  // resultado antes dela terminar fazia toda vitoria com muitas pecas sobrando
+  // ser anotada como "ainda jogando".
+  for (let i = 0; i < 24; i++) {
+    const tela = await js('window.__game.screen');
+    if (tela !== 'game') break;
+    await sleep(300);
+  }
   const res = await js('({screen: window.__game.screen, state: window.__game.scene.session ? window.__game.scene.session.state : "?", stars: window.__game.scene.session ? window.__game.scene.session.stars : 0})');
   const avgFps = fps.length ? Math.round(fps.reduce((a, b) => a + b, 0) / fps.length) : 0;
   if (res.screen === 'win') wins++; else if (res.screen === 'lose') losses++;

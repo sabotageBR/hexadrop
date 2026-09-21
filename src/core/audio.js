@@ -15,6 +15,60 @@ function hz(semitonesFromA4) {
   return A4 * Math.pow(2, semitonesFromA4 / 12);
 }
 
+/**
+ * Mascaras ritmicas de um compasso 4/4 em colcheias. 1 = ataque, 0 = silencio.
+ *
+ * O silencio e o ingrediente principal: a trilha antiga atacava em toda
+ * colcheia par, sem excecao, e por isso soava como um relogio.
+ */
+const PATTERNS = {
+  reto: [1, 0, 0, 1, 0, 1, 0, 0],
+  sincope: [1, 0, 1, 0, 0, 1, 0, 1],
+  arejado: [1, 0, 0, 0, 1, 0, 0, 1],
+  corrido: [1, 0, 1, 1, 0, 1, 0, 1],
+  esparso: [1, 0, 0, 0, 0, 1, 0, 0],
+  raiz: [1, 0, 0, 0, 1, 0, 0, 0],
+  andante: [1, 0, 0, 1, 0, 0, 1, 0],
+  pulsar: [1, 0, 1, 0, 1, 0, 1, 0],
+};
+
+/** Contorno melodico: grau da escala em cada compasso de uma secao. */
+const CONTOUR = [0, 2, 1, 4, 0, 3, 5, 2];
+/** Figura dentro do compasso, somada ao contorno a cada ataque. */
+const MOTIF = [0, 2, 1, 3];
+
+const BARS_PER_SECTION = 8;
+
+/**
+ * Forma de 32 compassos: A A' B A''.
+ *
+ * Oito compassos davam um loop curto demais para ficar de fundo. A secao B
+ * sobe uma oitava, abre o ritmo e traz o pad - e o ponto de respiro que faz o
+ * retorno de A soar como retorno, e nao como repeticao.
+ */
+const SECTIONS = [
+  { lead: 'reto', bass: 'raiz', oct: 0, pad: false, hat: false },
+  { lead: 'sincope', bass: 'andante', oct: 0, pad: false, hat: true },
+  { lead: 'arejado', bass: 'raiz', oct: 12, pad: true, hat: true },
+  { lead: 'corrido', bass: 'pulsar', oct: 0, pad: false, hat: true },
+];
+
+const BARS_PER_FORM = SECTIONS.length * BARS_PER_SECTION;
+
+/**
+ * Grau da escala, com o indice podendo passar das pontas: o excedente vira
+ * oitava. E o que produz linha melodica em vez de salto aleatorio.
+ * @param {number[]} scale
+ * @param {number} index
+ * @returns {number} semitons acima da tonica
+ */
+function degreeAt(scale, index) {
+  const n = scale.length;
+  const oct = Math.floor(index / n);
+  const i = ((index % n) + n) % n;
+  return scale[i] + oct * 12;
+}
+
 export class AudioEngine {
   constructor() {
     /** @type {AudioContext|null} */
@@ -35,6 +89,10 @@ export class AudioEngine {
     this._musicStep = 0;
     /** @type {AudioNode[]} */
     this._musicNodes = [];
+    /** Trilha segurada pela pausa do jogo ou pela aba em segundo plano. */
+    this._musicHold = false;
+    this._hidden = false;
+    this._visBound = false;
   }
 
   /** Cria o contexto. Fica suspenso ate o primeiro gesto do usuario. */
@@ -57,6 +115,7 @@ export class AudioEngine {
       this.ctx.onstatechange = () => {
         if (this.ctx && this.ctx.state === 'running') this.unlocked = true;
       };
+      this._bindVisibility();
     } catch {
       this.ctx = null;
     }
@@ -296,6 +355,10 @@ export class AudioEngine {
       case 'foam':
         this.noise({ freq: 900, freqEnd: 400, dur: 0.1, gain: 0.12, filter: 'lowpass' });
         break;
+      case 'block':
+        this.tone({ freq: 420, freqEnd: 190, dur: 0.11, gain: 0.18, type: 'triangle' });
+        this.noise({ freq: 1900, freqEnd: 520, dur: 0.08, gain: 0.1, filter: 'bandpass', q: 1.1 });
+        break;
       case 'obsidian':
         this.tone({ freq: 90, dur: 0.1, gain: 0.14, type: 'square' });
         break;
@@ -377,6 +440,44 @@ export class AudioEngine {
     });
   }
 
+  /**
+   * Estouro da celebracao de fim de fase.
+   *
+   * A nota sobe com a contagem - e o que transforma "sobraram doze pecas" numa
+   * escala que termina em cima, em vez de doze estouros iguais. A subida e
+   * normalizada pelo total, entao dez pecas e trinta pecas percorrem o mesmo
+   * intervalo, e a ultima sempre resolve duas oitavas acima.
+   *
+   * @param {number} index 1..total
+   * @param {number} total
+   */
+  bonusPop(index, total) {
+    const n = Math.max(1, total);
+    const i = Math.max(1, Math.min(n, index));
+    const frac = n > 1 ? (i - 1) / (n - 1) : 1;
+    const escala = [0, 2, 4, 7, 9];
+    const passo = Math.round(frac * 10);
+    const ultima = i >= n;
+    const semis = ultima ? 24 : escala[passo % escala.length] + 12 * Math.floor(passo / escala.length);
+    this.tone({ freq: hz(semis), dur: ultima ? 0.42 : 0.16, gain: 0.17, type: 'triangle' });
+    this.tone({ freq: hz(semis + 12), dur: ultima ? 0.34 : 0.12, gain: 0.07, type: 'sine', delay: 0.02 });
+    this.noise({ freq: 2600, freqEnd: 500, dur: 0.1, gain: 0.09, filter: 'lowpass' });
+    if (ultima) this.tone({ freq: hz(31), dur: 0.5, gain: 0.08, type: 'sine', delay: 0.05 });
+  }
+
+  /**
+   * Combo: arpejo curto que cresce com o tamanho da cadeia.
+   * @param {number} n 2 ou mais
+   */
+  combo(n) {
+    const tamanho = Math.max(2, Math.min(6, n | 0));
+    const escala = [0, 4, 7, 12, 16, 19];
+    for (let i = 0; i < tamanho; i++) {
+      this.tone({ freq: hz(escala[i] + 7), dur: 0.2, gain: 0.15, type: 'triangle', delay: i * 0.055 });
+      this.tone({ freq: hz(escala[i] + 19), dur: 0.16, gain: 0.06, type: 'sine', delay: i * 0.055 + 0.02 });
+    }
+  }
+
   land() {
     this.tone({ freq: 160, freqEnd: 80, dur: 0.2, gain: 0.2, type: 'sine' });
     this.noise({ freq: 700, freqEnd: 200, dur: 0.14, gain: 0.12, filter: 'lowpass' });
@@ -386,15 +487,76 @@ export class AudioEngine {
     this.noise({ freq: 400, freqEnd: 2200, dur: 0.24, gain: 0.08, filter: 'bandpass', q: 0.7, attack: 0.08 });
   }
 
+  // -------------------------------------------------- aba em segundo plano
+
+  /**
+   * Silencia a trilha quando a aba sai de cena.
+   *
+   * O laco ja pausa sozinho no visibilitychange (core/loop.js), mas o contexto
+   * de audio continuava 'running' em segundo plano, e _musicNext ficava parado
+   * no passado: na volta, o agendador despejava de uma vez todas as notas
+   * vencidas. Suspender e ressincronizar resolve os dois de uma vez - e a mesma
+   * correcao que unmuteAfterAd() ja fazia no caminho do anuncio.
+   */
+  _bindVisibility() {
+    if (this._visBound || typeof document === 'undefined') return;
+    this._visBound = true;
+    const esconder = () => {
+      this._hidden = true;
+      this._stopMusicNodes();
+      // Durante um anuncio quem manda e muteForAd/unmuteAfterAd: mexer aqui
+      // deixaria o contexto suspenso depois que o anuncio terminasse.
+      if (this.adMuted || !this.ctx || this.ctx.state !== 'running') return;
+      this.ctx.suspend().catch(() => {});
+    };
+    const mostrar = () => {
+      this._hidden = false;
+      if (this.adMuted || !this.ctx || !this.unlocked) return;
+      this.ctx.resume().then(
+        () => {
+          if (this.ctx) this._musicNext = this.ctx.currentTime + 0.1;
+        },
+        () => {},
+      );
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) esconder();
+      else mostrar();
+    });
+    window.addEventListener('pagehide', esconder);
+    window.addEventListener('pageshow', mostrar);
+  }
+
   // ------------------------------------------------------------- musica
 
   /**
-   * Trilha procedural. Cada tema define escala, tempo e timbre.
-   * @param {{scale:number[], root:number, bpm:number, type:OscillatorType, bass:OscillatorType}|null} spec
+   * Segura a trilha sem perder o lugar. Usado pela pausa do jogo.
+   *
+   * Antes a musica continuava tocando na tela de pausa: o laco segue rodando e
+   * quem chama updateMusic() e o passo da cena, que nao sabe de pausa nenhuma.
+   */
+  holdMusic() {
+    if (this._musicHold) return;
+    this._musicHold = true;
+    this._stopMusicNodes();
+  }
+
+  releaseMusic() {
+    if (!this._musicHold) return;
+    this._musicHold = false;
+    if (this.ctx) this._musicNext = this.ctx.currentTime + 0.1;
+  }
+
+  /**
+   * Arma uma trilha. Cada tema define escala, tempo, timbres e o desenho
+   * ritmico; a forma de 32 compassos e comum a todas.
+   * @param {*} spec
    */
   setMusic_(spec) {
+    if (spec && this._music && spec === this._music) return;
     this._music = spec;
     this._musicStep = 0;
+    this._stopMusicNodes();
     if (this.ctx) this._musicNext = this.ctx.currentTime + 0.15;
   }
 
@@ -409,30 +571,80 @@ export class AudioEngine {
     this._musicNodes.length = 0;
   }
 
-  /** Agendador da trilha, chamado pelo laco principal. */
+  /**
+   * Agendador da trilha, chamado pelo laco principal.
+   *
+   * A versao anterior tocava uma nota em TODA colcheia par e um baixo sempre
+   * nos mesmos dois lugares, num loop de oito compassos - o "tum, tum, tum" de
+   * relogio. Aqui a melodia segue uma mascara ritmica com silencios, a forma
+   * tem 32 compassos em quatro secoes (A A' B A'') e a secao B troca registro,
+   * densidade e timbre. O silencio e o que mais tira o som de metronomo.
+   */
   updateMusic() {
     if (!this._music || !this.ctx || !this.musicOn || this.adMuted) return;
+    if (this._musicHold || this._hidden) return;
     if (this.ctx.state !== 'running') return;
     const spec = this._music;
     const beat = 60 / spec.bpm;
     const lookahead = this.ctx.currentTime + 0.4;
+    // A trilha nunca agenda no passado: depois de qualquer parada longa o
+    // relogio anda junto, em vez de despejar as notas vencidas de uma vez.
+    if (this._musicNext < this.ctx.currentTime) this._musicNext = this.ctx.currentTime + 0.05;
     let guard = 0;
-    while (this._musicNext < lookahead && guard++ < 16) {
-      const t = this._musicNext;
-      const step = this._musicStep;
-      const bar = Math.floor(step / 8);
-      const inBar = step % 8;
-      const degree = spec.scale[(step * 3 + bar) % spec.scale.length];
-      const oct = inBar % 4 === 0 ? 0 : 12;
-
-      if (inBar % 2 === 0) {
-        this._musicNote(spec.root + degree + oct, t, beat * 1.1, 0.09, spec.type);
-      }
-      if (inBar === 0 || inBar === 5) {
-        this._musicNote(spec.root - 24 + spec.scale[bar % spec.scale.length], t, beat * 1.8, 0.14, spec.bass);
-      }
+    while (this._musicNext < lookahead && guard++ < 24) {
+      this._emitStep(spec, this._musicStep, this._musicNext, beat);
       this._musicNext += beat / 2;
-      this._musicStep = (step + 1) % 64;
+      this._musicStep = (this._musicStep + 1) % (BARS_PER_FORM * 8);
+    }
+  }
+
+  /**
+   * Uma colcheia da forma.
+   * @param {*} spec
+   * @param {number} step 0..(BARS_PER_FORM*8 - 1)
+   * @param {number} t quando tocar
+   * @param {number} beat duracao da seminima
+   */
+  _emitStep(spec, step, t, beat) {
+    const bar = Math.floor(step / 8);
+    const inBar = step % 8;
+    const sec = SECTIONS[Math.floor(bar / BARS_PER_SECTION) % SECTIONS.length];
+    const barInSec = bar % BARS_PER_SECTION;
+
+    // --- melodia ----------------------------------------------------------
+    const lead = PATTERNS[spec.lead || sec.lead] || PATTERNS.reto;
+    if (lead[inBar]) {
+      const motif = spec.motif || MOTIF;
+      // Quantos ataques ja saíram neste compasso: e o indice dentro do motivo,
+      // e nao a colcheia - assim a figura se mantem reconhecivel mesmo quando a
+      // mascara muda de secao.
+      let ataque = 0;
+      for (let k = 0; k < inBar; k++) ataque += lead[k];
+      const grau = CONTOUR[barInSec % CONTOUR.length] + motif[ataque % motif.length];
+      const semis = spec.root + sec.oct + degreeAt(spec.scale, grau);
+      // Cabeca do compasso segura mais e soa mais forte; o resto e curto.
+      const longa = inBar === 0;
+      this._musicNote(semis, t, beat * (longa ? 1.35 : 0.62), longa ? 0.1 : 0.075, spec.type, 2600);
+    }
+
+    // --- baixo ------------------------------------------------------------
+    const bass = PATTERNS[spec.bassPattern || sec.bass] || PATTERNS.raiz;
+    if (bass[inBar]) {
+      const fundamental = CONTOUR[barInSec % CONTOUR.length];
+      const semis = spec.root - 24 + degreeAt(spec.scale, fundamental);
+      this._musicNote(semis, t, beat * 1.5, 0.13, spec.bass, 900);
+    }
+
+    // --- pad, so na secao de contraste ------------------------------------
+    if (sec.pad && inBar === 0 && barInSec % 2 === 0) {
+      const semis = spec.root - 12 + degreeAt(spec.scale, CONTOUR[barInSec % CONTOUR.length]);
+      this._musicNote(semis, t, beat * 3.4, 0.05, spec.pad || 'sine', 1400);
+      this._musicNote(semis + 7, t + 0.03, beat * 3.2, 0.035, spec.pad || 'sine', 1400);
+    }
+
+    // --- chimbal: pulso sem gastar nota -----------------------------------
+    if (sec.hat && spec.hat !== false && inBar % 2 === 1) {
+      this._musicHat(t, inBar === 3 || inBar === 7 ? 0.05 : 0.028);
     }
   }
 
@@ -442,8 +654,9 @@ export class AudioEngine {
    * @param {number} dur
    * @param {number} gain
    * @param {OscillatorType} type
+   * @param {number} [cutoff]
    */
-  _musicNote(semis, when, dur, gain, type) {
+  _musicNote(semis, when, dur, gain, type, cutoff = 2400) {
     if (!this.ctx || !this.musicBus) return;
     const ctx = this.ctx;
     const osc = ctx.createOscillator();
@@ -451,16 +664,42 @@ export class AudioEngine {
     osc.frequency.value = hz(semis);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, when);
-    g.gain.exponentialRampToValueAtTime(gain, when + 0.05);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), when + 0.05);
     g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 2400;
+    filter.frequency.value = cutoff;
     osc.connect(filter).connect(g).connect(this.musicBus);
     osc.start(when);
     osc.stop(when + dur + 0.05);
     this._musicNodes.push(osc);
-    if (this._musicNodes.length > 24) this._musicNodes.splice(0, 8);
+    if (this._musicNodes.length > 40) this._musicNodes.splice(0, 12);
+  }
+
+  /**
+   * Chimbal de ruido filtrado. Vai no barramento de musica, e nao no de
+   * efeitos, para desligar junto com a trilha.
+   * @param {number} when
+   * @param {number} gain
+   */
+  _musicHat(when, gain) {
+    if (!this.ctx || !this.musicBus || !this.noiseBuffer) return;
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 6500;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), when + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
+    src.connect(filter).connect(g).connect(this.musicBus);
+    src.start(when);
+    src.stop(when + 0.12);
+    this._musicNodes.push(src);
+    if (this._musicNodes.length > 40) this._musicNodes.splice(0, 12);
   }
 }
 

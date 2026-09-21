@@ -10,11 +10,16 @@
  * mencionar bloqueador de anuncios.
  */
 
+import { COM_ANUNCIOS } from './core/platform.js';
+
 const INIT_TIMEOUT = 4000;
 const BREAK_TIMEOUT = 45000;
 
 /** @returns {*} */
 function sdk() {
+  // Na versao lisa o script nem e publicado; a guarda aqui garante que nenhuma
+  // chamada tente usar um SDK que alguem tenha injetado por fora.
+  if (!COM_ANUNCIOS) return null;
   try {
     return typeof window !== 'undefined' && window.PokiSDK ? window.PokiSDK : null;
   } catch {
@@ -145,7 +150,7 @@ class Poki {
    * @returns {Promise<void>}
    */
   async commercialBreak() {
-    if (this.inBreak) return;
+    if (!COM_ANUNCIOS || this.inBreak) return;
     this.gameplayStop();
     this.inBreak = true;
     if (this.onAdStart) this.onAdStart();
@@ -176,7 +181,7 @@ class Poki {
    * @returns {Promise<boolean>}
    */
   async rewardedBreak(size) {
-    if (this.inBreak) return false;
+    if (!COM_ANUNCIOS || this.inBreak) return false;
     const wasPlaying = this.inGameplay;
     this.gameplayStop();
     this.inBreak = true;

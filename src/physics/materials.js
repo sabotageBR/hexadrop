@@ -41,6 +41,22 @@
 
 /** @type {Record<string, Material>} */
 export const MATERIALS = {
+  // Bloco de puzzle: a mesma fisica da madeira, cara de peca de celular.
+  // E o material das fases iniciais (mundo puzzle). A densidade fica no
+  // meio da faixa de proposito - e a referencia neutra da torre.
+  block: {
+    id: 'block',
+    density: 1.0,
+    friction: 0.55,
+    restitution: 0.05,
+    destructible: true,
+    breakSpeed: 0,
+    explodeRadius: 0,
+    color: '#ff4eb6',
+    tapWeight: 1,
+    nameKey: 'materialBlock',
+    hintKey: 'hintBlock',
+  },
   wood: {
     id: 'wood',
     density: 1.0,
@@ -146,17 +162,21 @@ export const MATERIALS = {
     hintKey: 'hintBomb',
   },
   // TNT nao precisa de campo novo: velocidade de quebra somada a raio de
-  // explosao ja produz "detona com qualquer pancada forte". 3.2 m/s e uma queda
-  // de meia celula, e fica acima do limiar de 2.2 do som de impacto - entao
-  // toda detonacao vem precedida do baque, e o jogador entende o que houve.
-  // Diferente da bomba, que explode quando o JOGADOR a toca.
+  // explosao ja produz "detona com qualquer pancada forte". Diferente da
+  // bomba, que explode quando o JOGADOR a toca.
+  //
+  // Eram 3.2 quando o impacto ignorava massa. Agora que o golpe e pesado pelo
+  // quinhao de massa (physics/world.js), 3.2 fazia a caixa detonar com um
+  // metal roçando de um quarto de celula. 4.5 devolve o gatilho de antes para
+  // uma peca pesada - meia celula de queda - e cobra bem mais de uma leve, que
+  // e o que "pancada forte" sempre quis dizer.
   tnt: {
     id: 'tnt',
     density: 1.15,
     friction: 0.62,
     restitution: 0.02,
     destructible: true,
-    breakSpeed: 3.2,
+    breakSpeed: 4.5,
     explodeRadius: 2.2,
     color: '#ff9a3c',
     tapWeight: 0.4,
@@ -221,21 +241,29 @@ export const MATERIAL_IDS = Object.keys(MATERIALS);
 /**
  * Fase em que cada material aparece pela primeira vez, base para a tela
  * de "material novo" e para a curva de dificuldade.
+ *
+ * O calendario segue as fronteiras de mundo (20 + 14x10) e obedece a uma
+ * regra: cada material estreia no mundo ANTERIOR aquele em que vira a peca
+ * dominante. O jogador conhece a peca solta antes de encarar uma torre feita
+ * dela. O calendario antigo era decenal e tardio - gelo so na 22, metal na 42,
+ * vidro na 52 -, e por isso o mundo 2 inteiro era madeira com pedra.
+ *
  * @type {Record<string, number>}
  */
 export const MATERIAL_DEBUT = {
+  block: 1,
   wood: 1,
-  stone: 10,
-  obsidian: 12,
-  ice: 22,
-  rubber: 32,
-  metal: 42,
-  glass: 52,
-  foam: 62,
-  bomb: 70,
-  crystal: 56,
-  wax: 74,
-  tnt: 84,
+  stone: 8,
+  obsidian: 16,
+  ice: 21, // mundo 2, para o mundo 3 ser o do gelo
+  rubber: 31, // mundo 3, para o mundo 4 ser o do doce
+  metal: 41, // mundo 4, para o mundo 5 ser o futurista
+  foam: 46, // mundo 4, para o mundo 7 ser o de papel
+  glass: 51, // mundo 5, para o mundo 9 ser o neon
+  crystal: 57,
+  bomb: 64,
+  wax: 81, // mundo da lava, onde derreter tem historia
+  tnt: 91,
 };
 
 /** Materiais que cedem por tempo de contato com o hexagono. */

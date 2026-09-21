@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Hexa Drop — modelos de hexagono</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #07102c; color: #f4f7ff; font: 16px/1.45 system-ui, sans-serif; }
+  a { color: #3dd0ff; }
+  header {
+    position: sticky; top: 0; z-index: 4;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px;
+    padding: 14px 20px; background: linear-gradient(#07102cee, #07102cdd 70%, #07102c99);
+    backdrop-filter: blur(8px);
+  }
+  header h1 { margin: 0; font-size: clamp(20px, 4vw, 28px); letter-spacing: -0.03em; }
+  header p { margin: 0; color: rgba(244,247,255,0.62); font-size: 14px; flex: 1; min-width: 220px; }
+  .back {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.16); color: inherit; text-decoration: none;
+    background: rgba(255,255,255,0.06);
+  }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 20px 12px; }
+  .bar b {
+    font: 700 11px/1 system-ui; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(244,247,255,0.5); margin-right: 2px;
+  }
+  .chip {
+    padding: 7px 13px; border-radius: 999px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.05);
+    color: inherit; font: 700 13px/1 system-ui;
+  }
+  .chip.on { border-color: #ff4eb6; background: rgba(255,78,182,0.18); }
+  .chip i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+  .stage { margin: 4px 20px 18px; border-radius: 22px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
+  .stage canvas { display: block; width: 100%; height: auto; }
+  .stage-cap {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    padding: 10px 16px; background: rgba(0,0,0,0.3); font-size: 13px; color: rgba(244,247,255,0.7);
+  }
+
+  .grid {
+    display: grid; gap: 14px; padding: 0 20px 60px;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    max-width: 1180px; margin: 0 auto;
+  }
+  .card {
+    border-radius: 18px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03);
+  }
+  .card canvas { display: block; width: 100%; height: auto; }
+  .card .meta { padding: 10px 13px 13px; }
+  .card .meta b { display: block; font-size: 15px; }
+  .card .meta span { display: block; font-size: 12px; color: rgba(244,247,255,0.6); margin-top: 2px; }
+  .card .meta code {
+    display: inline-block; margin-top: 7px; font-size: 11px;
+    padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,0.08); color: #9ef;
+  }
+  .nota { max-width: 1180px; margin: 0 auto; padding: 0 20px 40px; color: rgba(244,247,255,0.58); font-size: 13px; }
+  .nota code { color: #9ef; }
+</style>
+</head>
+<body>
+  <header>
+    <a class="back" href="./index.html" aria-label="Voltar">&#8592;</a>
+    <h1>Modelos de hexagono</h1>
+    <p>Onze construcoes sobre a MESMA silhueta. Escolha o padrao do jogo e os que vao para a loja.</p>
+  </header>
+
+  <div class="bar"><b>Tema</b><span id="temas"></span></div>
+  <div class="bar"><b>Cor (skin)</b><span id="skins"></span></div>
+
+  <div class="stage">
+    <canvas id="fila"></canvas>
+    <div class="stage-cap"><span id="filaCap">Todos no tamanho do jogo</span><b id="filaTema">puzzle</b></div>
+  </div>
+
+  <div class="grid" id="grade"></div>
+
+  <p class="nota">
+    A silhueta e identica em todos: seis vertices em <code>(PI/3)*i</code>, topo e base planos.
+    E a mesma do corpo rigido em <code>src/physics/world.js</code> — mudar a silhueta faria o
+    jogador ver a peca encaixar num canto que fisicamente nao existe.
+    O desenho vive em <code>src/render/hexmodels.js</code>.
+  </p>
+
+  <script type="module" src="./hexagonos.js"></script>
+</body>
+</html>

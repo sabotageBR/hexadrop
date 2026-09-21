@@ -98,6 +98,40 @@ export function paintBackground(ctx, th, w, h) {
   const horizonY = h * 0.56;
 
   switch (th.id) {
+    case 'puzzle': {
+      const glow = ctx.createRadialGradient(w / 2, h * 0.42, 0, w / 2, h * 0.42, w * 0.7);
+      glow.addColorStop(0, 'rgba(80, 40, 160, 0.28)');
+      glow.addColorStop(0.45, 'rgba(20, 50, 140, 0.12)');
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 48; i++) {
+        ctx.globalAlpha = rng.range(0.18, 0.8);
+        const s = rng.range(1.1, 2.4);
+        ctx.beginPath();
+        ctx.arc(rng.range(0, w), rng.range(0, h * 0.88), s, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      const spark = ['#ff4eb6', '#3dd0ff', '#ffcc22', '#7cdb3a', '#9b4dff'];
+      for (let i = 0; i < 14; i++) {
+        const x = rng.range(0, w);
+        const y = rng.range(0, h * 0.7);
+        const r = rng.range(1.2, 2.6);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rng.range(0, Math.PI));
+        ctx.fillStyle = spark[i % spark.length];
+        ctx.globalAlpha = rng.range(0.35, 0.85);
+        ctx.fillRect(-r * 3, -0.7, r * 6, 1.4);
+        ctx.fillRect(-0.7, -r * 3, 1.4, r * 6);
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+      break;
+    }
+
     // O sol synthwave e a assinatura do mundo, mas ele nasce exatamente atras
     // da coluna de jogo: brilhante e listrado como era, as faixas cruzavam as
     // pecas e o jogador nao sabia mais o que era cenario e o que era torre.

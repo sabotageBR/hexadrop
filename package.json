@@ -7,14 +7,17 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:lisa": "VITE_PLATAFORMA=lisa vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "preview:lisa": "VITE_PLATAFORMA=lisa vite preview --host 127.0.0.1 --port 4174",
     "levels": "node tools/generate-levels.mjs",
     "levels:quick": "node tools/generate-levels.mjs --quick",
     "verify": "node tools/verify-build.mjs",
     "verify:sdk": "node tools/sdkcheck.mjs",
     "verify:audio": "node tools/audiocheck.mjs",
     "playsweep": "node tools/playsweep.mjs",
-    "check": "npm run build && node tools/verify-build.mjs && node tools/sdkcheck.mjs"
+    "check": "npm run build && node tools/verify-build.mjs && node tools/sdkcheck.mjs",
+    "verify:lisa": "DIST_DIR=dist-lisa VERIFY_URL=http://127.0.0.1:4174 node tools/verify-build.mjs"
   },
   "dependencies": {
     "planck": "1.5.0"

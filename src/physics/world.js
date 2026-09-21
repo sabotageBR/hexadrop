@@ -59,6 +59,25 @@ const HOLD_DECAY = 2;
  * @property {number} [hexScale]
  */
 
+/**
+ * Quanto da pancada pertence ao OUTRO corpo do par.
+ *
+ * O fator e dobrado de proposito, para que massas iguais continuem valendo 1:
+ * e nesse ponto que os `breakSpeed` de materials.js foram calibrados, e assim
+ * a regra antiga continua valendo para o caso simetrico. Um corpo estatico -
+ * pedestal, obsidiana - tem massa zero no Box2D e vale como massa infinita,
+ * senao vidro que cai no chao nunca quebraria.
+ *
+ * @param {number} minha
+ * @param {number} outra
+ * @returns {number} 0 (nada) a 2 (massa infinita do outro lado)
+ */
+function quinhaoDeMassa(minha, outra) {
+  if (outra <= 0) return 2;
+  if (minha <= 0) return 0;
+  return (2 * outra) / (outra + minha);
+}
+
 export class PhysicsWorld {
   /**
    * @param {object} [opts]
@@ -111,12 +130,19 @@ export class PhysicsWorld {
   }
 
   /**
-   * Impacto medido pela velocidade de aproximacao no ponto de contato.
+   * Impacto medido pela velocidade de aproximacao no ponto de contato, pesada
+   * pela massa que chega.
    *
    * O impulso normal do post-solve nao serve para isso: numa torre alta ele
    * mede o peso estatico da pilha, entao o vidro da base estilhacaria sozinho
    * antes do jogador tocar em nada. A velocidade de aproximacao so e grande
    * quando algo realmente cai em cima.
+   *
+   * Mas velocidade sozinha tambem mentia. Medido no proprio motor, uma espuma
+   * de densidade 0,35 e um bloco de metal de densidade 3,2 caindo da mesma
+   * altura quebravam o vidro exatamente igual, e uma torre inteira parada em
+   * cima dele nao fazia nada - porque nada disso entrava na conta. Dai o
+   * quinhao de massa.
    *
    * @param {import('planck').Contact} contact
    */
@@ -136,10 +162,13 @@ export class PhysicsWorld {
     const pb = this.byBody.get(bb);
 
     if (this.onImpact && approach > 2.2) {
-      const target = pa || pb;
+      // O som tambem escuta a massa: pancada pesada soa pesada.
+      const alvo = pa || pb;
+      const outro = alvo && alvo.body === ba ? bb : ba;
+      const forca = approach * quinhaoDeMassa(alvo ? alvo.body.getMass() : 1, outro.getMass());
       this.onImpact(
-        Math.min(1, (approach - 2.2) / 7),
-        target ? target.material : 'stone',
+        Math.min(1, (forca - 2.2) / 7),
+        alvo ? alvo.material : 'stone',
         point.x,
         point.y,
       );
@@ -148,7 +177,10 @@ export class PhysicsWorld {
     for (const p of [pa, pb]) {
       if (!p || !p.alive) continue;
       const mat = getMaterial(p.material);
-      if (mat.breakSpeed > 0 && approach >= mat.breakSpeed) {
+      if (mat.breakSpeed <= 0) continue;
+      const outro = p.body === ba ? bb : ba;
+      const golpe = approach * quinhaoDeMassa(p.body.getMass(), outro.getMass());
+      if (golpe >= mat.breakSpeed) {
         this._queueDestroy(p, mat.explodeRadius > 0 ? 'blast' : 'shatter');
       }
     }
@@ -364,6 +396,59 @@ export class PhysicsWorld {
    * @param {PieceState} piece
    * @param {string} [cause] 'tap' | 'shatter' | 'explosion' | 'cleanup'
    */
+  /**
+   * Empurrao radial que NAO destroi nada.
+   *
+   * E o sopro da celebracao de fim de fase: a peca contada some por
+   * destroyPiece, e este empurrao e o que faz a vizinhanca reagir. Separado de
+   * _resolveExplosions de proposito - aquele laco destroi tudo que for
+   * destrutivel dentro do raio, e usa-lo aqui levaria junto as pecas que ainda
+   * serao contadas uma a uma, que e justamente a graca da contagem.
+   *
+   * Fica fora de snapshot()/restore() e nunca e chamado de dentro de step():
+   * nao faz parte da simulacao que o solucionador prova.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @param {number} radius
+   * @param {number} [force]
+   */
+  burstAt(x, y, radius, force = 4) {
+    const r2 = radius * radius;
+    for (const p of this.pieces) {
+      if (!p.alive || !p.body.isDynamic()) continue;
+      const c = p.body.getPosition();
+      const dx = c.x - x;
+      const dy = c.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > r2) continue;
+      const d = Math.sqrt(d2) || 0.001;
+      p.body.setAwake(true);
+      p.body.applyLinearImpulse(
+        new pl.Vec2((dx / d) * force, (dy / d) * force),
+        p.body.getWorldCenter(),
+        true,
+      );
+    }
+    // O hexagono leva um empurrao bem menor: ele ja pousou, e a celebracao
+    // existe para comemorar isso, nao para arrancar ele do pedestal.
+    if (this.hexBody) {
+      const c = this.hexBody.getPosition();
+      const dx = c.x - x;
+      const dy = c.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= r2) {
+        const d = Math.sqrt(d2) || 0.001;
+        this.hexBody.setAwake(true);
+        this.hexBody.applyLinearImpulse(
+          new pl.Vec2((dx / d) * force * 0.3, (dy / d) * force * 0.3),
+          this.hexBody.getWorldCenter(),
+          true,
+        );
+      }
+    }
+    this.wakeAround(x, y, radius + 2);
+  }
   destroyPiece(piece, cause = 'tap') {
     if (!piece || !piece.alive) return;
     if (this._stepping) {

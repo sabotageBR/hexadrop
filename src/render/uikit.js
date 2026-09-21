@@ -8,6 +8,7 @@
 
 /** @type {Record<string, 'atelier'|'hexdeck'|'ficha'|'queda'>} */
 export const KIT_BY_THEME = {
+  puzzle: 'ficha',
   neon: 'hexdeck',
   futuristic: 'hexdeck',
   rustic: 'atelier',
