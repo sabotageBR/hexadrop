@@ -159,6 +159,52 @@ Consequências práticas:
 `src/game/solver.js` serve aos dois lados: prova a jogabilidade no validador e escolhe
 a peça destacada quando o jogador pede dica no jogo.
 
+### A rampa de dificuldade, e as duas réguas
+
+Antes disto só as fases 1 a 3 exigiam algo do validador; da quarta em diante ele ficava
+com a primeira seed que um jogador competente vencesse. Medida, a dificuldade não era
+rampa, era serrote — e em vários trechos andava para trás:
+
+- a fase 12 perdoava 83% das partidas ao acaso e a 13, ao lado, perdoava 17%;
+- a fase 21 perdoava 83% e a 22 perdoava 8%, na virada do mundo 2;
+- as fases 19 e 20 perdoavam 8% ainda dentro do mundo do tutorial;
+- as fases 40 e 50 perdoavam **zero**: tocando ao acaso não se ganhava nunca;
+- o mundo 4 (21%) era mais difícil que o 5 (29%), como o 12 (5%) que o 13 (11%).
+
+Hoje cada fase carrega uma **faixa** `[piso, teto]` e um **alvo**, calculados em
+`levelgen.js`. O piso é exigência: seed abaixo dele é recusada. O teto é preferência: o
+laço só para quando há variantes suficientes dentro dele, e o desempate escolhe as mais
+próximas do alvo. Teto sem piso deixa a curva subir a esmo — medido, uma fase de piso
+50% saiu com 96%. Piso sem teto deixa o começo mais fácil do que era. **Escolher a
+variante de menor perdão, em vez da mais próxima do alvo, também não serve**: onde o
+piso é zero ele puxa a fase para o fundo do que foi sorteado, e a curva que devia fechar
+em 13% fechava em 2%.
+
+As curvas são retas em escala **logarítmica**, não em perdão: rampa linear de
+dificuldade é taxa constante. Reta em perdão poria a fase 80 em 0,54 quando o jogo
+entrega 0,16 ali, e um piso desses no fim obrigaria o validador a afrouxar quase tudo.
+
+**São duas réguas, e cada uma vale onde ela mede** (`SMART_RULER_FROM`):
+
+- **Perdão** (vitórias de um jogador tocando ao acaso) nos mundos 1 a 7, de 100% a 23%.
+  É a régua que importa onde a retenção se decide.
+- **Taxa do jogador competente** nos mundos 8 a 15. O perdão satura ali: numa torre de
+  13 a 16 linhas com obsidiana, TNT e bomba, jogador ao acaso não ganha — no mundo 15,
+  seis das dez fases tinham *todas* as variantes em zero. A curva não descia porque o
+  jogo endurecia, descia porque a medida acabava.
+
+Nenhuma fase usa as duas, senão elas se brigam. Nada disso mexe em linha, largura,
+material ou pedestal: são exigências de **validador**, não de layout — por isso dá para
+regerar um trecho sem invalidar as seeds do resto (`--levels 81-160`).
+
+**O que ainda não fecha.** Os mundos 12 a 15 sobem de volta (competente 48, 58, 50, 61)
+quando o alvo ali é 43 a 35. O motivo é que o alvo está abaixo do que existe: para ser
+aceita, a variante tem que ser vencida pelo menos 2 de 6 vezes **e** resistir à
+perturbação, e as que passam esse filtro se agrupam acima de 50%. A régua do competente
+tem pouca amplitude no fim do jogo (47% a 67%), então uma rampa linear nela é quase
+plana. Se for para insistir, a medida com amplitude no fim é **toques da melhor
+solução** (6,6 a 9,3 hoje), e ela também não é monótona.
+
 ### Física
 
 Planck.js (Box2D 2.4 em JS puro, sem WebAssembly). Uma célula da grade é um metro;

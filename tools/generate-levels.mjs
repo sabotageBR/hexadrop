@@ -93,6 +93,10 @@ function bakeLevel(index) {
       });
       if (!report.accepted) continue;
       if (roteiro && report.forgiveness < (config.minForgiveness || 0)) continue;
+      // Do mundo 8 em diante quem manda e a taxa do jogador competente: o
+      // perdao ali satura em zero e nao separa mais uma fase da outra.
+      const smart = report.smartRuns ? report.smartWins / report.smartRuns : 0;
+      if (config.minSmart !== undefined && smart < config.minSmart) continue;
       // Uma fase que se resolve em um toque nao e uma fase. Com materiais que
       // somem sozinhos isso deixa de ser hipotetico - e o bonus de moedas por
       // bater o par ficaria inatingivel.
@@ -106,11 +110,30 @@ function bakeLevel(index) {
         forgiveness: report.forgiveness,
         pieces: layout.pieces.length,
       });
-      if (accepted.length >= VARIANTS_WANTED) break;
+      // O teto e preferencia, nao exigencia: o laco so para quando ja tem
+      // variantes suficientes DENTRO da faixa. Sem isso o gerador ficava com as
+      // primeiras quatro seeds aprovadas e a curva subia a esmo - foi assim que
+      // uma fase de piso 50% saiu com 96% de perdao.
+      const naFaixa =
+        config.maxSmart !== undefined
+          ? accepted.filter((v) => v.smart <= config.maxSmart)
+          : accepted.filter((v) => v.forgiveness <= (config.maxForgiveness ?? 1));
+      if (naFaixa.length >= VARIANTS_WANTED) break;
     }
 
     if (accepted.length > 0) {
-      return { index, soften, variants: accepted, screened, fallback: false };
+      // Escolhe as mais proximas do ALVO, nao as mais dificeis. Ordenar pelo
+      // menor perdao parece conservador e nao e: onde o piso e zero - os cinco
+      // ultimos mundos - ele puxa a fase para o fundo do que foi sorteado, e a
+      // curva que devia fechar em 13% fechava em 2%.
+      const porSmart = config.targetSmart !== undefined;
+      const alvo = porSmart ? config.targetSmart : config.targetForgiveness ?? config.maxForgiveness ?? 1;
+      const dist = (/** @type {*} */ v) => Math.abs((porSmart ? v.smart : v.forgiveness) - alvo);
+      const variants = accepted
+        .slice()
+        .sort((a, b) => dist(a) - dist(b))
+        .slice(0, VARIANTS_WANTED);
+      return { index, soften, variants, screened, fallback: false };
     }
   }
 
@@ -231,11 +254,15 @@ if (!isMainThread) {
     const slice = ordered.filter((r) => r.index >= ini && r.index <= fim);
     if (!slice.length) continue;
     const forg = slice.reduce((a, r) => a + r.variants.reduce((x, v) => x + v.forgiveness, 0) / r.variants.length, 0) / slice.length;
+    const smart = slice.reduce((a, r) => a + r.variants.reduce((x, v) => x + (v.smart || 0), 0) / r.variants.length, 0) / slice.length;
     const par = slice.reduce((a, r) => a + r.variants.reduce((x, v) => x + v.par, 0) / r.variants.length, 0) / slice.length;
     const tema = levelConfig(ini).theme;
     buckets10.push(
       `  mundo ${String(b + 1).padStart(2)} ${tema.padEnd(11)} fases ${String(ini + 1).padStart(3)}-${String(fim + 1).padStart(3)}` +
-        `  toques ~${par.toFixed(1).padStart(4)}  perdoa ${(forg * 100).toFixed(0).padStart(3)}%`,
+        `  toques ~${par.toFixed(1).padStart(4)}  perdoa ${(forg * 100).toFixed(0).padStart(3)}%` +
+          // A taxa do competente nao vai no arquivo, so existe no que foi
+          // gerado agora: mostrar zero para fase preservada seria mentira.
+          (smart > 0 ? `  competente ${(smart * 100).toFixed(0).padStart(3)}%` : ''),
     );
   }
   console.log('\nCurva de dificuldade');

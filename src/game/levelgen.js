@@ -170,6 +170,114 @@ const PRIMEIRAS_FASES = [
 ];
 
 /**
+ * Faixa de perdao de cada fase: [piso, teto], numa rampa unica de 160 fases.
+ *
+ * "Perdao" e a fracao de partidas que um jogador tocando **ao acaso** ganha,
+ * medida pelo validador em seis partidas por seed (tools/generate-levels.mjs,
+ * `naiveRuns`) - por isso a faixa tem meia largura de 1/6, que e o passo da
+ * medida.
+ *
+ * Antes disto so as tres primeiras fases exigiam algo do validador, e da quarta
+ * em diante o gerador ficava com a primeira seed que um jogador competente
+ * vencesse. Medido, a dificuldade nao era uma rampa, era um serrote - e em
+ * varios trechos ela andava para tras:
+ *
+ * - a fase 12 perdoava 83% das partidas ao acaso e a 13 perdoava 17%;
+ * - a fase 21 perdoava 83% e a 22, logo ao lado, perdoava 8%;
+ * - as fases 19 e 20 perdoavam 8% ainda dentro do mundo do tutorial;
+ * - as fases 40 e 50 perdoavam ZERO: jogando ao acaso nao se ganhava nunca;
+ * - e o mundo 4 (21%) era mais difícil que o 5 (29%), como o 12 (5%) era mais
+ *   difícil que o 13 (11%).
+ *
+ * Quem sai do jogo no comeco nao sai porque ficou difícil: sai porque ficou
+ * difícil sem aviso, ou porque a fase seguinte desmentiu a anterior.
+ *
+ * **Piso e teto fazem coisas diferentes e as duas sao necessarias.** Piso tira
+ * o paredao: seed abaixo dele e recusada. Teto faz a rampa descer: sem ele a
+ * curva para de despencar mas sobe a esmo - medido, a fase 12 saiu com 96% de
+ * perdao tendo piso de 50%, e o mundo 1 inteiro ficou mais facil do que era. O
+ * teto e preferencia, nao exigencia: entre as seeds aprovadas o gerador escolhe
+ * as que cabem nele e so extrapola se nao houver outras, para nunca trocar uma
+ * fase certificada por uma sem certificado.
+ *
+ * A curva vai de 1,00 na fase 1 a `FIM` na fase 160, **reta em escala
+ * logaritmica**: cada fase multiplica por um fator constante a chance de um
+ * jogador ao acaso vencer. Rampa linear de dificuldade e taxa constante, e nao
+ * reta em perdao - reta em perdao poe a fase 80 em 0,54 quando o jogo hoje
+ * entrega 0,16 ali, e um piso desses no fim do jogo obrigaria o validador a
+ * afrouxar quase tudo, tirando os dentes da segunda metade. Ja um expoente
+ * fechava a descida no mundo 8 e deixava os sete mundos seguintes empatados em
+ * 0,13, o que e um platô, nao uma rampa.
+ *
+ * O efeito pratico da escala log e que o piso aperta no primeiro terco - onde o
+ * jogador decide se fica - e no ultimo terco ele cai abaixo de zero e deixa de
+ * exigir nada. E justamente por isso o que guia a escolha e o **alvo**, o centro
+ * da faixa, e nao o piso: com piso zero e ordenacao pelo menor perdao, medido, os
+ * mundos 11 a 15 desabavam para 2% a 5% quando o alvo ali era 13% - o paredao
+ * voltava, so que no fim do jogo em vez do comeco.
+ *
+ * Nada disto mexe em linha, largura, material ou pedestal: sao exigencias de
+ * VALIDADOR, nao de layout.
+ *
+ * @param {number} i indice 0-based da fase
+ * @returns {[number, number, number]} piso, teto e alvo
+ */
+function forgivenessBand(i) {
+  const INICIO = 1.0;
+  const FIM = 0.08;
+  const PASSO = 1 / 6;
+  const k = Math.max(0, Math.min(1, i / Math.max(1, LEVEL_COUNT - 1)));
+  const centro = INICIO * (FIM / INICIO) ** k;
+  // Meia largura de um passo da medida, mais uma folga pequena: com a folga a
+  // comparacao nao rejeita uma seed que mediu exatamente o valor do limite.
+  const folga = 0.01;
+  return [Math.max(0, centro - PASSO - folga), Math.min(1, centro + PASSO + folga), centro];
+}
+
+/**
+ * Onde o perdao para de medir e a taxa do jogador competente assume.
+ *
+ * O perdao satura: numa torre de treze a dezesseis linhas com obsidiana, TNT e
+ * bomba, jogador ao acaso nao ganha. Medido nas fases assadas, a melhor
+ * variante que o gerador CONSEGUE achar cai a 33% no mundo 7 e a 17% no 13, e
+ * no mundo 15 seis das dez fases tem todas as variantes em zero. Dali em
+ * diante a curva de perdao nao desce porque o jogo ficou mais difícil, desce
+ * porque a regua acabou.
+ *
+ * A taxa do jogador competente nao satura: medida nas mesmas fases, vai de 94%
+ * na fase 5 a 31% na 110 e continua separando fases no fim do jogo. E foi ela
+ * que revelou a outra reversao: a fase 81 abre o mundo 8 com 88% - mais facil
+ * que a 65, que tem 63%.
+ */
+const SMART_RULER_FROM = 80;
+
+/**
+ * Faixa de vitoria do jogador competente, do mundo 8 ao 15.
+ *
+ * Reta em escala logaritmica, como a do perdao, pelo mesmo motivo: taxa de
+ * dificuldade constante. Comeca em 0,60 na fase 81 - abaixo dos 88% que ela tem
+ * hoje, para tirar a queda de dificuldade na virada do mundo 8 - e fecha em
+ * 0,35 na fase 160.
+ *
+ * O piso nao vai abaixo de 2/6: o gerador so aceita variante que um jogador
+ * competente vence pelo menos duas vezes em seis (`minSmartWins`), e uma fase
+ * que nem ele vence nao e fase difícil, e fase quebrada.
+ *
+ * @param {number} i indice 0-based da fase
+ * @returns {[number, number, number]} piso, teto e alvo
+ */
+function smartBand(i) {
+  const INICIO = 0.6;
+  const FIM = 0.35;
+  const PASSO = 1 / 6;
+  const folga = 0.01;
+  const span = Math.max(1, LEVEL_COUNT - 1 - SMART_RULER_FROM);
+  const k = Math.max(0, Math.min(1, (i - SMART_RULER_FROM) / span));
+  const centro = INICIO * (FIM / INICIO) ** k;
+  return [Math.max(2 / 6 - folga, centro - PASSO - folga), Math.min(1, centro + PASSO + folga), centro];
+}
+
+/**
  * @typedef {object} LevelConfig
  * @property {number} index 0 a 99
  * @property {number} level 1 a 100
@@ -190,6 +298,11 @@ const PRIMEIRAS_FASES = [
  * @property {string} theme
  * @property {string[]} newMaterials materiais que estreiam nesta fase
  * @property {number} [minForgiveness] o validador so aceita seed com perdao igual ou maior
+ * @property {number} [maxForgiveness] entre as aprovadas, o validador prefere as ate este perdao
+ * @property {number} [targetForgiveness] centro da faixa: e dele que o validador escolhe as mais proximas
+ * @property {number} [minSmart] piso de vitoria do jogador competente
+ * @property {number} [maxSmart] teto de vitoria do jogador competente
+ * @property {number} [targetSmart] centro da faixa do jogador competente
  * @property {number} [minPieces] o validador so aceita layout com pelo menos tantas pecas
  * @property {number} [minPar] o validador so aceita seed cuja melhor solucao pede tantos toques
  * @property {number} [softened] degrau de afrouxamento aplicado
@@ -401,6 +514,21 @@ export function levelConfig(index, soften = 0) {
   if (roteiro) {
     Object.assign(config, roteiro);
     config.pedestalHalf = Math.max(1.35, roteiro.width * pedestalFrac);
+  }
+  // A faixa vem depois do roteiro: as tres primeiras fases ja trazem o piso
+  // delas (perdao total), e o teto vale para todas.
+  // Duas reguas, cada uma onde ela mede: perdao ate o mundo 7, jogador
+  // competente do 8 ao 15. Nenhuma fase usa as duas, senao elas se brigam.
+  if (i < SMART_RULER_FROM) {
+    const [perdaoMin, perdaoMax, perdaoAlvo] = forgivenessBand(i);
+    if (config.minForgiveness === undefined) config.minForgiveness = perdaoMin;
+    config.maxForgiveness = Math.max(config.minForgiveness, perdaoMax);
+    config.targetForgiveness = Math.max(config.minForgiveness, perdaoAlvo);
+  } else {
+    const [smartMin, smartMax, smartAlvo] = smartBand(i);
+    config.minSmart = smartMin;
+    config.maxSmart = smartMax;
+    config.targetSmart = smartAlvo;
   }
   return soften > 0 ? softenConfig(config, soften) : config;
 }
