@@ -15,15 +15,21 @@ import { HEX_RADIUS, CELL } from '../physics/world.js';
 /**
  * Fases de cada mundo.
  *
- * O primeiro e um tutorial longo: vinte fases para apresentar o toque, a
- * estrela, o pedestal, a pedra e a obsidiana sem pressa. Os demais mantem as
- * dez de sempre, que e o tamanho em que um mundo cabe numa sessao.
+ * Quinze mundos de dez fases. O mundo 1 ja teve vinte, para apresentar o
+ * toque, a estrela, o pedestal, a pedra e a obsidiana sem pressa. O funil da
+ * Poki mostrou que o comprimento do tutorial nao era o gargalo: medido em 719
+ * partidas, a perda de uma fase para a seguinte era exatamente a fracao que
+ * nao concluia a fase, sem nenhum degrau extra dentro do mundo 1. O que
+ * matava o tempo de sessao era cada fase durar dez segundos - media de 4,7
+ * toques nas vinte primeiras. Dez fases por mundo devolvem a simetria, e a
+ * substancia volta pela largura fixa em seis, pela rampa de `rows` que abre em
+ * seis linhas e pelo piso de `minPar`, todos em `levelConfig` abaixo.
  *
  * Esta lista e a UNICA fonte de verdade sobre fronteira de mundo. Antes o "10"
  * estava literal em dezenove lugares de cinco arquivos, e bastava esquecer um
  * para o mapa abrir uma fase e o portao cobrar outra.
  */
-export const WORLD_SIZES = [20, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10];
+export const WORLD_SIZES = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10];
 
 export const WORLD_COUNT = WORLD_SIZES.length;
 
@@ -170,7 +176,7 @@ const PRIMEIRAS_FASES = [
 ];
 
 /**
- * Faixa de perdao de cada fase: [piso, teto], numa rampa unica de 160 fases.
+ * Faixa de perdao de cada fase: [piso, teto], numa rampa unica de 150 fases.
  *
  * "Perdao" e a fracao de partidas que um jogador tocando **ao acaso** ganha,
  * medida pelo validador em seis partidas por seed (tools/generate-levels.mjs,
@@ -184,7 +190,8 @@ const PRIMEIRAS_FASES = [
  *
  * - a fase 12 perdoava 83% das partidas ao acaso e a 13 perdoava 17%;
  * - a fase 21 perdoava 83% e a 22, logo ao lado, perdoava 8%;
- * - as fases 19 e 20 perdoavam 8% ainda dentro do mundo do tutorial;
+ * - as fases 19 e 20 perdoavam 8% ainda dentro do mundo do tutorial, quando
+ *   ele tinha vinte fases;
  * - as fases 40 e 50 perdoavam ZERO: jogando ao acaso nao se ganhava nunca;
  * - e o mundo 4 (21%) era mais difícil que o 5 (29%), como o 12 (5%) era mais
  *   difícil que o 13 (11%).
@@ -200,7 +207,7 @@ const PRIMEIRAS_FASES = [
  * as que cabem nele e so extrapola se nao houver outras, para nunca trocar uma
  * fase certificada por uma sem certificado.
  *
- * A curva vai de 1,00 na fase 1 a `FIM` na fase 160, **reta em escala
+ * A curva vai de 1,00 na fase 1 a `FIM` na ultima fase, **reta em escala
  * logaritmica**: cada fase multiplica por um fator constante a chance de um
  * jogador ao acaso vencer. Rampa linear de dificuldade e taxa constante, e nao
  * reta em perdao - reta em perdao poe a fase 80 em 0,54 quando o jogo hoje
@@ -249,7 +256,7 @@ function forgivenessBand(i) {
  * que revelou a outra reversao: a fase 81 abre o mundo 8 com 88% - mais facil
  * que a 65, que tem 63%.
  */
-const SMART_RULER_FROM = 80;
+const SMART_RULER_FROM = worldStart(7);
 
 /**
  * Faixa de vitoria do jogador competente, do mundo 8 ao 15.
@@ -335,10 +342,26 @@ export function levelConfig(index, soften = 0) {
   // Nunca menos de 4 colunas: o hexagono ocupa uma celula e meia, e numa torre
   // de 3 ele fica com margem de meia celula para cada lado, o que transforma
   // qualquer desabamento em queda certa.
+  //
+  // Os mundos 1 e 2 inteiros tem SEIS colunas, e nao quatro. As tres fases de
+  // roteiro ja usavam seis - e a largura em que a torre tem apoio dos dois
+  // lados e um toque ingenuo nao derruba o hexagono - e a curva antiga jogava
+  // a fase 4 de volta para quatro colunas: o jogo encolhia justamente onde
+  // devia crescer, e a torre de 4x5 se resolvia em quatro toques.
+  //
+  // Largura e a alavanca barata do tempo de fase, porque ela ADICIONA perdao
+  // em vez de gastar. Medido em dez seeds por altura, com seis colunas:
+  //
+  //   altura  6     7     8     9     10    11    12
+  //   toques  4,7   4,8   5,9   7,2   8,9   9,7   9,8
+  //   perdao  1,00  1,00  1,00  1,00  1,00  1,00  0,50   (o melhor de dez)
+  //
+  // Ou seja: ate onze linhas ainda EXISTE seed que perdoa tudo, e os toques
+  // dobram no caminho. Em cinco colunas a mesma altura nao se sustenta - 5x13
+  // mediu 0,17 de perdao maximo, contra os 0,55 que a faixa da fase 20 pede.
   let width;
-  if (i < 6) width = 4;
-  else if (i < 16) width = r.chance(0.45) ? 4 : 5;
-  else if (i < 45) width = r.chance(0.25) ? 6 : 5;
+  if (i < 20) width = 6;
+  else if (i < 45) width = r.chance(0.4) ? 5 : 6;
   else if (i < 75) width = 5 + r.int(0, 1);
   else width = r.chance(0.3) ? 5 : 6;
 
@@ -346,32 +369,42 @@ export function levelConfig(index, soften = 0) {
   // A altura e o eixo que mais gasta toques, mas tambem o que mais acumula
   // risco: cada degrau e uma chance de o hexagono tombar. Por isso ela para em
   // 16 e o resto da dificuldade vem de pedestal estreito, materiais e vento.
-  // Dois trechos: o mundo 1 inteiro fica baixo, para ensinar, e dali em
-  // diante a torre sobe depressa. E a silhueta alta e cheia de pecas
-  // encaixadas que faz a torre parecer uma torre, e nao tres barras.
+  // Dois trechos: o mundo 1 ensina, e dali em diante a torre sobe depressa. E
+  // a silhueta alta e cheia de pecas encaixadas que faz a torre parecer uma
+  // torre, e nao tres barras.
   //
-  // O trecho de ensino acompanha o tamanho do mundo 1, e nao um "10" cravado:
-  // quando ele dobrou para vinte fases, a rampa dobrou junto em vez de deixar
-  // dez fases de tutorial ja na altura de mundo 2.
+  // O trecho de ensino acompanha o tamanho do mundo 1, e nao um "10" cravado.
+  //
+  // A rampa comeca em SEIS linhas, nao em quatro. Uma torre de 4x4 tem umas
+  // seis pecas e acaba em tres toques: medido no funil da Poki, a fase do
+  // mundo 1 durava dez segundos, e o jogador precisava de vinte fases para
+  // somar os tres minutos que o Player Fit Test cobra. Seis linhas por seis
+  // colunas e o piso em que a torre tem o que desmontar; o `minPar` abaixo e
+  // quem impede o validador de ficar com a seed que desaba em tres toques.
   const mundo = worldOf(i);
   const fimDoTutorial = worldStart(1);
   let rows =
     i < fimDoTutorial
-      ? 4 + Math.round((i / (fimDoTutorial - 1)) * 4)
-      : 8 +
+      ? 6 + Math.round((i / (fimDoTutorial - 1)) * 4)
+      : 10 +
         Math.round(
-          Math.pow((i - fimDoTutorial) / (LEVEL_COUNT - fimDoTutorial - 1), 0.65) * 8,
+          Math.pow((i - fimDoTutorial) / (LEVEL_COUNT - fimDoTutorial - 1), 0.65) * 6,
         );
   const inWorld = indexInWorld(i);
-  if (inWorld === worldSize(mundo) - 1) rows += 2; // fase final de cada mundo
+  // A fase final do mundo ganha UMA linha, e nao duas. Com a rampa comecando
+  // em seis em vez de quatro, duas linhas a mais punham a fase 20 em 5x13, e
+  // 5x13 mede 0,17 de perdao maximo contra os 0,55 que a faixa dela pede: o
+  // realce da fase final acabava obrigando o validador a afrouxar justamente a
+  // fase que fecha o mundo.
+  if (inWorld === worldSize(mundo) - 1) rows += 1; // fase final de cada mundo
   else if (inWorld === 0 && i > 0) rows -= 1; // alivio depois do chefe
   rows = Math.max(4, Math.min(16, rows));
 
   // --- complexidade das formas -------------------------------------------
   let tierMax = 1;
   if (i >= 5) tierMax = 2;
-  if (i >= 20) tierMax = 3;
-  if (i >= 45) tierMax = 4;
+  if (i >= 10) tierMax = 3;
+  if (i >= 35) tierMax = 4;
 
   const theme = WORLD_THEMES[mundo];
 
@@ -451,34 +484,35 @@ export function levelConfig(index, soften = 0) {
   let pedestalFrac;
   if (i < 10) pedestalFrac = 0.95;
   else if (i < 20) pedestalFrac = 0.86;
-  else if (i < 30) pedestalFrac = 0.78;
-  else if (i < 45) pedestalFrac = 0.7;
-  else if (i < 60) pedestalFrac = 0.62;
-  else if (i < 80) pedestalFrac = 0.54;
-  else if (i < 95) pedestalFrac = 0.46;
+  else if (i < 35) pedestalFrac = 0.78;
+  else if (i < 50) pedestalFrac = 0.7;
+  else if (i < 70) pedestalFrac = 0.62;
+  else if (i < 85) pedestalFrac = 0.54;
+  else if (i < 110) pedestalFrac = 0.46;
   else pedestalFrac = 0.4;
   const pedestalHalf = Math.max(1.35, width * pedestalFrac);
 
-  // Os limiares abaixo acompanharam o deslocamento de dez fases que o tutorial
-  // longo produziu: o jogador chega em cada novidade com a mesma bagagem de
-  // antes, e nao dez fases mais cedo na curva.
-  const oscillate = level >= 75 ? 0.35 + Math.min(0.55, (level - 75) * 0.018) : 0;
-  const wind = level >= 85 ? (r.chance(0.5) ? 1 : -1) * (0.7 + (level - 85) * 0.035) : 0;
+  // Os limiares abaixo voltaram dez fases quando o mundo 1 voltou a ter dez:
+  // eles tinham sido empurrados junto com o tutorial longo, e o que importa e
+  // o jogador chegar em cada novidade com a mesma bagagem de mundos, nao com o
+  // mesmo numero de fases jogadas.
+  const oscillate = level >= 65 ? 0.35 + Math.min(0.55, (level - 65) * 0.018) : 0;
+  const wind = level >= 75 ? (r.chance(0.5) ? 1 : -1) * (0.7 + (level - 75) * 0.035) : 0;
 
   let hexScale = 1;
-  if (level >= 38 && r.chance(0.16)) hexScale = 1.16;
-  else if (level >= 50 && r.chance(0.14)) hexScale = 0.86;
+  if (level >= 28 && r.chance(0.16)) hexScale = 1.16;
+  else if (level >= 40 && r.chance(0.14)) hexScale = 0.86;
 
-  const hexOffset = level >= 34 && r.chance(0.3) ? (r.chance(0.5) ? -0.7 : 0.7) : 0;
+  const hexOffset = level >= 24 && r.chance(0.3) ? (r.chance(0.5) ? -0.7 : 0.7) : 0;
 
   // Barras que atravessam a torre inteira sao o encaixe mais seguro que existe:
   // tirar uma faz tudo acima descer reto, sem degrau para o hexagono tombar.
   // As primeiras fases sao feitas quase so delas, e a mistura entra devagar.
   let barBias = 0;
   if (level <= 3) barBias = 1;
-  else if (level <= 8) barBias = 0.5;
-  else if (level <= 14) barBias = 0.22;
-  else if (level <= 22) barBias = 0.08;
+  else if (level <= 6) barBias = 0.5;
+  else if (level <= 10) barBias = 0.22;
+  else if (level <= 16) barBias = 0.08;
 
   const newMaterials = Object.keys(MATERIAL_DEBUT).filter((m) => {
     if (MATERIAL_DEBUT[m] !== level) return false;
@@ -497,12 +531,25 @@ export function levelConfig(index, soften = 0) {
     tierMax = Math.max(1, tierMax - 1);
   }
 
+  // --- piso de toques -----------------------------------------------------
+  // O validador escolhe a variante mais proxima do ALVO de perdao, e nada ali
+  // olha para o tamanho da solucao: numa torre de dez linhas ele pode ficar
+  // com a seed que desaba em tres toques, que e exatamente a fase de dez
+  // segundos que o funil da Poki mostrou. O piso corta essas.
+  //
+  // Meia altura e folgado de proposito - medido, 6x10 entrega 8,9 toques na
+  // media, entao um piso de 6 recusa a cauda curta sem estrangular a busca. O
+  // teto de 8 existe porque no fim do jogo a altura satura em 16 e a melhor
+  // solucao medida fica perto de 9: pedir 10 ali so obrigaria a afrouxar.
+  const minPar = Math.min(8, Math.max(3, Math.round(rows * 0.6)));
+
   /** @type {LevelConfig} */
   const config = {
     index: i,
     level,
     width,
     rows,
+    minPar,
     tierMax,
     materialWeights,
     obsidian,
@@ -573,6 +620,10 @@ export function softenConfig(config, step) {
   }
 
   c.barBias = Math.min(1, (config.barBias || 0) + 0.2);
+  // O piso de toques acompanha a torre encolhida - e some no degrau 3, onde o
+  // objetivo ja e so a fase existir. Manter o piso original numa torre 40%
+  // menor seria pedir a mesma solucao longa de uma torre que nao a tem mais.
+  if (config.minPar) c.minPar = Math.max(2, Math.round(config.minPar * 0.7));
 
   if (step >= 2) {
     c.rows = Math.max(4, Math.round(config.rows * 0.75));
@@ -587,6 +638,7 @@ export function softenConfig(config, step) {
   }
 
   if (step >= 3) {
+    c.minPar = 0;
     c.rows = Math.max(4, Math.round(config.rows * 0.6));
     c.tierMax = Math.max(1, config.tierMax - 1);
     c.oscillate = 0;

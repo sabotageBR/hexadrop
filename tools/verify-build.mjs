@@ -141,7 +141,17 @@ let requests = [];
 sock.onmessage = (e) => {
   const m = JSON.parse(e.data);
   if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
-  if (m.method === 'Runtime.exceptionThrown') logs.push(m.params.exceptionDetails.text);
+  // Com a origem junto, e nao so o texto: um aviso que diz apenas
+  // "Cannot read properties of undefined (reading 'j')" nao distingue um bug
+  // nosso de uma falha dentro do proprio SDK da Poki, e os nomes minificados
+  // de uma letra sao iguais nos dois casos. A URL do primeiro quadro resolve
+  // isso em uma linha.
+  if (m.method === 'Runtime.exceptionThrown') {
+    const d = m.params.exceptionDetails;
+    const f = (d.stackTrace && d.stackTrace.callFrames && d.stackTrace.callFrames[0]) || null;
+    const onde = f ? ` @ ${f.url.replace(BASE, '')}:${f.lineNumber + 1}` : ' @ sem stack';
+    logs.push(`${d.exception?.description?.split('\n')[0] || d.text}${onde}`);
+  }
   if (m.method === 'Network.requestWillBeSent') requests.push(m.params.request.url);
 };
 const send = (method, params = {}, sessionId) => new Promise((res) => {

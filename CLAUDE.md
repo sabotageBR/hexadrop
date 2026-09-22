@@ -22,7 +22,7 @@ npm run verify:lisa  # conformidade da versao lisa (precisa do preview:lisa no a
 Geração de fases (grava `src/game/levels.gen.js`):
 
 ```bash
-npm run levels                                   # 160 fases, um worker por núcleo
+npm run levels                                   # 150 fases, um worker por núcleo
 npm run levels:quick                             # menos seeds, para iterar
 node tools/generate-levels.mjs --levels 1-20     # só um trecho; o resto do arquivo é preservado
 ```
@@ -81,16 +81,46 @@ Nenhum outro módulo importa `poki.js`. Mantenha assim.
 ### Mundos e o tamanho de cada um
 
 `WORLD_SIZES` em `src/game/levelgen.js` é a **única fonte de verdade** sobre fronteira
-de mundo: `[20, 10, 10, ...]`, quinze mundos, 160 fases, 480 estrelas. Dele saem
+de mundo: `[10, 10, 10, ...]`, quinze mundos, 150 fases, 450 estrelas. Dele saem
 `LEVEL_COUNT`, `WORLD_COUNT`, `worldOf()`, `worldStart()`, `worldSize()` e
 `indexInWorld()`, e é por essas funções que todo mundo pergunta — **nunca por `/10`,
 `% 10` ou `w * 10`**. Esse `10` esteve literal em dezenove lugares de cinco arquivos,
 e enquanto esteve bastava esquecer um para o mapa abrir uma fase e o portão cobrar
-outra.
-
-O mundo 1 tem vinte fases porque é o tutorial: toque, estrela, pedestal, pedra e
-obsidiana cabem ali sem pressa. A curva de `levelConfig()` acompanha o tamanho dele
+outra. A curva de `levelConfig()` acompanha o tamanho do mundo 1
 (`fimDoTutorial = worldStart(1)`), e não um número cravado.
+
+O mundo 1 já teve vinte fases, como tutorial longo. O funil da Poki mostrou que o
+comprimento do tutorial não era o gargalo: medido em 719 partidas, a perda de uma
+fase para a seguinte era **exatamente** a fração que não concluía a fase
+(`gameplays(N+1) ≈ gameplays(N) × completed%(N)`, erro abaixo de 2% nas dezenove
+transições), sem nenhum degrau extra dentro do mundo. O que matava o tempo de sessão
+era cada fase durar dez segundos — média de 4,7 toques nas vinte primeiras —, então
+chegar aos três minutos que o Player Fit Test cobra exigia vinte fases, e só 15% dos
+jogadores chegavam lá.
+
+**Tamanho de torre é a alavanca do tempo de fase, e largura é a parte barata dela.**
+Medido em dez seeds por altura, com seis colunas:
+
+| altura | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|
+| toques | 4,7 | 4,8 | 5,9 | 7,2 | 8,9 | 9,7 | 9,8 |
+| melhor perdão de dez | 1,00 | 1,00 | 1,00 | 1,00 | 1,00 | 1,00 | 0,50 |
+
+Até onze linhas ainda existe seed que perdoa tudo, e os toques dobram no caminho —
+mas em **cinco** colunas a mesma altura não se sustenta: 5x13 mediu 0,17 de perdão
+máximo contra os 0,55 que a faixa da fase 20 pede. Daí as duas regras: mundos 1 e 2
+inteiros em seis colunas, e a fase final de cada mundo ganha **uma** linha, não duas
+— com a rampa começando em seis em vez de quatro, o realce antigo jogava a fase que
+fecha o mundo para fora da própria faixa.
+
+**Torre grande não basta: `minPar` é o piso de toques.** O validador escolhe a
+variante mais próxima do *alvo de perdão*, e nada nesse critério olha para o tamanho
+da solução — numa torre de dez linhas ele pode ficar com a seed que desaba em três
+toques, que é exatamente a fase de dez segundos. O piso é
+`min(8, max(3, round(rows * 0,6)))`: folgado de propósito, porque 6x10 entrega 8,9
+toques na média, e com teto em 8 porque no fim do jogo a altura satura em 16 e a
+melhor solução medida fica perto de 9. `softenConfig` reduz o piso junto com a torre e
+o zera no degrau 3, onde o objetivo já é só a fase existir.
 
 **As três primeiras fases são roteiro, não ponto da curva** (`PRIMEIRAS_FASES` em
 `levelgen.js`, aplicado por cima da curva e da regra de estreia). Pela curva elas
@@ -105,9 +135,16 @@ vezes cada), `minPieces` (9: nada de torre só de barras) e `minPar` (3: nada de
 que desaba inteira em dois toques) —, com orçamento de seeds seis vezes maior, porque
 com sete linhas a taxa cai para uma em dez.
 
+Desde que a curva passou a abrir em 6x6, o roteiro **coincide** com ela em largura e
+altura; o que ele continua trazendo sozinho são as três exigências de validador. Se um
+dia a curva mudar de novo, é o roteiro que garante que as três primeiras fases não
+sigam junto.
+
 `GATE_STARS` (`game/content.js`) tem uma entrada por mundo e foi re-escalado pela
 mesma fração do que já estava disponível em cada ponto, para o aperto percebido
-continuar igual ao de antes. O mundo 1 vale 60 estrelas, os outros 30.
+continuar igual ao da primeira versão. Cada mundo vale 30 estrelas, e o último portão
+pede 405 das 450. O portão **não** é um gargalo de retenção: toda vitória cruza as
+três linhas de estrela, então quatro fases já abrem o mundo 2.
 
 ### A peça que define cada mundo
 
@@ -155,6 +192,33 @@ Consequências práticas:
 - O validador aceita uma variante só quando ela vence por caminhos diferentes e
   continua vencendo com as posições iniciais perturbadas. É essa folga que permite
   usar um motor de física que não é determinista entre plataformas.
+- **O orçamento de seeds é adaptativo.** O laço para assim que a faixa tem quatro
+  variantes; passado o orçamento base, ele prorroga até quatro vezes esse valor,
+  perseguindo a **contagem** e não a faixa — encher a faixa é preferência, ter quatro
+  layouts é o que o jogador percebe.
+
+  Sem isso, 67 das 160 fases da versão anterior saíam com menos de quatro variantes e
+  treze com **uma só** — e fase de variante única é fase em que todo jogador pega o
+  mesmo layout, sem nada a sortear e sem o botão de embaralhar. Foram exatamente elas
+  que apareceram no funil: a fase 23, de variante única, reprovou 42% das tentativas, e
+  a 40, de duas, 41%, contra 3% a 9% das fases vizinhas.
+
+  A prorrogação tem três freios, e os três são de medição. Ela para quando o degrau
+  aceitou **zero** variantes com o orçamento base (aí o problema não é sorte de seed, é
+  a configuração, e insistir só adia o afrouxamento). Ela vale **só no degrau 0**, que é
+  onde a fase ainda pode sair certificada — sem essa restrição uma única fase de doze
+  linhas segurou a geração por mais de doze minutos sozinha. E a triagem ganhou um corte
+  exato do `minPar`: como `par` é o *mínimo* de toques entre as partidas vencidas, uma
+  triagem que já venceu com menos toques que o piso condena a seed sem gastar a
+  avaliação completa, que são dez a quinze rollouts. O relatório do gerador lista as
+  fases magras e as de variante única.
+
+  Na mesma conta entra a **ordem dentro de `evaluateVariant`**: as partidas ao acaso,
+  que medem o perdão, rodam depois de `smartWins` e da perturbação, e não antes.
+  `accepted` é `smartWins >= minSmartWins && robust`, e o perdão só é lido de uma
+  variante aceita — medindo primeiro, toda seed reprovada pagava de três a seis
+  rollouts à toa, e os ingênuos são os mais caros do conjunto porque uma política que
+  não encerra a fase toca até acabar o que há.
 
 `src/game/solver.js` serve aos dois lados: prova a jogabilidade no validador e escolhe
 a peça destacada quando o jogador pede dica no jogo.
@@ -163,7 +227,8 @@ a peça destacada quando o jogador pede dica no jogo.
 
 Antes disto só as fases 1 a 3 exigiam algo do validador; da quarta em diante ele ficava
 com a primeira seed que um jogador competente vencesse. Medida, a dificuldade não era
-rampa, era serrote — e em vários trechos andava para trás:
+rampa, era serrote — e em vários trechos andava para trás. Os números abaixo são da
+numeração antiga, quando o mundo 1 tinha vinte fases:
 
 - a fase 12 perdoava 83% das partidas ao acaso e a 13, ao lado, perdoava 17%;
 - a fase 21 perdoava 83% e a 22 perdoava 8%, na virada do mundo 2;
@@ -184,7 +249,8 @@ As curvas são retas em escala **logarítmica**, não em perdão: rampa linear d
 dificuldade é taxa constante. Reta em perdão poria a fase 80 em 0,54 quando o jogo
 entrega 0,16 ali, e um piso desses no fim obrigaria o validador a afrouxar quase tudo.
 
-**São duas réguas, e cada uma vale onde ela mede** (`SMART_RULER_FROM`):
+**São duas réguas, e cada uma vale onde ela mede** (`SMART_RULER_FROM`, que é
+`worldStart(7)` — a fronteira do mundo 8, e não um número cravado):
 
 - **Perdão** (vitórias de um jogador tocando ao acaso) nos mundos 1 a 7, de 100% a 23%.
   É a régua que importa onde a retenção se decide.
@@ -195,7 +261,7 @@ entrega 0,16 ali, e um piso desses no fim obrigaria o validador a afrouxar quase
 
 Nenhuma fase usa as duas, senão elas se brigam. Nada disso mexe em linha, largura,
 material ou pedestal: são exigências de **validador**, não de layout — por isso dá para
-regerar um trecho sem invalidar as seeds do resto (`--levels 81-160`).
+regerar um trecho sem invalidar as seeds do resto (`--levels 71-150`).
 
 **O que ainda não fecha.** Os mundos 12 a 15 sobem de volta (competente 48, 58, 50, 61)
 quando o alvo ali é 43 a 35. O motivo é que o alvo está abaixo do que existe: para ser
@@ -319,6 +385,25 @@ arrastar. `tools/playsweep.mjs` espera a tela sair de `game` antes de anotar o
 resultado — sem isso toda vitória com muitas peças vira "ainda jogando"; é por isso
 que ele desliga o fluxo contínuo (abaixo).
 
+### O primeiro carregamento entra jogando
+
+`isNewcomer()` (`game/progress.js`: nenhuma fase liberada além da primeira e nenhuma
+partida contada) manda o boot para `startLevel(1)` em vez de `show('home')`. A tela
+inicial só existe a partir do momento em que ela tem para onde voltar.
+
+Medido no funil da Poki: de **719 partidas carregadas, 571 chegaram a começar a fase
+1** — 21% viram o menu e foram embora sem tocar em nada, quase três vezes a perda de
+qualquer fase individual. Das quarenta gravações de playtest da 1.0.1, doze duram menos
+de trinta segundos, que é o tempo de ler a tela e desistir. A home pedia que o jogador
+entendesse um carrossel de quinze mundos, dois botões secundários, corações, moedas e
+patente antes do primeiro toque de jogo.
+
+`gameLoadingFinished()` vem **antes** de entrar na fase: `startLevel` dispara
+`measure('level', 1, 'start')`, e um evento de progresso antes do fim do carregamento
+inverte a ordem que o `sdkcheck` cobra. O critério olha `plays` além de `unlocked`
+porque quem jogou a fase 1 e perdeu continua com `unlocked` em 1 — e para ele a home já
+é uma tela conhecida.
+
 ### Fluxo contínuo entre fases
 
 **Dentro de um mundo, vencer não abre tela.** `finishWin()` grava o prêmio, a contagem
@@ -328,13 +413,25 @@ entra atrás de um corte de 200 ms (`.wipe`). Ninguém clica em nada.
 
 A régua é `WORLD_SIZES`, a mesma fonte de verdade de todo o resto: `flowContinues()`
 para na **última fase de cada mundo** e na fase final do jogo, e em nenhum outro lugar.
-Como o mundo 1 tem vinte fases, o primeiro cartão do jogo aparece na fase 20.
+Com uma exceção: abaixo de `FASES_SEM_CARTAO` (21) nem a fronteira de mundo para o
+fluxo, então o **primeiro cartão do jogo aparece na fase 30**, o fim do mundo 3.
 
 A medida vem de um playtest da Poki relatado por outro desenvolvedor: tirando as telas
 de "fase concluída", o tempo médio de sessão dele foi de 3 min 49 s para 7 min 05 s em
 quatro dias, e cerca de dois minutos do salto vieram só dessa mudança. O benchmark da
 Poki é 3 minutos de mínimo aceitável e 5 de jogo que dá certo — e o cartão a cada fase
 cobrava cinco segundos de parada mais um clique, cento e sessenta vezes.
+
+A carência veio depois, do funil do próprio jogo. Na versão em que o mundo 1 tinha
+vinte fases, a passagem da 20 para a 21 foi o **único** ponto do jogo em que a perda
+não se explicava por quem deixou de concluir a fase: pela taxa de conclusão da fase 20
+deviam seguir 91 jogadores, seguiram 77. Os 15% que faltam são o preço de três coisas
+que acontecem só ali e todas juntas — o primeiro cartão em tela cheia do jogo inteiro,
+o intervalo comercial de `advanceLevel()` e a troca de tema e de música. Nas outras
+dezenove transições do mundo o desvio ficou abaixo de 2%: o fluxo contínuo não perde
+jogador, a parada perde. O custo da carência é que o vídeo de dobrar prêmio e a
+encenação do portão não existem antes da fase 30 — e o vídeo rende 5%, contra os 15%
+que a parada custa.
 
 Quatro coisas que esse fluxo precisa respeitar:
 
@@ -345,8 +442,9 @@ Quatro coisas que esse fluxo precisa respeitar:
   `poki.commercialBreak()`: o direto pularia a carência de `FASES_SEM_INTERVALO`.
 - **O vídeo de dobrar prêmio não cabe no selo.** A Poki exige um botão padrão de tamanho
   igual ou maior ao lado do vídeo, e um par de botões sobre a cena é o cartão de volta.
-  Então `#winDouble` continua só no cartão — ou seja, no fim de cada mundo. É o custo
-  desta mudança, e a régua de quanto ele custa é o tamanho do mundo em `WORLD_SIZES`.
+  Então `#winDouble` continua só no cartão — ou seja, no fim de cada mundo a partir da
+  fase 30. É o custo desta mudança, e a régua de quanto ele custa é `WORLD_SIZES` mais
+  `FASES_SEM_CARTAO`.
 - **O selo não repete as estrelas.** A fileira do HUD já acende durante a jogada, e o kit
   do mundo decide se ela fica em cima ou embaixo; uma fileira própria no selo era o mesmo
   recado duas vezes, às vezes colado nela.
@@ -526,7 +624,7 @@ Quatro decisões que valem a pena manter:
   clara dos temas claros (clássico, doce, papel) ficava ilegível sobre ele.
 
 `nodeSpot(i, n)` recebe o tamanho do mundo: o número de ondas da serpentina acompanha
-`n`, senão o mundo 1, com vinte fases, viraria uma cobra esticada. A altura da trilha
+`n`, senão um mundo maior que os outros viraria uma cobra esticada. A altura da trilha
 sai de `--nos` pela mesma razão.
 
 O cabeçalho fixo diz em que mundo a rolagem está (IntersectionObserver em
@@ -667,6 +765,29 @@ padrão de tamanho igual ou maior, e a recompensa só vale quando o retorno é
 estritamente `true`. Nada de vídeo como condição para progredir: os corações são
 "suaves" — sem corações o jogador continua jogando e só ganha metade das recompensas
 (`game/progress.js`).
+
+### Telemetria: progresso e interação
+
+`measure(categoria, oque, acao)` alimenta as três abas de Game Events da Poki. A ação é
+que decide qual delas: `start`/`complete`/`fail` caem em **Progress**,
+`visible`/`interact` em **Interaction**, e qualquer outra em **Other**. Nem `/` nem `^`
+podem chegar ao SDK — a Poki usa os dois para separar os campos no painel —, e
+`poki.measure` já limpa e já barra evento durante intervalo.
+
+Até a versão 1.0.1 a aba de interação estava **literalmente vazia**: fora de "fase N
+começou" e "fase N terminou" não havia dado nenhum sobre dica, pausa, loja, vídeo ou
+mapa, e toda pergunta sobre *por que* o jogador saiu era palpite. Hoje `EVENTOS_UI`
+(`main.js`) mapeia id de botão para nome de evento e um único ouvinte delegado em
+`bindTelemetriaUi()` emite o `interact` — botão novo entra no mapa, não no ouvinte. Os
+botões que nascem em tempo de execução e por isso não têm id — os da loja, um por skin,
+melhoria e impulso — declaram `data-ev`, que o mesmo ouvinte lê. O par `visible` sai
+de `ofertaVisivel()`, que conta uma vez por abertura de tela (`show()` zera o
+conjunto): sem ele o painel diz quantos clicaram e nunca quantos tiveram a chance.
+
+Os **nomes** do mapa mudam com mais cuidado que os ids: um nome trocado quebra a série
+histórica do relatório. O mesmo nome em telas diferentes é de propósito onde a ação é a
+mesma — sair da fase pelo HUD, pela pausa ou pelo cartão é a mesma decisão do jogador, e
+separar em três linhas só diluiria o número.
 
 ### O que `tools/verify-build.mjs` reprova
 

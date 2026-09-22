@@ -43,6 +43,69 @@ const GAME_INSET_BOTTOM = 40;
 const FASES_SEM_INTERVALO = 5;
 
 /**
+ * Ate onde o fluxo continuo ignora a fronteira de mundo.
+ *
+ * Abaixo desta fase nem o fim de um mundo abre o cartao de fim de fase: a
+ * seguinte entra sozinha, como entra dentro de um mundo. Com quinze mundos de
+ * dez fases, a primeira parada do jogo passa a ser a fase 30, o fim do mundo 3
+ * - e nao a 10, que e onde a fronteira cairia sozinha.
+ *
+ * O numero e 21 e nao 20 porque a comparacao e `level < FASES_SEM_CARTAO`:
+ * vencer a fase 20 ainda flui, e a 30 e a primeira fronteira acima dela.
+ *
+ * O preco esta documentado em `flowContinues`: e no cartao que moram o video
+ * de dobrar premio e a encenacao do portao, entao ate a fase 30 nenhum dos
+ * dois aparece. A troca vale porque a parada foi medida e custa 15% dos
+ * jogadores, e o video rende 5%.
+ */
+const FASES_SEM_CARTAO = 21;
+
+/**
+ * Botoes que viram Interaction Event na Poki, por id do elemento.
+ *
+ * Os nomes sao os do painel, entao mudam com mais cuidado do que os ids: um
+ * nome trocado quebra a serie historica do relatorio. Nada de `/` nem `^`,
+ * que a Poki reserva para separar os campos - `poki.measure` ja limpa, mas o
+ * nome tambem nao deve precisar.
+ *
+ * O mesmo nome em telas diferentes e de proposito onde a acao e a mesma: sair
+ * da fase pelo HUD, pela pausa ou pelo cartao e a mesma decisao do jogador, e
+ * separar em tres linhas so diluiria o numero.
+ *
+ * @type {Record<string, string>}
+ */
+const EVENTOS_UI = {
+  // tela inicial
+  btnPlay: 'jogar',
+  btnMap: 'mapa',
+  btnShop: 'loja',
+  btnSettings: 'ajustes',
+  // durante a fase
+  gameBack: 'sair-da-fase',
+  gamePause: 'pausa',
+  gameHint: 'dica',
+  gameRestart: 'reiniciar',
+  pauseResume: 'continuar',
+  pauseRestart: 'reiniciar',
+  pauseHome: 'sair-da-fase',
+  // fim de fase
+  winNext: 'proxima',
+  winRetry: 'repetir',
+  winHome: 'sair-da-fase',
+  winDouble: 'dobrar-premio',
+  loseRetry: 'repetir',
+  loseShuffle: 'embaralhar',
+  loseSkip: 'pular-fase',
+  loseHome: 'sair-da-fase',
+  // mapa e loja
+  mapHere: 'onde-estou',
+  btnDaily: 'bonus-diario',
+  tabSkins: 'aba-skins',
+  tabUpgrades: 'aba-melhorias',
+  tabBoosts: 'aba-impulsos',
+};
+
+/**
  * Quanto tempo o selo de recompensa fica sobre a cena antes do corte, e quanto
  * dura o corte - igual a transicao de .wipe no CSS.
  *
@@ -96,6 +159,13 @@ class Game {
      * o playsweep mede uma fase por vez em vez de correr atras do avanco.
      */
     this.flowLevels = true;
+    /**
+     * Ofertas ja contadas como vistas na tela em cartaz. Zerado a cada
+     * `show()`, para que um botao de video valha uma impressao por abertura de
+     * tela e nao uma por vez que alguem olhe para ele.
+     * @type {Set<string>}
+     */
+    this._ofertasVistas = new Set();
     /** Temporizador do selo de recompensa; zero quando nao ha transicao. */
     this.flowTimer = 0;
     /** true entre o fim do selo e a fase seguinte estar no ar. */
@@ -152,13 +222,31 @@ class Game {
     await poki.init();
     $('loaderBar').style.width = '75%';
 
-    // Cena de fundo da tela inicial: uma fase real rodando atras do menu.
-    this.showAmbient();
+    // Cena de fundo da tela inicial: uma fase real rodando atras do menu. Quem
+    // entra jogando nao passa por ela, e montar as duas seria montar a cena
+    // duas vezes no carregamento, que e onde cada milissegundo e visivel.
+    const entraJogando = this.progress.isNewcomer();
+    if (!entraJogando) this.showAmbient();
     $('loaderBar').style.width = '100%';
 
     this.scene.start();
-    this.show('home');
+    // Quem chega pela primeira vez entra jogando, e a home so existe a partir
+    // do momento em que ela tem para onde voltar.
+    //
+    // Medido no funil da Poki: de 719 partidas carregadas, 571 chegaram a
+    // comecar a fase 1 - 21% viram o menu e foram embora sem tocar em nada,
+    // quase tres vezes a perda de qualquer fase. Das quarenta gravacoes de
+    // playtest, doze duram menos de trinta segundos, que e o tempo de ler a
+    // tela e desistir. A home pedia que o jogador entendesse um carrossel de
+    // quinze mundos, dois botoes secundarios, coracoes, moedas e patente antes
+    // do primeiro toque de jogo.
+    //
+    // `gameLoadingFinished` vem ANTES de entrar na fase: `startLevel` dispara
+    // `measure('level', 1, 'start')`, e um evento de progresso antes do fim do
+    // carregamento inverte a ordem que o sdkcheck cobra.
     poki.gameLoadingFinished();
+    if (entraJogando) this.startLevel(1);
+    else this.show('home');
     window.setTimeout(() => $('loader').classList.add('gone'), 260);
 
     onLangChange(() => {
@@ -218,6 +306,7 @@ class Game {
     const el = document.getElementById('s-' + name);
     if (el) el.classList.add('on');
     this.screen = name;
+    this._ofertasVistas.clear();
     if (name !== 'game') {
       const tut = $('tut');
       if (tut) tut.classList.add('hide');
@@ -294,6 +383,12 @@ class Game {
       // Na versao lisa o bonus diario continua existindo, sem video: como
       // `.btn.ad` some por CSS ali, manter a classe apagava o rodape do mapa.
       daily.classList.toggle('ad', COM_ANUNCIOS);
+      if (this.screen === 'map' && p.dailyReady) this.ofertaVisivel('bonus-diario');
+    }
+    if (this.screen === 'home') {
+      this.ofertaVisivel('jogar');
+      this.ofertaVisivel('mapa');
+      this.ofertaVisivel('loja');
     }
   }
 
@@ -353,7 +448,48 @@ class Game {
 
   // ------------------------------------------------------------- ligacoes
 
+  /**
+   * Interaction events da Poki, por delegacao.
+   *
+   * Um unico ouvinte no documento em vez de uma linha em cada um dos vinte e
+   * poucos `onclick`: quem decide se o botao conta e o mapa `EVENTOS_UI`, e um
+   * botao novo entra la, nao aqui. O evento sai depois do handler do proprio
+   * botao porque ouve na fase de bolha - o que importa e que saia, nao quando.
+   *
+   * Antes disto a aba de interacao do painel da Poki estava literalmente
+   * vazia: fora de "fase N comecou" e "fase N terminou" nao havia dado nenhum
+   * sobre dica, pausa, loja, video ou mapa, e toda pergunta sobre POR QUE o
+   * jogador saiu era palpite.
+   */
+  bindTelemetriaUi() {
+    document.addEventListener('click', (ev) => {
+      const alvo = /** @type {HTMLElement|null} */ (ev.target);
+      const btn = /** @type {HTMLElement|null} */ (alvo && alvo.closest('button'));
+      if (!btn) return;
+      // `data-ev` serve aos botoes que nascem em tempo de execucao e por isso
+      // nao tem id: os da loja, um por skin, melhoria e impulso.
+      const nome = btn.dataset.ev || EVENTOS_UI[btn.id];
+      if (!nome) return;
+      poki.measure('botao', nome, 'interact');
+    });
+  }
+
+  /**
+   * Marca uma oferta como vista. Par obrigatorio do 'interact': sem ele o
+   * painel mostra quantos clicaram, nunca quantos tiveram a chance.
+   *
+   * O mesmo par so conta uma vez por fase ou por abertura de tela - um botao
+   * de video que fica em cartaz nao vale uma impressao por quadro.
+   * @param {string} nome
+   */
+  ofertaVisivel(nome) {
+    if (this._ofertasVistas.has(nome)) return;
+    this._ofertasVistas.add(nome);
+    poki.measure('botao', nome, 'visible');
+  }
+
   bindUi() {
+    this.bindTelemetriaUi();
     const go = (/** @type {string} */ name) => () => {
       audio.unlock();
       audio.button();
@@ -636,6 +772,9 @@ class Game {
     hintBtn.textContent = t('hint');
     restartBtn.textContent = t('restart');
     this.show('game');
+    // Depois do show, que e quem zera as ofertas contadas na tela.
+    this.ofertaVisivel('pausa');
+    if (showHelp) this.ofertaVisivel('dica');
     this.showTutorial();
     poki.measure('level', String(this.level), 'start');
   }
@@ -761,11 +900,24 @@ class Game {
    * Nao entra no fim de um mundo nem na ultima fase do jogo: sao as duas
    * paradas que valem um cartao, e a fronteira sai de WORLD_SIZES, nao de um
    * "10" cravado aqui. E nao entra quando a automacao desliga o fluxo.
+   *
+   * A excecao sao as `FASES_SEM_CARTAO` primeiras: ate ali nem a fronteira de
+   * mundo para o fluxo. Medido no funil da Poki, a passagem da fase 20 para a
+   * 21 - a unica fronteira de mundo com amostra - foi o UNICO ponto do jogo em
+   * que a perda nao se explicava por quem deixou de concluir a fase: pela taxa
+   * de conclusao da 20 deviam seguir 91 jogadores, seguiram 77. Os 15% que
+   * faltam sao o preco de tres coisas que acontecem so ali e todas juntas - o
+   * primeiro cartao em tela cheia do jogo inteiro, o intervalo comercial de
+   * `advanceLevel` e a troca de tema e de musica.
+   *
+   * Nas outras dezenove transicoes do mundo 1 o desvio ficou abaixo de 2%: o
+   * fluxo continuo nao perde jogador, a parada perde.
    * @returns {boolean}
    */
   flowContinues() {
     if (!this.flowLevels) return false;
     if (this.level >= LEVEL_COUNT) return false;
+    if (this.level < FASES_SEM_CARTAO) return true;
     return !this.atWorldEnd();
   }
 
@@ -985,6 +1137,10 @@ class Game {
     /** @type {HTMLButtonElement} */ ($('winDouble')).disabled = false;
     $('winDouble').textContent = `${t('doubleReward')}`;
     this.show('win');
+    // Depois do show, que e quem zera as ofertas contadas.
+    this.ofertaVisivel('proxima');
+    if (COM_ANUNCIOS) this.ofertaVisivel('dobrar-premio');
+    if (stars < 3) this.ofertaVisivel('repetir');
 
     // Estrelas e contadores animam depois que a tela aparece.
     for (let i = 1; i <= stars; i++) {
@@ -1088,6 +1244,9 @@ class Game {
     skip.textContent = t('skipLevel');
     $('loseSkipNote').textContent = skip.hidden ? '' : t('skipNoStars');
     this.show('lose');
+    this.ofertaVisivel('repetir');
+    if (!skip.hidden) this.ofertaVisivel('pular-fase');
+    if (!shuffle.hidden) this.ofertaVisivel('embaralhar');
   }
 
   pauseLevel() {
@@ -1799,6 +1958,7 @@ class Game {
         } else if (entry.owned) {
           btn.className = 'btn primary';
           btn.textContent = t('equip');
+          btn.dataset.ev = 'equipar-skin';
           btn.onclick = () => {
             audio.button();
             this.useSkin(s.id);
@@ -1817,6 +1977,7 @@ class Game {
           const buy = document.createElement('button');
           buy.className = 'btn primary';
           buy.innerHTML = `<span style="color:var(--gold)">&#9679;</span> ${s.cost}`;
+          buy.dataset.ev = 'comprar-skin';
           buy.disabled = !entry.affordable;
           buy.onclick = () => {
             if (!p.spendCoins(s.cost)) {
@@ -1837,7 +1998,9 @@ class Game {
             const watch = document.createElement('button');
             watch.className = 'btn ad';
             watch.textContent = t('watchAd');
+            watch.dataset.ev = 'skin-por-video';
             watch.onclick = () => this.unlockSkinByAd(s.id);
+            this.ofertaVisivel('skin-por-video');
             pair.appendChild(watch);
           }
           item.appendChild(pair);
@@ -1846,6 +2009,7 @@ class Game {
         } else {
           btn.className = 'btn primary';
           btn.innerHTML = `<span style="color:var(--gold)">&#9679;</span> ${s.cost}`;
+          btn.dataset.ev = 'comprar-skin';
           btn.disabled = !entry.affordable;
           btn.onclick = () => {
             if (!p.spendCoins(s.cost)) {
@@ -1892,6 +2056,7 @@ class Game {
         const btn = document.createElement('button');
         btn.className = 'btn primary';
         btn.innerHTML = `<span style="color:var(--gold)">&#9679;</span> ${b.custo}`;
+        btn.dataset.ev = 'comprar-impulso';
         btn.disabled = p.data.coins < b.custo;
         btn.onclick = () => {
           const r = p.buyBoost(b.id);
@@ -1947,6 +2112,7 @@ class Game {
       const btn = document.createElement('button');
       btn.className = maxed ? 'btn' : 'btn primary';
       btn.innerHTML = maxed ? t('maxLevel') : `<span style="color:var(--gold)">&#9679;</span> ${cost}`;
+      btn.dataset.ev = 'comprar-melhoria';
       btn.disabled = maxed || p.data.coins < cost;
       btn.onclick = () => {
         const res = p.buyUpgrade(u.id);

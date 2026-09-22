@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const PORT = 9666;
 const BASE = process.env.SWEEP_URL || 'http://127.0.0.1:4173';
-const LEVELS = (process.env.SWEEP_LEVELS || '1,6,13,22,33,44,53,62,71,85,95,100').split(',').map(Number);
+const LEVELS = (process.env.SWEEP_LEVELS || '1,6,13,22,33,44,53,62,71,85,95,105,120,140,150').split(',').map(Number);
 
 const chrome = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${PORT}`, '--no-sandbox',
   '--disable-gpu', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
@@ -33,7 +33,7 @@ await sleep(4000);
 const js = async (e) => (await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, sessionId)).result?.result?.value;
 
 // libera todas as fases para o teste
-await js('window.__game.progress.data.unlocked = 100; window.__game.progress.flush();');
+await js('window.__game.progress.data.unlocked = 999; window.__game.progress.flush();');
 // Desliga o fluxo continuo: com o cartao de fim de fase de volta, a tela para
 // de 'game' para 'win'/'lose' e o sweep mede uma fase por vez, em vez de
 // correr atras do avanco automatico e ler a sessao da fase seguinte.

@@ -212,16 +212,25 @@ class Poki {
   }
 
   /**
-   * Telemetria de fase. Nunca 'complete' e 'fail' na mesma tentativa.
+   * Telemetria. Progresso usa 'start' e depois 'complete' ou 'fail', nunca os
+   * dois na mesma tentativa; interacao usa 'visible' e depois 'interact'.
+   *
+   * Duas guardas que a QA da Poki cobra e o chamador nao deveria ter que
+   * lembrar: nenhum evento sai durante um intervalo comercial, e nem `/` nem
+   * `^` chegam ao SDK - a Poki reserva os dois para separar os campos no
+   * painel, e um `what` com barra vira duas linhas diferentes no relatorio.
+   *
    * @param {string} category
    * @param {string} what
    * @param {string} action
    */
   measure(category, what, action) {
+    if (this.inBreak) return;
     const api = sdk();
     if (!api || typeof api.measure !== 'function') return;
+    const limpa = (/** @type {string} */ v) => String(v).replace(/[/^]/g, '-');
     try {
-      api.measure(String(category), String(what), String(action));
+      api.measure(limpa(category), limpa(what), limpa(action));
     } catch {
       /* ignora */
     }

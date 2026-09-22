@@ -1,5 +1,5 @@
 /**
- * Gera e valida as 160 fases, depois grava src/game/levels.gen.js.
+ * Gera e valida as 150 fases, depois grava src/game/levels.gen.js.
  *
  * Para cada fase o programa procura seeds cujo layout seja realmente vencivel,
  * provando isso com um jogador automatico que simula um lance a frente. Uma
@@ -69,9 +69,27 @@ function bakeLevel(index) {
     // nas quatro variantes, entao so custa onde falta - e cada politica
     // ingenua joga duas vezes, senao "perdoa tudo" seria sorte de tres partidas.
     const roteiro = config.minForgiveness !== undefined;
-    const budget = roteiro ? SEED_BUDGET * 6 : SEED_BUDGET;
+    const base = roteiro ? SEED_BUDGET * 6 : SEED_BUDGET;
+    // Prorrogacao para as fases que nao conseguem encher as quatro variantes
+    // com o orcamento normal.
+    //
+    // Sessenta e sete das cento e sessenta fases assadas saiam com menos de
+    // quatro, e treze com UMA so - e a fase de variante unica e a fase em que
+    // todo jogador pega o mesmo layout, sem nada a sortear e sem o botao de
+    // embaralhar. No funil da Poki foram elas que apareceram: a fase 23, de
+    // variante unica, reprovou 42% das tentativas, e a 40, de duas, 41% -
+    // contra 3% a 9% das fases vizinhas. Uma fase inteira dependia de uma
+    // seed.
+    //
+    // O custo fica so onde falta, porque o laco para assim que a faixa enche -
+    // e so no degrau 0, que e onde a fase ainda pode sair certificada. Medido,
+    // sem essa restricao uma unica fase de doze linhas segurou a geracao por
+    // mais de doze minutos sozinha: nos degraus de afrouxamento o objetivo ja
+    // e a fase EXISTIR, e quatro variantes ali custam quatro vezes o pior caso
+    // para comprar um botao de embaralhar numa fase que ja foi amaciada.
+    const teto = soften === 0 ? base * 4 : base;
 
-    for (let attempt = 0; attempt < budget; attempt++) {
+    for (let attempt = 0; attempt < teto; attempt++) {
       const seed = seedFor(index, soften, attempt);
       const layout = generateLayout(config, seed);
       // Torre de barras e mais nada e justamente o que o roteiro quer evitar.
@@ -79,12 +97,17 @@ function bakeLevel(index) {
 
       // Triagem barata: se nem uma partida competente vence, nao vale gastar
       // a avaliacao completa nesta seed.
-      let promising = rollout(layout, { policy: 'plan', seed: seed + 1 }).outcome === 'won';
-      if (!promising) {
-        promising = rollout(layout, { policy: 'planWide', seed: seed + 2 }).outcome === 'won';
-      }
+      let tri = rollout(layout, { policy: 'plan', seed: seed + 1 });
+      if (tri.outcome !== 'won') tri = rollout(layout, { policy: 'planWide', seed: seed + 2 });
       screened++;
-      if (!promising) continue;
+      if (tri.outcome !== 'won') continue;
+      // Corte exato do piso de toques, e o mais barato que existe: `par` e o
+      // MINIMO de toques entre as partidas vencidas, entao uma triagem que ja
+      // venceu com menos toques que o piso condena a seed sem apelacao. Vale
+      // por uma avaliacao completa poupada - dez a quinze rollouts, e numa
+      // torre de doze linhas cada um custa oito vezes o de uma torre de 4x5,
+      // porque a politica `plan` simula um lance a frente para cada peca viva.
+      if (config.minPar && tri.taps < config.minPar) continue;
 
       const report = evaluateVariant(layout, seed, {
         smartRuns: SMART_RUNS,
@@ -119,6 +142,18 @@ function bakeLevel(index) {
           ? accepted.filter((v) => v.smart <= config.maxSmart)
           : accepted.filter((v) => v.forgiveness <= (config.maxForgiveness ?? 1));
       if (naFaixa.length >= VARIANTS_WANTED) break;
+      // Passado o orcamento base, a prorrogacao persegue a CONTAGEM, nao a
+      // faixa: encher a faixa e preferencia, ter quatro layouts e o que o
+      // jogador percebe. Sem esta linha a prorrogacao rodaria ate o teto em
+      // toda fase cuja faixa nunca enche, que e a metade do fim do jogo.
+      //
+      // E ela so vale onde o degrau ja PROVOU que produz. Com zero variantes
+      // aceitas depois do orcamento base, o problema nao e sorte de seed, e a
+      // configuracao: insistir quatro vezes mais so adia o afrouxamento, e
+      // pagaria esse preco em cada um dos quatro degraus.
+      if (attempt + 1 >= base && (accepted.length === 0 || accepted.length >= VARIANTS_WANTED)) {
+        break;
+      }
     }
 
     if (accepted.length > 0) {
@@ -231,11 +266,16 @@ if (!isMainThread) {
   let fallbacks = 0;
   let kept = 0;
   let variantTotal = 0;
+  /** Fases que nao chegaram as quatro variantes, e as que ficaram com uma so. */
+  const magras = [];
+  const unicas = [];
   for (const r of ordered) {
     softCount[r.soften]++;
     if (r.fallback) fallbacks++;
     if (r.kept) kept++;
     variantTotal += r.variants.length;
+    if (r.variants.length < VARIANTS_WANTED) magras.push(r.index + 1);
+    if (r.variants.length < 2) unicas.push(r.index + 1);
   }
   console.log('\nResumo');
   console.log('  fases geradas .............', ordered.length);
@@ -243,11 +283,13 @@ if (!isMainThread) {
   console.log('  sem afrouxamento ..........', softCount[0]);
   console.log('  afrouxadas grau 1 / 2 / 3 .', softCount[1], '/', softCount[2], '/', softCount[3]);
   console.log('  sem certificado ...........', fallbacks, fallbacks ? '<-- revisar' : '');
+  console.log('  com menos de', VARIANTS_WANTED, 'variantes ..', magras.length, magras.length ? `[${magras.join(' ')}]` : '');
+  console.log('  com UMA variante ..........', unicas.length, unicas.length ? `[${unicas.join(' ')}] <-- sem embaralhar` : '');
   if (kept) console.log('  preservadas do arquivo ....', kept);
 
   const buckets10 = [];
-  // Uma linha por MUNDO, nao por dezena: o mundo 1 tem vinte fases, e um
-  // resumo decenal o partiria ao meio e mentiria sobre a curva do tutorial.
+  // Uma linha por MUNDO, e nao por dezena fixa: a fronteira sai de
+  // WORLD_SIZES, que e quem sabe o tamanho de cada mundo.
   for (let b = 0; b < WORLD_COUNT; b++) {
     const ini = worldStart(b);
     const fim = ini + worldSize(b) - 1;

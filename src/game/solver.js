@@ -530,13 +530,12 @@ export function evaluateVariant(layout, seed, opts = {}) {
     }
   }
 
-  let naiveWins = 0;
-  for (let i = 0; i < naiveRuns; i++) {
-    const policy = NAIVE_POLICIES[i % NAIVE_POLICIES.length];
-    const res = rollout(layout, { policy, seed: seed + 30011 + i * 617 });
-    if (res.outcome === 'won') naiveWins++;
-  }
-
+  // A ordem aqui e economia pura, e nao muda resultado nenhum: `accepted` e
+  // `smartWins >= minSmartWins && robust`, e o perdao so e lido de uma variante
+  // aceita. Medindo as partidas ao acaso ANTES desses dois testes, toda seed
+  // reprovada pagava de tres a seis rollouts a toa - e numa torre de doze
+  // linhas cada rollout custa oito vezes o de uma torre de 4x5, porque a
+  // politica `plan` simula um lance a frente para cada peca viva.
   let robust = false;
   if (smartWins >= minSmartWins) {
     for (let i = 0; i < 3; i++) {
@@ -552,13 +551,27 @@ export function evaluateVariant(layout, seed, opts = {}) {
     }
   }
 
+  const accepted = smartWins >= minSmartWins && robust;
+
+  // Perdao: a fracao de partidas que um jogador tocando ao acaso ganha. So a
+  // variante aceita precisa dele, e e ele o rollout mais caro do conjunto -
+  // uma politica ingenua nao encerra a fase, ela toca ate acabar o que ha.
+  let naiveWins = 0;
+  if (accepted) {
+    for (let i = 0; i < naiveRuns; i++) {
+      const policy = NAIVE_POLICIES[i % NAIVE_POLICIES.length];
+      const res = rollout(layout, { policy, seed: seed + 30011 + i * 617 });
+      if (res.outcome === 'won') naiveWins++;
+    }
+  }
+
   return {
-    accepted: smartWins >= minSmartWins && robust,
+    accepted,
     smartWins,
     smartRuns,
     naiveWins,
     naiveRuns,
-    forgiveness: naiveRuns ? naiveWins / naiveRuns : 0,
+    forgiveness: accepted && naiveRuns ? naiveWins / naiveRuns : 0,
     par: par === Infinity ? 0 : par,
     avgTaps: tapCount ? tapSum / tapCount : 0,
     robust,

@@ -134,21 +134,6 @@ export const SKINS = [
 ];
 
 /**
- * Estrelas acumuladas para abrir cada mundo.
- *
- * O teto e 480 (160 fases x 3 estrelas), com o mundo 1 valendo 60 - ele tem
- * vinte fases, o dobro dos outros. A curva e folgada no comeco - quem passa
- * raspando pelo mundo 1 entra no 2 sem perceber o portao - e vai apertando, de
- * modo que perto do fim o jogador precisa ter voltado para melhorar fases
- * antigas. Nunca chega a exigir tudo: o ultimo portao pede 434 das 480, entao
- * sobra folga para quinze fases mal resolvidas.
- *
- * Cada degrau foi re-escalado pela MESMA fracao do que ja estava disponivel
- * naquele ponto, para que o aperto percebido continue identico ao de antes.
- *
- * Indice = numero do mundo (0 a 14); o mundo 0 nunca e travado.
- */
-/**
  * Premio por peca que sobrou intacta no fim da fase.
  *
  * E o que transforma "sobrou peca" de sobra em meta: quem resolve com menos
@@ -158,8 +143,25 @@ export const SKINS = [
 export const BONUS_COINS_PER_PIECE = 3;
 export const BONUS_XP_PER_PIECE = 2;
 
+/**
+ * Estrelas acumuladas para abrir cada mundo.
+ *
+ * O teto e 450 (150 fases x 3 estrelas), 30 por mundo. A curva e folgada no
+ * comeco - quem passa raspando pelo mundo 1 entra no 2 sem perceber o portao,
+ * porque toda vitoria cruza as tres linhas e quatro fases ja bastam - e vai
+ * apertando, de modo que perto do fim o jogador precisa ter voltado para
+ * melhorar fases antigas. Nunca chega a exigir tudo: o ultimo portao pede 405
+ * das 450, entao sobra folga para quinze fases mal resolvidas.
+ *
+ * Cada degrau foi re-escalado duas vezes pela MESMA fracao do que ja estava
+ * disponivel naquele ponto - uma quando o mundo 1 passou a ter vinte fases,
+ * outra quando ele voltou a ter dez -, para que o aperto percebido continue
+ * identico ao da primeira versao.
+ *
+ * Indice = numero do mundo (0 a 14); o mundo 0 nunca e travado.
+ */
 export const GATE_STARS = [
-  0, 24, 42, 64, 90, 120, 153, 187, 224, 262, 301, 338, 373, 405, 434,
+  0, 12, 28, 48, 72, 100, 131, 164, 199, 236, 274, 310, 344, 376, 405,
 ];
 
 /**

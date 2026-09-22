@@ -13,7 +13,17 @@ import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost,
 const BASE_HEARTS = 5;
 /** Um coracao a cada dez minutos de relogio real. */
 const HEART_REFILL_MS = 10 * 60 * 1000;
-const SAVE_VERSION = 1;
+/**
+ * Progresso salvo de uma versao anterior e descartado quando este numero muda
+ * (`stored.v === SAVE_VERSION` no construtor).
+ *
+ * Foi para 2 quando o mundo 1 voltou a ter dez fases: com `WORLD_SIZES`
+ * diferente, a fase 21 deixou de ser a primeira do mundo 2 e passou a ser a
+ * primeira do mundo 3, e um save antigo levaria o jogador para um mundo que
+ * ele nunca abriu, com estrelas gravadas em fases de outro tema - e podia
+ * trazer `unlocked` acima de `LEVEL_COUNT`.
+ */
+const SAVE_VERSION = 2;
 
 /**
  * @typedef {object} SaveData
@@ -125,6 +135,20 @@ export class Progress {
   }
 
   // ------------------------------------------------------------- progresso
+
+  /**
+   * Ninguem ainda: nenhuma fase liberada alem da primeira e nenhuma partida
+   * contada. E quem entra jogando, sem passar pela tela inicial.
+   *
+   * O criterio olha `plays` alem de `unlocked` porque quem jogou a fase 1 e
+   * perdeu continua com `unlocked` em 1 - e para ele a home ja e uma tela
+   * conhecida, com o botao "Jogar 1" dizendo exatamente onde ele parou.
+   *
+   * @returns {boolean}
+   */
+  isNewcomer() {
+    return this.data.unlocked <= 1 && !this.data.plays;
+  }
 
   /** @param {number} level base 1 @returns {number} */
   starsOf(level) {

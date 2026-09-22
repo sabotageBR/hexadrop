@@ -101,8 +101,14 @@ async function esperarDesfecho(deLevel) {
   return await js('({screen: window.__game.screen, level: window.__game.level})');
 }
 
-await js('document.getElementById("btnPlay").click()');
-await sleep(1500);
+// Perfil novo entra jogando: main.js manda `isNewcomer()` direto para a fase
+// 1 e a home nem chega a aparecer. O clique em "jogar" so existe para o caso
+// de a tela inicial estar no ar por qualquer outro motivo.
+if ((await js('window.__game.screen')) !== 'game') {
+  await js('document.getElementById("btnPlay").click()');
+  await sleep(1500);
+}
+const entrouJogando = await js('window.__game.level');
 await jogarFase();
 // Fluxo continuo: a fase 1 nao abre cartao nenhum e a 2 entra sozinha, sem
 // ninguem clicar em nada. Se alguma coisa parou o jogador, segue pelo cartao
@@ -123,7 +129,7 @@ await sleep(1200);
 // jogada tem que levar ao intervalo - senao este teste nunca mais veria um e
 // as regras de ordem abaixo passariam sem conferir nada.
 const corte = await js('window.__sdkLog.length');
-await js('window.__game.progress.data.unlocked = 160');
+await js('window.__game.progress.data.unlocked = window.__game.progress.data.unlocked + 999');
 await tocar();
 await sleep(900);
 await js('window.__game.pauseLevel()');
@@ -131,13 +137,26 @@ await sleep(400);
 await js('document.getElementById("pauseResume").click()');
 await sleep(1200);
 
-// Fim de mundo: a fronteira sai de WORLD_SIZES, e o mundo 1 tem vinte fases.
-// Ali o cartao volta - e com ele o video de dobrar recompensa, que nao cabe no
-// selo do fluxo.
+// Fronteira de mundo DENTRO da carencia de cartao: a fase 20 fecha o mundo 2
+// e mesmo assim nao pode parar o jogador, porque `FASES_SEM_CARTAO` manda o
+// fluxo ignorar a fronteira ate ali. E a regra que o funil da Poki comprou:
+// medida, a unica parada do jogo com amostra custou 15% dos jogadores.
 await js('window.__game.startLevel(20)');
 await sleep(1200);
 await jogarFase();
-const parada = await esperarDesfecho(20);
+const fronteiraCedo = await esperarDesfecho(20);
+await sleep(700);
+if (fronteiraCedo && fronteiraCedo.screen === 'win') await js('document.getElementById("winNext").click()');
+else if (fronteiraCedo && fronteiraCedo.screen === 'lose') await js('document.getElementById("loseRetry").click()');
+await sleep(1200);
+
+// Primeira parada de verdade: a fase 30, fronteira de mundo ja acima da
+// carencia. Ali o cartao volta - e com ele o video de dobrar recompensa, que
+// nao cabe no selo do fluxo.
+await js('window.__game.startLevel(30)');
+await sleep(1200);
+await jogarFase();
+const parada = await esperarDesfecho(30);
 await sleep(500);
 if (parada && parada.screen === 'win') await js('document.getElementById("winNext").click()');
 else if (parada && parada.screen === 'lose') await js('document.getElementById("loseRetry").click()');
@@ -203,9 +222,27 @@ check(
   fluxo ? `tela ${fluxo.screen}, fase ${fluxo.level}` : 'sem estado',
 );
 check(
+  'perfil novo entra jogando, sem passar pela home',
+  entrouJogando === 1,
+  `fase ${entrouJogando}`,
+);
+check(
+  'fronteira de mundo dentro da carencia nao para o jogador',
+  !!fronteiraCedo && fronteiraCedo.screen === 'game' && fronteiraCedo.level === 21,
+  fronteiraCedo ? `tela ${fronteiraCedo.screen}, fase ${fronteiraCedo.level}` : 'sem estado',
+);
+check(
   'fim de mundo para o jogador',
   !!parada && parada.screen !== 'game',
   parada ? `tela ${parada.screen}, fase ${parada.level}` : 'sem estado',
+);
+// Interaction events: ate a versao 1.0.1 a aba da Poki estava vazia, e toda
+// pergunta sobre POR QUE o jogador saiu era palpite.
+const botoes = measures.filter((m) => m.startsWith('botao/'));
+check(
+  'interaction events registrados',
+  botoes.some((m) => m.endsWith('/visible')) && botoes.some((m) => m.endsWith('/interact')),
+  botoes.slice(0, 4).join(' ') || 'nenhum',
 );
 check('telemetria de fase registrada', measures.some((m) => m.startsWith('level/')), measures.slice(0, 3).join(' '));
 const lvl = measures.filter((m) => m.startsWith('level/'));
