@@ -62,19 +62,36 @@ await send('Page.navigate', { url: BASE + '/index.html' }, sessionId);
 await sleep(3800);
 const js = async (e) => (await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, sessionId)).result?.result?.value;
 
-/** Toca na peca mais alta logo abaixo do hexagono. @returns {Promise<boolean>} */
+/**
+ * Toca na peca que a dica do jogo escolheria (o jogador competente do
+ * solucionador), e na falta dela na mais alta logo abaixo do hexagono.
+ *
+ * Tocar so pela heuristica ja bastou quando a fase 20 perdoava metade das
+ * partidas ao acaso. Com o comeco endurecido - torre de catorze linhas sobre
+ * pedestal da largura dela - a heuristica perdia as fases de fronteira, e o
+ * teste reprovava o fluxo por uma derrota que nao tem nada a ver com ele.
+ *
+ * So vale peca que esta NA TELA: a camera segue o hexagono, e numa torre de
+ * quinze linhas a dica pode apontar uma peca la embaixo, fora do quadro - o
+ * clique nao acertava nada e os toques acabavam com a fase parada.
+ * @returns {Promise<boolean>}
+ */
 async function tocar() {
   const info = await js(`(() => { const g=window.__game.scene; if(!g.session||g.session.finished) return null;
     const w=g.session.world; const dest=w.alivePieces().filter(p=>p.body.isDynamic()&&p.material!=='obsidian');
     if(!dest.length) return null;
-    const hex=w.hexTransform(); let best=null,bs=-Infinity;
-    for(const p of dest){const b=w.pieceBox(p); if(b.top>hex.y+0.35) continue; const sc=b.top*10-Math.abs(b.cx-hex.x); if(sc>bs){bs=sc;best=p;}}
-    if(!best) best=dest[0];
-    const cell=best.cells[Math.floor(best.cells.length/2)];
-    const lx=cell[0]+0.5-best.cw/2, ly=cell[1]+0.5-best.ch/2;
-    const pos=best.body.getPosition(), a=best.body.getAngle();
-    const wx=pos.x+lx*Math.cos(a)-ly*Math.sin(a), wy=pos.y+lx*Math.sin(a)+ly*Math.cos(a);
-    const [sx,sy]=g.camera.toScreen(wx,wy); return {x:Math.round(sx), y:Math.round(sy)}; })()`);
+    const naTela=(p)=>{const cell=p.cells[Math.floor(p.cells.length/2)];
+      const lx=cell[0]+0.5-p.cw/2, ly=cell[1]+0.5-p.ch/2;
+      const pos=p.body.getPosition(), a=p.body.getAngle();
+      const wx=pos.x+lx*Math.cos(a)-ly*Math.sin(a), wy=pos.y+lx*Math.sin(a)+ly*Math.cos(a);
+      const [sx,sy]=g.camera.toScreen(wx,wy);
+      return sx>=0&&sy>=0&&sx<innerWidth&&sy<innerHeight?{x:Math.round(sx), y:Math.round(sy)}:null;};
+    let best=g.session.requestHint();
+    if(best&&(!best.alive||!naTela(best))) best=null;
+    const hex=w.hexTransform(); let bs=-Infinity;
+    if(!best) for(const p of dest){if(!naTela(p)) continue; const b=w.pieceBox(p); if(b.top>hex.y+0.35) continue; const sc=b.top*10-Math.abs(b.cx-hex.x); if(sc>bs){bs=sc;best=p;}}
+    if(!best) best=dest.find(naTela)||null;
+    return best?naTela(best):null; })()`);
   if (!info) return false;
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: info.x, y: info.y, button: 'left', clickCount: 1 }, sessionId);
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: info.x, y: info.y, button: 'left', clickCount: 1 }, sessionId);
@@ -82,7 +99,7 @@ async function tocar() {
 }
 
 /** Toca ate a fase acabar ou o orcamento de toques esgotar. */
-async function jogarFase(maxToques = 30) {
+async function jogarFase(maxToques = 45) {
   for (let t = 0; t < maxToques; t++) {
     if ((await js('window.__game.screen')) !== 'game') break;
     if (!(await tocar())) break;
@@ -99,6 +116,25 @@ async function esperarDesfecho(deLevel) {
     await sleep(250);
   }
   return await js('({screen: window.__game.screen, level: window.__game.level})');
+}
+
+/**
+ * Joga a fase ate vencer, com ate tres tentativas. O que os testes de
+ * fronteira conferem e para onde o jogo vai DEPOIS da vitoria; uma derrota do
+ * jogador automatico nao diz nada sobre isso.
+ * @param {number} nivel
+ */
+async function vencer(nivel) {
+  let st = null;
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    await jogarFase();
+    st = await esperarDesfecho(nivel);
+    if (!st || st.screen !== 'lose') return st;
+    await sleep(700);
+    await js('document.getElementById("loseRetry").click()');
+    await sleep(1500);
+  }
+  return st;
 }
 
 // Perfil novo entra jogando: main.js manda `isNewcomer()` direto para a fase
@@ -137,30 +173,35 @@ await sleep(400);
 await js('document.getElementById("pauseResume").click()');
 await sleep(1200);
 
-// Fronteira de mundo DENTRO da carencia de cartao: a fase 20 fecha o mundo 2
-// e mesmo assim nao pode parar o jogador, porque `FASES_SEM_CARTAO` manda o
-// fluxo ignorar a fronteira ate ali. E a regra que o funil da Poki comprou:
-// medida, a unica parada do jogo com amostra custou 15% dos jogadores.
+// Fronteira de mundo: a fase 20 fecha o mundo 4 e nao pode parar o jogador. O
+// fluxo so para na ultima fase do jogo (main.js, `flowContinues`). E a regra
+// que o funil da Poki comprou: medida, a unica parada do jogo com amostra
+// custou 15% dos jogadores.
 await js('window.__game.startLevel(20)');
 await sleep(1200);
-await jogarFase();
-const fronteiraCedo = await esperarDesfecho(20);
+const fronteiraCedo = await vencer(20);
 await sleep(700);
 if (fronteiraCedo && fronteiraCedo.screen === 'win') await js('document.getElementById("winNext").click()');
 else if (fronteiraCedo && fronteiraCedo.screen === 'lose') await js('document.getElementById("loseRetry").click()');
 await sleep(1200);
 
-// Primeira parada de verdade: a fase 30, fronteira de mundo ja acima da
-// carencia. Ali o cartao volta - e com ele o video de dobrar recompensa, que
-// nao cabe no selo do fluxo.
+// A fase 30 ja foi a primeira parada do jogo. Com mundos de cinco fases o
+// cartao pararia o jogo a cada cinco, e a decisao foi nao parar nunca: ela
+// tambem tem que seguir direto para a 31.
 await js('window.__game.startLevel(30)');
 await sleep(1200);
-await jogarFase();
-const parada = await esperarDesfecho(30);
+const parada = await vencer(30);
 await sleep(500);
 if (parada && parada.screen === 'win') await js('document.getElementById("winNext").click()');
 else if (parada && parada.screen === 'lose') await js('document.getElementById("loseRetry").click()');
 await sleep(1500);
+
+// So a ultima fase do jogo para o fluxo: e ali que o cartao de vitoria volta,
+// e com ele o video de dobrar premio. Conferido pela regra, sem jogar a fase
+// 100 - uma torre de dezoito linhas nao cabe no orcamento deste teste.
+const fimDoJogo = await js(
+  '(() => { const g = window.__game; const antes = g.level; g.level = 99; const a = g.flowContinues(); g.level = 100; const b = g.flowContinues(); g.level = antes; return a + "|" + b; })()',
+);
 
 const log = await js('JSON.stringify(window.__sdkLog)');
 sock.close(); chrome.kill();
@@ -227,14 +268,19 @@ check(
   `fase ${entrouJogando}`,
 );
 check(
-  'fronteira de mundo dentro da carencia nao para o jogador',
+  'fronteira de mundo nao para o jogador (fase 20)',
   !!fronteiraCedo && fronteiraCedo.screen === 'game' && fronteiraCedo.level === 21,
   fronteiraCedo ? `tela ${fronteiraCedo.screen}, fase ${fronteiraCedo.level}` : 'sem estado',
 );
 check(
-  'fim de mundo para o jogador',
-  !!parada && parada.screen !== 'game',
+  'fronteira de mundo nao para o jogador (fase 30)',
+  !!parada && parada.screen === 'game' && parada.level === 31,
   parada ? `tela ${parada.screen}, fase ${parada.level}` : 'sem estado',
+);
+check(
+  'so a ultima fase do jogo para o fluxo',
+  fimDoJogo === 'true|false',
+  fimDoJogo,
 );
 // Interaction events: ate a versao 1.0.1 a aba da Poki estava vazia, e toda
 // pergunta sobre POR QUE o jogador saiu era palpite.
@@ -245,16 +291,19 @@ check(
   botoes.slice(0, 4).join(' ') || 'nenhum',
 );
 check('telemetria de fase registrada', measures.some((m) => m.startsWith('level/')), measures.slice(0, 3).join(' '));
+// Por TENTATIVA, que e o que a Poki cobra: cada `start` abre uma. Agrupar pela
+// sessao inteira reprovaria o jogador que perde e depois vence a mesma fase -
+// e o teste agora repete a fase de fronteira ate vencer.
 const lvl = measures.filter((m) => m.startsWith('level/'));
-const byLevel = new Map();
+/** @type {Map<string, string[]>} */
+const tentativa = new Map();
+let bothEnds = '';
 for (const m of lvl) {
   const [, n, action] = m.split('/');
-  if (!byLevel.has(n)) byLevel.set(n, []);
-  byLevel.get(n).push(action);
-}
-let bothEnds = '';
-for (const [n, actions] of byLevel) {
-  if (actions.includes('complete') && actions.includes('fail')) bothEnds = 'fase ' + n;
+  if (action === 'start' || !tentativa.has(n)) tentativa.set(n, []);
+  const atual = /** @type {string[]} */ (tentativa.get(n));
+  atual.push(action);
+  if (atual.includes('complete') && atual.includes('fail')) bothEnds = 'fase ' + n;
 }
 check('nunca complete e fail na mesma fase', !bothEnds, bothEnds);
 

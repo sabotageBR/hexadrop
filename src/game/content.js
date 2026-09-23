@@ -146,26 +146,26 @@ export const BONUS_XP_PER_PIECE = 2;
 /**
  * Estrelas acumuladas para abrir cada mundo.
  *
- * O teto e 450 (150 fases x 3 estrelas), 30 por mundo. A curva e folgada no
- * comeco - quem passa raspando pelo mundo 1 entra no 2 sem perceber o portao,
- * porque toda vitoria cruza as tres linhas e quatro fases ja bastam - e vai
- * apertando, de modo que perto do fim o jogador precisa ter voltado para
- * melhorar fases antigas. Nunca chega a exigir tudo: o ultimo portao pede 405
- * das 450, entao sobra folga para quinze fases mal resolvidas.
+ * O teto e 300 (100 fases x 3 estrelas), 15 por mundo. A curva e folgada no
+ * comeco - toda vitoria cruza as tres linhas, entao duas fases ja abrem o
+ * mundo 2 - e vai apertando, de modo que perto do fim o jogador precisa ter
+ * voltado para melhorar fases antigas. Nunca chega a exigir tudo: o ultimo
+ * portao pede 275 das 300.
  *
- * Cada degrau foi re-escalado duas vezes pela MESMA fracao do que ja estava
- * disponivel naquele ponto - uma quando o mundo 1 passou a ter vinte fases,
- * outra quando ele voltou a ter dez -, para que o aperto percebido continue
- * identico ao da primeira versao.
+ * Cada degrau foi re-escalado pela MESMA fracao do que ja estava disponivel
+ * naquele ponto do jogo - a cada mudanca de `WORLD_SIZES` -, para que o aperto
+ * percebido continue identico ao da primeira versao. Com fluxo continuo ate a
+ * fase 100 o portao nao para o jogo corrido: ele vale para quem escolhe o
+ * mundo no mapa ou na home.
  *
- * Indice = numero do mundo (0 a 14); o mundo 0 nunca e travado.
+ * Indice = numero do mundo (0 a 19); o mundo 0 nunca e travado.
  */
 export const GATE_STARS = [
-  0, 12, 28, 48, 72, 100, 131, 164, 199, 236, 274, 310, 344, 376, 405,
+  0, 6, 13, 22, 33, 44, 58, 72, 88, 104, 121, 138, 157, 176, 194, 212, 229, 245, 260, 275,
 ];
 
 /**
- * @param {number} world 0 a 14
+ * @param {number} world 0 a WORLD_COUNT-1
  * @returns {number}
  */
 export function gateStars(world) {

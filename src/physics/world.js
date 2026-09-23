@@ -24,8 +24,6 @@ const POS_ITER = 4;
 /** Velocidade abaixo da qual consideramos o hexagono parado. */
 const REST_LINEAR = 0.16;
 const REST_ANGULAR = 0.35;
-/** Folga horizontal, em celulas, para uma peca desabar sobre o hexagono. */
-const REACH_SLACK = 2;
 /** Tirar o hexagono de cima alivia o dobro da velocidade com que carrega. */
 const HOLD_DECAY = 2;
 
@@ -698,73 +696,116 @@ export class PhysicsWorld {
   }
 
   /**
-   * Alguma peca viva ainda pode mexer com o hexagono?
+   * O que sustenta o hexagono agora.
    *
-   * Conservador de proposito: na duvida responde que sim e a fase continua.
-   * Errar para este lado so custa ao jogador os toques que ele ja daria hoje;
-   * errar para o outro encerra uma fase que tinha solucao.
+   * So conta como apoio o contato ABAIXO do centro dele: o que pesa em cima ou
+   * encosta acima do meio nao o segura, e tirar essa peca nao o faz descer. Da
+   * metade para baixo entra tudo - o chao, a quina onde ele se escora, a peca
+   * que o calca de lado pela face inclinada -, porque derrubar qualquer uma
+   * dessas ainda pode faze-lo rolar.
+   *
+   * @returns {'dynamic'|'static'|'none'} `dynamic` se algum apoio e peca viva,
+   *   `static` se todo apoio e imovel (obsidiana), `none` se nao ha apoio
+   */
+  _hexSupport() {
+    if (!this.hexBody) return 'none';
+    const cy = this.hexBody.getPosition().y;
+    /** @type {'dynamic'|'static'|'none'} */
+    let apoio = 'none';
+    for (let edge = this.hexBody.getContactList(); edge; edge = edge.next) {
+      const contact = edge.contact;
+      if (!contact || !contact.isTouching()) continue;
+      const wm = contact.getWorldManifold(null);
+      if (!wm) continue;
+      let abaixo = false;
+      for (let k = 0; k < wm.pointCount; k++) {
+        if (wm.points[k].y < cy) abaixo = true;
+      }
+      if (!abaixo) continue;
+      // Cinematico conta como vivo: o pedestal que balanca carrega quem esta
+      // em cima dele.
+      if (!edge.other.isStatic()) return 'dynamic';
+      apoio = 'static';
+    }
+    return apoio;
+  }
+
+  /**
+   * Bomba ou TNT perto o bastante para empurrar o hexagono.
+   *
+   * A explosao e a unica coisa do jogo que desloca o hexagono de uma obsidiana:
+   * o toque destroi a peca, nunca a empurra. `_resolveExplosions` alcanca
+   * raio * 1.27, e uma celula de folga cobre a peca descer um degrau antes de
+   * detonar.
    *
    * @returns {boolean}
    */
-  _somethingCanReachHex() {
+  _explosiveNearHex() {
     if (!this.hexBody) return false;
-    // Contato agora: o que escora, encosta ou pesa sobre o hexagono. E esta
-    // volta que preserva a saida da quina - se uma peca o segura de lado,
-    // derrubar essa peca ainda pode faze-lo rolar para fora da estatica.
-    // Cinematico conta junto: o pedestal que oscila carrega quem esta em cima.
-    for (let edge = this.hexBody.getContactList(); edge; edge = edge.next) {
-      if (!edge.contact || !edge.contact.isTouching()) continue;
-      if (!edge.other.isStatic()) return true;
-    }
     const c = this.hexBody.getPosition();
-    const r = this.hexHalfWidth();
-    const base = c.y - this.hexHalfHeight();
     for (const p of this.pieces) {
       if (!p.alive || !p.body.isDynamic()) continue;
-      const b = this.pieceBox(p);
       const mat = getMaterial(p.material);
-      // Explosao empurra o hexagono sem encostar nele: _resolveExplosions
-      // alcanca raio * 1.27. Uma celula de folga cobre a peca descer um degrau
-      // antes de detonar.
-      if (mat.explodeRadius > 0) {
-        const d = Math.hypot(b.cx - c.x, b.cy - c.y);
-        if (d <= mat.explodeRadius * 1.27 + CELL) return true;
-      }
-      // Peca inteiramente abaixo da base do hexagono nao sobe de volta: a
-      // gravidade so desce, e o unico empurrao para cima e a explosao, que ja
-      // foi testada acima.
-      if (b.top < base - 0.05) continue;
-      // Acima ou ao lado: pode desabar sobre ele. Uma peca tomba mais ou menos
-      // a propria maior dimensao para o lado, e o resto e folga para quicar.
-      const gap = Math.abs(b.cx - c.x) - b.hw - r;
-      if (gap <= (Math.max(p.cw, p.ch) + REACH_SLACK) * CELL) return true;
+      if (!(mat.explodeRadius > 0)) continue;
+      const b = this.pieceBox(p);
+      if (Math.hypot(b.cx - c.x, b.cy - c.y) <= mat.explodeRadius * 1.27 + CELL) return true;
     }
     return false;
   }
 
   /**
-   * O hexagono encalhou: parou sobre geometria que o jogador nao pode remover
-   * e nada mais na cena o alcanca.
+   * Nada da altura do hexagono para cima ainda se move.
    *
-   * Sem isto a fase seguia em 'playing' para sempre quando o hexagono pousava
-   * em cima de uma obsidiana solta com a torre restante longe demais para
-   * mexer com ele: o jogador so descobria o beco sem saida gastando toques ate
-   * acabarem as pecas.
+   * E o repouso que importa para o encalhe: uma peca escorregando na direcao
+   * dele e alcance que a geometria deste instante nao ve. As de baixo nao
+   * entram porque a gravidade so desce - e sobre um pedestal que balanca elas
+   * nunca repousam, o que seguraria o veredito indefinidamente.
    *
-   * O gatilho e o hexagono DORMINDO, nao hexAtRest(). O sono do Box2D exige
-   * meio segundo abaixo de uma tolerancia muito mais apertada (0.01 m/s contra
-   * 0.16), entao um hexagono que ainda tomba devagar pela quina da estatica
-   * nunca dispara isto - e tombar devagar e justamente o caso em que encerrar
-   * a fase tiraria do jogador uma vitoria que existia.
+   * @returns {boolean}
+   */
+  _restAboveHex() {
+    if (!this.hexBody) return true;
+    const base = this.hexBody.getPosition().y - this.hexHalfHeight();
+    for (const p of this.pieces) {
+      if (!p.alive || !p.body.isAwake()) continue;
+      if (this.pieceBox(p).top < base - 0.05) continue;
+      const v = p.body.getLinearVelocity();
+      if (Math.hypot(v.x, v.y) > 0.22) return false;
+      if (Math.abs(p.body.getAngularVelocity()) > 0.5) return false;
+    }
+    return true;
+  }
+
+  /**
+   * O hexagono encalhou: tudo o que o sustenta e imovel.
+   *
+   * O toque destroi pecas, nunca as empurra. Parado sobre obsidiana, o
+   * hexagono so sai dali se o chao dele sumir - e obsidiana nao some - ou se
+   * uma explosao o empurrar. Entao a fase acaba assim que ele dorme com apoio
+   * so de obsidiana e sem bomba ou TNT ao alcance.
+   *
+   * A regra anterior perguntava se alguma peca "ainda o alcancava", e contava
+   * TODA peca viva acima da base dele, sem limite de altura e com uma folga
+   * lateral que cobria a torre inteira - alem de qualquer peca encostada, ate a
+   * que so pesava em cima. Na pratica o jogador tinha que destruir tudo acima
+   * do hexagono para a fase acabar, e como a camera segue o hexagono, a peca
+   * que sobrava la no alto saia da tela e nao havia mais como toca-la: a fase
+   * ficava em 'playing' para sempre.
+   *
+   * O gatilho continua sendo o hexagono DORMINDO, nao hexAtRest(). O sono do
+   * Box2D exige meio segundo abaixo de uma tolerancia muito mais apertada
+   * (0.01 m/s contra 0.16), entao um hexagono que ainda tomba devagar pela quina
+   * da obsidiana nunca dispara isto - e tombar devagar e justamente o caso em
+   * que encerrar a fase tiraria do jogador uma vitoria que existia. Todo toque
+   * acorda o hexagono (`wakeAround`), entao o relogio recomeca a cada jogada.
    *
    * @returns {boolean}
    */
   hexStranded() {
     if (!this.hexBody || this.hexBody.isAwake()) return false;
-    // A cena inteira precisa estar parada: uma peca ainda escorregando na
-    // direcao do hexagono e alcance que a geometria deste instante nao ve.
-    if (!this.everythingAtRest()) return false;
-    return !this._somethingCanReachHex();
+    if (this._hexSupport() !== 'static') return false;
+    if (!this._restAboveHex()) return false;
+    return !this._explosiveNearHex();
   }
 
   /** @returns {'playing'|'won'|'lost'|'stuck'} */

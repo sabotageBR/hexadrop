@@ -11,7 +11,7 @@
  * que nao dao para resolver so trocando cor.
  *
  * Fora da polaridade fica o cartao de feltro dos kits ficha e atelier, que e
- * escuro nos quinze mundos: ele recebe --felt daqui e reabre as proprias
+ * escuro em todos os mundos: ele recebe --felt daqui e reabre as proprias
  * variaveis de tinta no CSS.
  */
 

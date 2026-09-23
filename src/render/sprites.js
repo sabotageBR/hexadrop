@@ -317,13 +317,25 @@ const PUZZLE_BLOCK_COLORS = [
   '#ff528c',
 ];
 
+/**
+ * A peca sai nas cores da marca? Vale para a base do mundo puzzle - o bloco, e
+ * desde que o mundo 1 passou a ser de borracha, a borracha. Sem a borracha aqui
+ * a torre do mundo 1 sairia inteira no verde-limao do traco dela, e o arco-iris
+ * que veio do jogo de referencia sumiria justo na primeira fase.
+ * @param {import('./themes.js').Theme} th
+ * @param {string} materialId
+ */
+function arcoIris(th, materialId) {
+  return th.style === 'puzzle' && (materialId === 'block' || materialId === 'rubber');
+}
+
 /** Indice da cor da marca para uma peca do mundo puzzle. */
 function colorIndex(gridX, gridY) {
   return ((gridX * 5 + gridY * 13) >>> 0) % PUZZLE_BLOCK_COLORS.length;
 }
 
 /**
- * Cor viva da peca: no mundo puzzle o bloco sorteia uma das cores da marca pela
+ * Cor viva da peca: no mundo puzzle a base sorteia uma das cores da marca pela
  * posicao de origem; nos outros mundos e o traco do material no tema.
  *
  * Exportada porque as particulas de quebra precisam sair na cor da peca que
@@ -336,7 +348,7 @@ function colorIndex(gridX, gridY) {
  * @returns {string}
  */
 export function pieceColor(th, materialId, gridX = 0, gridY = 0) {
-  if (th.style === 'puzzle' && materialId === 'block') {
+  if (arcoIris(th, materialId)) {
     return PUZZLE_BLOCK_COLORS[colorIndex(gridX, gridY)];
   }
   const style = th.materials[materialId] || th.materials.block || th.materials.wood;
@@ -653,7 +665,7 @@ function paintLook(ctx, look, cells, fill, scale, ox, oy, traco) {
 function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed, colorIx = 0) {
   const style = th.materials[materialId] || th.materials.block || th.materials.wood;
   let fill = style.fill;
-  if (th.style === 'puzzle' && materialId === 'block') {
+  if (arcoIris(th, materialId)) {
     fill = PUZZLE_BLOCK_COLORS[colorIx % PUZZLE_BLOCK_COLORS.length];
   }
   if (materialId === 'bomb') fill = '#3a1622';
@@ -667,10 +679,9 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed, colorIx = 0
   void seed;
   if (look === 'glow') {
     // No tubo quem manda e a cor do fio, nao a do corpo.
-    const linha =
-      th.style === 'puzzle' && materialId === 'block'
-        ? PUZZLE_BLOCK_COLORS[colorIx % PUZZLE_BLOCK_COLORS.length]
-        : style.stroke;
+    const linha = arcoIris(th, materialId)
+      ? PUZZLE_BLOCK_COLORS[colorIx % PUZZLE_BLOCK_COLORS.length]
+      : style.stroke;
     paintLook(ctx, look, cells, linha, scale, ox, oy, traco);
   } else {
     paintLook(ctx, look, cells, fill, scale, ox, oy, traco);
@@ -721,10 +732,9 @@ export class SpriteCache {
    * @returns {{canvas: HTMLCanvasElement, w:number, h:number, pad:number}}
    */
   piece(cells, materialId, gridX = 0, gridY = 0) {
-    // No puzzle o bloco troca de cor da marca por peca. Sem posicao na
+    // No puzzle a base troca de cor da marca por peca. Sem posicao na
     // chave, todas as barras iguais pintavam a mesma magenta.
-    const colorIx =
-      this.theme.style === 'puzzle' && materialId === 'block' ? colorIndex(gridX, gridY) : 0;
+    const colorIx = arcoIris(this.theme, materialId) ? colorIndex(gridX, gridY) : 0;
     const look = lookFor(this.theme, materialId, colorIx);
     const key =
       cells.map((c) => c[0] + ',' + c[1]).join(';') +

@@ -1,5 +1,5 @@
 /**
- * Gera e valida as 150 fases, depois grava src/game/levels.gen.js.
+ * Gera e valida as fases (LEVEL_COUNT), depois grava src/game/levels.gen.js.
  *
  * Para cada fase o programa procura seeds cujo layout seja realmente vencivel,
  * provando isso com um jogador automatico que simula um lance a frente. Uma
@@ -94,6 +94,10 @@ function bakeLevel(index) {
       const layout = generateLayout(config, seed);
       // Torre de barras e mais nada e justamente o que o roteiro quer evitar.
       if (config.minPieces && layout.pieces.length < config.minPieces) continue;
+      // A fase de estreia tem que MOSTRAR a peca que o cartao do tutorial
+      // anuncia. O peso sobe na estreia, mas peso e chance, nao garantia - e a
+      // obsidiana ainda depende de uma peca que encoste na lateral.
+      if (!config.newMaterials.every((m) => layout.pieces.some((pc) => pc.material === m))) continue;
 
       // Triagem barata: se nem uma partida competente vence, nao vale gastar
       // a avaliacao completa nesta seed.
@@ -174,9 +178,16 @@ function bakeLevel(index) {
 
   // Ultimo recurso: grava a variante mais suave mesmo sem certificado, para
   // que o jogo nunca fique sem esta fase. Fica marcada no relatorio.
+  // Mesmo sem certificado, a fase de estreia mostra a peca que anuncia.
   const config = levelConfig(index, 3);
-  const seed = seedFor(index, 3, 0);
-  const layout = generateLayout(config, seed);
+  const mostra = (/** @type {*} */ l) =>
+    config.newMaterials.every((m) => l.pieces.some((/** @type {*} */ pc) => pc.material === m));
+  let seed = seedFor(index, 3, 0);
+  let layout = generateLayout(config, seed);
+  for (let attempt = 1; attempt < 64 && !mostra(layout); attempt++) {
+    seed = seedFor(index, 3, attempt);
+    layout = generateLayout(config, seed);
+  }
   return {
     index,
     soften: 3,
@@ -249,6 +260,9 @@ if (!isMainThread) {
     const prev = readFileSync(OUT, 'utf8');
     const rows = prev.match(/\{ s: (\d+), v: \[(.*?)\] \}/g) || [];
     rows.forEach((row, i) => {
+      // Um arquivo gravado com mais fases do que o jogo tem hoje (a versao de
+      // 150 fases, por exemplo) nao pode vazar as linhas que sobram.
+      if (i >= LEVEL_COUNT) return;
       const m = row.match(/\{ s: (\d+), v: \[(.*?)\] \}/);
       if (!m) return;
       const variants = (m[2].match(/\[[^\]]*\]/g) || []).map((v) => {

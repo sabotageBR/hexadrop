@@ -242,34 +242,34 @@ export const MATERIAL_IDS = Object.keys(MATERIALS);
  * Fase em que cada material aparece pela primeira vez, base para a tela
  * de "material novo" e para a curva de dificuldade.
  *
- * O calendario segue as fronteiras de mundo (15x10) e obedece a uma regra:
- * cada material estreia no mundo ANTERIOR aquele em que vira a peca dominante.
- * O jogador conhece a peca solta antes de encarar uma torre feita dela. O
- * calendario antigo era decenal e tardio - gelo so na 22, metal na 42, vidro
- * na 52 -, e por isso o mundo 2 inteiro era madeira com pedra.
+ * **Tudo estreia ate a fase 10.** O calendario ja foi espalhado pelo jogo
+ * inteiro - cada material no mundo anterior aquele em que virava peca dominante,
+ * a TNT so na fase 81 -, e o funil da 1.0.2 mostrou o jogador indo embora nas
+ * primeiras fases sem ter perdido: o que faltava era novidade, nao folego. Hoje
+ * a fase 1 e so borracha (a base do mundo 1), as fases 2 e 3 sao do tutorial,
+ * e da 4 a 10 cada fase traz uma ou duas pecas novas. O pedestal que balanca e
+ * o vento seguem o mesmo prazo, em `HAZARD_DEBUT` (game/levelgen.js).
  *
- * Todas as estreias de mundo 2 em diante desceram dez fases quando o mundo 1
- * voltou a ter dez: o que ancora o calendario e a fronteira de mundo, nao o
- * numero absoluto. Dentro do mundo 1, pedra e obsidiana passaram do quarto e
- * do oitavo decimo do tutorial para as fases 5 e 8 - as mesmas fracoes de um
- * mundo com metade do tamanho.
+ * Duas estreias na mesma fase sao sempre uma peca de comportamento (gelo,
+ * metal, espuma) ao lado de um perigo (vidro, bomba, cristal): o cartao do
+ * tutorial mostra as duas em fila.
  *
  * @type {Record<string, number>}
  */
 export const MATERIAL_DEBUT = {
   block: 1,
   wood: 1,
-  stone: 5,
-  obsidian: 8,
-  ice: 11, // mundo 2, para o mundo 3 ser o do gelo
-  rubber: 21, // mundo 3, para o mundo 4 ser o do doce
-  metal: 31, // mundo 4, para o mundo 5 ser o futurista
-  foam: 36, // mundo 4, para o mundo 7 ser o de papel
-  glass: 41, // mundo 5, para o mundo 9 ser o neon
-  crystal: 47,
-  bomb: 54,
-  wax: 71, // mundo da lava, onde derreter tem historia
-  tnt: 81,
+  rubber: 1, // a base do mundo 1: quica e agarra
+  stone: 4,
+  ice: 4,
+  obsidian: 5,
+  glass: 6,
+  metal: 6, // junto do vidro: e o metal que quebra o vidro com uma queda curta
+  bomb: 7,
+  foam: 7,
+  crystal: 8,
+  tnt: 9,
+  wax: 10,
 };
 
 /** Materiais que cedem por tempo de contato com o hexagono. */

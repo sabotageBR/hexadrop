@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const PORT = 9666;
 const BASE = process.env.SWEEP_URL || 'http://127.0.0.1:4173';
-const LEVELS = (process.env.SWEEP_LEVELS || '1,6,13,22,33,44,53,62,71,85,95,105,120,140,150').split(',').map(Number);
+const LEVELS = (process.env.SWEEP_LEVELS || '1,4,7,10,14,22,27,33,41,50,60,70,80,90,100').split(',').map(Number);
 
 const chrome = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${PORT}`, '--no-sandbox',
   '--disable-gpu', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
@@ -54,15 +54,20 @@ for (const level of LEVELS) {
       const w=g.session.world; const alive=w.alivePieces().filter(p=>p.body.isDynamic() && !p.body.isStatic?false:p.body.isDynamic());
       const dest = alive.filter(p => p.material !== 'obsidian');
       if(!dest.length) return null;
+      // So peca NA TELA: a camera segue o hexagono, e numa torre de dezoito
+      // linhas a primeira peca da lista fica fora do quadro - o clique nao
+      // acertava nada e a fase chegava aos quarenta toques ainda em jogo.
+      const naTela=(p)=>{const cell=p.cells[Math.floor(p.cells.length/2)];
+        const lx=cell[0]+0.5-p.cw/2, ly=cell[1]+0.5-p.ch/2;
+        const pos=p.body.getPosition(), a=p.body.getAngle();
+        const wx=pos.x+lx*Math.cos(a)-ly*Math.sin(a), wy=pos.y+lx*Math.sin(a)+ly*Math.cos(a);
+        const [sx,sy]=g.camera.toScreen(wx,wy);
+        return sx>=0&&sy>=0&&sx<innerWidth&&sy<innerHeight?{x:Math.round(sx), y:Math.round(sy)}:null;};
       const hex=w.hexTransform(); let best=null,bs=-Infinity;
-      for(const p of dest){const b=w.pieceBox(p); if(b.top>hex.y+0.35) continue; const sc=b.top*10-Math.abs(b.cx-hex.x); if(sc>bs){bs=sc;best=p;}}
-      if(!best) best=dest[0];
-      const cell=best.cells[Math.floor(best.cells.length/2)];
-      const lx=cell[0]+0.5-best.cw/2, ly=cell[1]+0.5-best.ch/2;
-      const pos=best.body.getPosition(), a=best.body.getAngle();
-      const wx=pos.x+lx*Math.cos(a)-ly*Math.sin(a), wy=pos.y+lx*Math.sin(a)+ly*Math.cos(a);
-      const [sx,sy]=g.camera.toScreen(wx,wy);
-      return {x:Math.round(sx), y:Math.round(sy), fps:Math.round(g.loop.fps)}; })()`);
+      for(const p of dest){if(!naTela(p)) continue; const b=w.pieceBox(p); if(b.top>hex.y+0.35) continue; const sc=b.top*10-Math.abs(b.cx-hex.x); if(sc>bs){bs=sc;best=p;}}
+      if(!best) best=dest.find(naTela)||null;
+      if(!best) return null;
+      return {...naTela(best), fps:Math.round(g.loop.fps)}; })()`);
     if (!info) break;
     fps.push(info.fps);
     await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: info.x, y: info.y, button: 'left', clickCount: 1 }, sessionId);

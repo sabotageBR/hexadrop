@@ -22,7 +22,7 @@ npm run verify:lisa  # conformidade da versao lisa (precisa do preview:lisa no a
 Geração de fases (grava `src/game/levels.gen.js`):
 
 ```bash
-npm run levels                                   # 150 fases, um worker por núcleo
+npm run levels                                   # 100 fases, um worker por núcleo
 npm run levels:quick                             # menos seeds, para iterar
 node tools/generate-levels.mjs --levels 1-20     # só um trecho; o resto do arquivo é preservado
 ```
@@ -81,70 +81,90 @@ Nenhum outro módulo importa `poki.js`. Mantenha assim.
 ### Mundos e o tamanho de cada um
 
 `WORLD_SIZES` em `src/game/levelgen.js` é a **única fonte de verdade** sobre fronteira
-de mundo: `[10, 10, 10, ...]`, quinze mundos, 150 fases, 450 estrelas. Dele saem
+de mundo: vinte mundos de cinco fases, 100 fases, 300 estrelas. Dele saem
 `LEVEL_COUNT`, `WORLD_COUNT`, `worldOf()`, `worldStart()`, `worldSize()` e
-`indexInWorld()`, e é por essas funções que todo mundo pergunta — **nunca por `/10`,
-`% 10` ou `w * 10`**. Esse `10` esteve literal em dezenove lugares de cinco arquivos,
-e enquanto esteve bastava esquecer um para o mapa abrir uma fase e o portão cobrar
-outra. A curva de `levelConfig()` acompanha o tamanho do mundo 1
-(`fimDoTutorial = worldStart(1)`), e não um número cravado.
+`indexInWorld()`, e é por essas funções que todo mundo pergunta — **nunca por `/5`,
+`% 5` ou `w * 5`**. O `10` da época de dez fases por mundo esteve literal em dezenove
+lugares de cinco arquivos, e enquanto esteve bastava esquecer um para o mapa abrir uma
+fase e o portão cobrar outra. O trecho de ensino de `levelConfig()` vai até
+`fimDoTutorial = worldStart(2)` (a fase 10), e não um número cravado.
 
-O mundo 1 já teve vinte fases, como tutorial longo. O funil da Poki mostrou que o
-comprimento do tutorial não era o gargalo: medido em 719 partidas, a perda de uma
-fase para a seguinte era **exatamente** a fração que não concluía a fase
-(`gameplays(N+1) ≈ gameplays(N) × completed%(N)`, erro abaixo de 2% nas dezenove
-transições), sem nenhum degrau extra dentro do mundo. O que matava o tempo de sessão
-era cada fase durar dez segundos — média de 4,7 toques nas vinte primeiras —, então
-chegar aos três minutos que o Player Fit Test cobra exigia vinte fases, e só 15% dos
-jogadores chegavam lá.
+**Os cenários rodam em ciclo.** `WORLD_THEMES` lista os nove temas uma vez, e quem
+pergunta o tema de um mundo usa `worldTheme(w)`, que é `w % 9`: o mundo 10 volta ao
+puzzle e o 20 é o classic. O índice direto deixaria os mundos 10 a 20 sem tema, e o
+`THEMES[theme].label` de `main.js` quebraria a tela.
 
-**Tamanho de torre é a alavanca do tempo de fase, e largura é a parte barata dela.**
-Medido em dez seeds por altura, com seis colunas:
+O jogo já teve quinze mundos de dez fases, e antes disso um mundo 1 de vinte. Dois
+funis da Poki guiaram as trocas:
+
+- **1.0.1, 719 partidas.** A perda de uma fase para a seguinte era **exatamente** a
+  fração que não concluía a fase (`gameplays(N+1) ≈ gameplays(N) × completed%(N)`, erro
+  abaixo de 2% nas dezenove transições). O que matava o tempo de sessão era cada fase
+  durar dez segundos — média de 4,7 toques nas vinte primeiras.
+- **1.0.2, 265 partidas.** A mesma lei, e quem saía nas fases 1 a 6 saía **no meio da
+  fase sem ter perdido**: falha de 2% a 7%, abandono de 5% a 11%; na fase 1 saíram 11%
+  e só 2,3% perderam. Não era muro, era tédio — torre de 6x6 de bloco com pedestal de
+  1,9 vez a torre, que se vencia tocando ao acaso. Daí os mundos de cinco (cenário novo
+  a cada cinco fases), tudo estreando até a fase 10, borracha no mundo 1, pedestal
+  estreito e torre mais alta.
+
+**Altura é a alavanca do tempo de fase; pedestal e altura decidem o perdão.** Medido
+com seis colunas, sobre o pedestal largo antigo:
 
 | altura | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|
 | toques | 4,7 | 4,8 | 5,9 | 7,2 | 8,9 | 9,7 | 9,8 |
 | melhor perdão de dez | 1,00 | 1,00 | 1,00 | 1,00 | 1,00 | 1,00 | 0,50 |
 
-Até onze linhas ainda existe seed que perdoa tudo, e os toques dobram no caminho —
-mas em **cinco** colunas a mesma altura não se sustenta: 5x13 mediu 0,17 de perdão
-máximo contra os 0,55 que a faixa da fase 20 pede. Daí as duas regras: mundos 1 e 2
-inteiros em seis colunas, e a fase final de cada mundo ganha **uma** linha, não duas
-— com a rampa começando em seis em vez de quatro, o realce antigo jogava a fase que
-fecha o mundo para fora da própria faixa.
+E com borracha, seeds sem filtro:
+
+| torre | pedestal | perdão | competente vence | toques |
+|---|---|---|---|---|
+| 6x6 | 1,9x | 0,75 | 5 de 6 | 6,8 |
+| 6x8 | 1,5x | 0,33 | 4 de 6 | 9,8 |
+| 6x12 | 1,5x | 0,17 | 4 de 6 | 13,3 |
+| 6x14 | 1,2x | ~0,12 | 2 de 4 | 13,5 |
+| 6x18 | 1,2x | 0 | 1 de 4 | ~20 |
+
+Borracha contra bloco mede quase igual em 6x14: quem tira o perdão é altura e pedestal.
+
+**A torre para em 18 linhas**, e não nas ~35 da fase 27 do jogo de referência. Uma
+torre de 35 fica de pé sozinha, mas o jogador competente do solucionador não vence
+nenhuma de 24 ou 32 linhas, e cada partida simulada ali custa de 8 a 13 s. A rampa: 8
+linhas na fase 1, 12 na 10, 14 na 20 e na 27, 17 na 50, 18 da 70 em diante; a fase
+final de cada mundo ganha **uma** linha. Em **cinco** colunas a mesma altura perdoa bem
+menos — 5x13 mediu 0,17 de perdão máximo —, então o trecho de ensino é todo em seis
+colunas e, a partir da fase 51, a chance de cinco colunas volta a 30%.
+
+**O pedestal** vai de 1,5 vez a largura da torre (fases 1 a 5) a 1,3 (6 a 10), 1,1 (11
+a 25), 1,0 — a largura da torre, como na referência — (26 a 50) e 0,92 (51 a 100). Nas
+dez primeiras fases ele já foi 1,9 vez a torre.
 
 **Torre grande não basta: `minPar` é o piso de toques.** O validador escolhe a
 variante mais próxima do *alvo de perdão*, e nada nesse critério olha para o tamanho
 da solução — numa torre de dez linhas ele pode ficar com a seed que desaba em três
 toques, que é exatamente a fase de dez segundos. O piso é
 `min(8, max(3, round(rows * 0,6)))`: folgado de propósito, porque 6x10 entrega 8,9
-toques na média, e com teto em 8 porque no fim do jogo a altura satura em 16 e a
-melhor solução medida fica perto de 9. `softenConfig` reduz o piso junto com a torre e
+toques na média, e com teto em 8 porque torre alta sobre pedestal estreito já recusa
+muita seed por si, e pedir mais ali só obrigaria a afrouxar. `softenConfig` reduz o piso junto com a torre e
 o zera no degrau 3, onde o objetivo já é só a fase existir.
 
 **As três primeiras fases são roteiro, não ponto da curva** (`PRIMEIRAS_FASES` em
-`levelgen.js`, aplicado por cima da curva e da regra de estreia). Pela curva elas
-eram a mesma fase três vezes — quatro barras de quatro colunas, quatro toques, nada
-caindo de verdade —, o jogador concluía que o jogo era aquilo e saía no primeiro
-intervalo. Misturar formas numa torre de quatro colunas não resolve: medido, qualquer
-peça que não seja barra deixa o hexágono rolar para fora com um toque ingênuo. Com
-**seis colunas** a torre tem apoio dos dois lados e cerca de uma seed em quatro sai
-variada e ainda vence tocando ao acaso. Cada linha do roteiro traz exigências que só
-o gerador lê — `minForgiveness` (1: as políticas ingênuas vencem sempre, jogando duas
-vezes cada), `minPieces` (9: nada de torre só de barras) e `minPar` (3: nada de torre
-que desaba inteira em dois toques) —, com orçamento de seeds seis vezes maior, porque
-com sete linhas a taxa cai para uma em dez.
-
-Desde que a curva passou a abrir em 6x6, o roteiro **coincide** com ela em largura e
-altura; o que ele continua trazendo sozinho são as três exigências de validador. Se um
-dia a curva mudar de novo, é o roteiro que garante que as três primeiras fases não
-sigam junto.
+`levelgen.js`, aplicado por cima da curva). Elas fixam a torre — 6x8, 6x8 e 6x9 de
+borracha —, as barras e duas exigências que só o gerador lê: `minPieces` (10: nada de
+torre só de barras) e `minPar` (4). O roteiro já exigiu `minForgiveness: 1`, toda
+partida ao acaso vencendo, e foi exatamente isso que o funil da 1.0.2 condenou; hoje o
+perdão delas sai da faixa comum, que abre em 0,5. Toda fase da régua de perdão (1 a
+25) tem orçamento de seeds seis vezes maior e joga as políticas ingênuas duas vezes
+cada.
 
 `GATE_STARS` (`game/content.js`) tem uma entrada por mundo e foi re-escalado pela
 mesma fração do que já estava disponível em cada ponto, para o aperto percebido
-continuar igual ao da primeira versão. Cada mundo vale 30 estrelas, e o último portão
-pede 405 das 450. O portão **não** é um gargalo de retenção: toda vitória cruza as
-três linhas de estrela, então quatro fases já abrem o mundo 2.
+continuar igual ao da primeira versão. Cada mundo vale 15 estrelas, e o último portão
+pede 275 das 300. O portão **não** é um gargalo de retenção: toda vitória cruza as
+três linhas de estrela, então duas fases já abrem o mundo 2 — e com o fluxo contínuo
+até a fase 100 ele nem para o jogo corrido: vale para quem escolhe o mundo no mapa ou
+na home.
 
 ### A peça que define cada mundo
 
@@ -155,8 +175,14 @@ ainda não estreou; a `assinatura` é o material que aquele cenário empurra par
 Antes disso `baseMaterial()` devolvia **madeira para catorze dos quinze mundos**:
 trocar de mundo trocava o céu e a paleta, nunca a peça. Medido sobre as seeds
 aprovadas, o mundo 2 inteiro era 68% madeira, 27% pedra e 5% obsidiana. O mundo 1
-escondia o problema porque o `block` do tema puzzle sorteia sete cores da marca pela
+escondia o problema porque a base do tema puzzle sorteia sete cores da marca pela
 posição na grade — sai do mundo 1 e o arco-íris acaba.
+
+**O puzzle é de borracha**, e não mais de bloco: o jogo começa nele, e a torre de bloco
+das primeiras fases era a que se vencia tocando ao acaso. A borracha quica e agarra. O
+arco-íris continua: `arcoIris()` em `render/sprites.js` pinta a base do puzzle, bloco
+ou borracha, com as cores da marca — sem isso a torre do mundo 1 sairia inteira no
+verde-limão do traço da borracha.
 
 Duas regras que nasceram de medição:
 
@@ -168,9 +194,39 @@ Duas regras que nasceram de medição:
   apoio. Ali o objetivo é só a fase existir, e um degrau 3 feito de gelo sairia mais
   difícil que o original.
 
-`MATERIAL_DEBUT` (`physics/materials.js`) segue as fronteiras de mundo e obedece a uma
-regra: **cada material estreia no mundo ANTERIOR àquele em que vira dominante**, para
-o jogador conhecer a peça solta antes de encarar uma torre feita dela.
+**Tudo estreia até a fase 10** — `MATERIAL_DEBUT` (`physics/materials.js`) para as
+peças e `HAZARD_DEBUT` (`levelgen.js`) para as mecânicas que não são material:
+
+| fase | estreia |
+|---|---|
+| 1 | borracha (a base do mundo 1) |
+| 4 | pedra e gelo |
+| 5 | obsidiana |
+| 6 | vidro e metal |
+| 7 | bomba e espuma |
+| 8 | cristal e pedestal que balança |
+| 9 | TNT |
+| 10 | cera e vento |
+
+A regra antiga — cada material estreia no mundo anterior àquele em que vira dominante —
+espalhava as estreias pelo jogo inteiro (a TNT só na fase 81), e o jogador do funil ia
+embora antes de ver novidade. Três consequências que precisam continuar valendo:
+
+- **A fase de estreia não encolhe.** Ela perdia duas linhas e um tier; com uma estreia
+  por fase isso desfaria a torre maior. No lugar, a novidade aparece com certeza:
+  obsidiana, bomba e TNT valem 1 sem sorteio (antes a fase 81 anunciava "TNT!" sem ter
+  TNT), o material de peso sobe para peso 4, o gerador recusa a seed em que ele não
+  aparece, e `softenConfig` devolve a estreia depois de afrouxar.
+- **Cada torre leva no máximo dois extras** (três a partir da fase 50) além do kit do
+  tema, e a estreia conta entre eles. Com tudo disponível desde a fase 10, sem esse
+  limite toda torre sortearia os onze materiais e a base cairia para um quinto das
+  peças — o fim da peça que define o mundo.
+- **O cartão do tutorial mostra todas as estreias da fase, em fila** (`showTutorial`
+  em `main.js`). As fases 1 a 3 continuam com os textos fixos de toque, objetivo e
+  estrelas, e por isso as estreias com cartão começam na 4.
+
+Depois da estreia, pedestal que balança e vento aparecem em uma fase de cada cinco,
+subindo até uma em duas, e nunca os dois juntos antes da fase 30.
 
 ### Determinismo e as fases assadas
 
@@ -250,26 +306,29 @@ dificuldade é taxa constante. Reta em perdão poria a fase 80 em 0,54 quando o 
 entrega 0,16 ali, e um piso desses no fim obrigaria o validador a afrouxar quase tudo.
 
 **São duas réguas, e cada uma vale onde ela mede** (`SMART_RULER_FROM`, que é
-`worldStart(7)` — a fronteira do mundo 8, e não um número cravado):
+`worldStart(5)` — a fase 26, e não um número cravado):
 
-- **Perdão** (vitórias de um jogador tocando ao acaso) nos mundos 1 a 7, de 100% a 23%.
-  É a régua que importa onde a retenção se decide.
-- **Taxa do jogador competente** nos mundos 8 a 15. O perdão satura ali: numa torre de
-  13 a 16 linhas com obsidiana, TNT e bomba, jogador ao acaso não ganha — no mundo 15,
-  seis das dez fases tinham *todas* as variantes em zero. A curva não descia porque o
-  jogo endurecia, descia porque a medida acabava.
+- **Perdão** (vitórias de um jogador tocando ao acaso) nas fases 1 a 25, de 0,5 a 0,12.
+  É a régua que importa onde a retenção se decide. Já abriu em 1,0 — e o funil da 1.0.2
+  mostrou o jogador saindo no meio da fase 1 sem ter perdido.
+- **Taxa do jogador competente** da fase 26 em diante. O perdão satura ali: a torre
+  passa de 14 linhas, o pedestal encosta na largura da torre e toda peça especial já
+  estreou. Na versão de 150 fases a mesma saturação só chegava no mundo 8, e no mundo
+  15 seis das dez fases tinham *todas* as variantes em zero. A curva não descia porque
+  o jogo endurecia, descia porque a medida acabava.
 
 Nenhuma fase usa as duas, senão elas se brigam. Nada disso mexe em linha, largura,
 material ou pedestal: são exigências de **validador**, não de layout — por isso dá para
-regerar um trecho sem invalidar as seeds do resto (`--levels 71-150`).
+regerar um trecho sem invalidar as seeds do resto (`--levels 26-100`).
 
-**O que ainda não fecha.** Os mundos 12 a 15 sobem de volta (competente 48, 58, 50, 61)
-quando o alvo ali é 43 a 35. O motivo é que o alvo está abaixo do que existe: para ser
-aceita, a variante tem que ser vencida pelo menos 2 de 6 vezes **e** resistir à
-perturbação, e as que passam esse filtro se agrupam acima de 50%. A régua do competente
-tem pouca amplitude no fim do jogo (47% a 67%), então uma rampa linear nela é quase
-plana. Se for para insistir, a medida com amplitude no fim é **toques da melhor
-solução** (6,6 a 9,3 hoje), e ela também não é monótona.
+**O que não fechava na versão de 150 fases**, e deve continuar valendo aqui: os mundos
+12 a 15 subiam de volta (competente 48, 58, 50, 61) quando o alvo ali era 43 a 35. O
+motivo é que o alvo fica abaixo do que existe: para ser aceita, a variante tem que ser
+vencida pelo menos 2 de 6 vezes **e** resistir à perturbação, e as que passam esse filtro
+se agrupam acima de 50%. A régua do competente tem pouca amplitude no fim do jogo (47%
+a 67%), então uma rampa linear nela é quase plana. Se for para insistir, a medida com
+amplitude no fim é **toques da melhor solução** (6,6 a 9,3 naquela versão), e ela também
+não é monótona.
 
 ### Física
 
@@ -317,15 +376,31 @@ um vidro dão 1,26 m/s, longe dos 4,0.
 peças destrutíveis e tudo parou fora do pedestal) conta como vitória para o jogador
 quando ele já tem pelo menos uma estrela — ver `onLevelEnd` em `main.js`.
 
-`stuck` também cobre o hexágono **encalhado** (`hexStranded()`): ele parou sobre
-geometria que o jogador não pode remover — obsidiana, pedestal — e nenhuma peça viva
-o alcança mais, nem encostando, nem desabando em cima, nem explodindo perto. Antes
-disso a fase seguia em `playing` para sempre e o jogador só descobria o beco sem saída
-gastando todos os toques. O gatilho é o corpo do hexágono **dormindo** no Box2D, e não
+`stuck` também cobre o hexágono **encalhado** (`hexStranded()`): **tudo o que o sustenta
+é imóvel**. O toque destrói peças, nunca as empurra, então parado sobre obsidiana o
+hexágono só sai dali se uma explosão o empurrar. A fase acaba assim que ele dorme com
+apoio só de obsidiana, nada do nível dele para cima ainda se mexe e não há bomba nem TNT
+ao alcance da explosão.
+
+`_hexSupport()` só conta como apoio o contato **abaixo do centro** do hexágono: o que
+pesa em cima ou encosta acima do meio não o segura, e tirar essa peça não o faz descer.
+Um apoio vivo mantém a fase — o jogador ainda pode tirar o chão dele. O repouso exigido
+é só das peças da altura dele para cima (`_restAboveHex`), e não o `everythingAtRest()`
+global: sobre um pedestal que balança as peças nunca repousam, e o veredito ficaria
+preso.
+
+A regra anterior perguntava se alguma peça "ainda o alcançava", e contava **toda** peça
+viva acima da base dele, sem limite de altura e com uma folga lateral que cobria a
+torre inteira — além de qualquer peça encostada, até a que só pesava em cima. Na prática
+o jogador tinha que destruir tudo acima do hexágono para a fase acabar, e como a câmera
+segue o hexágono e não rola, a peça que sobrava lá no alto saía da tela e não havia mais
+como tocá-la: a fase ficava em `playing` para sempre.
+
+O gatilho continua sendo o corpo do hexágono **dormindo** no Box2D, e não
 `hexAtRest()`: meio segundo abaixo de 0,01 m/s contra 0,16, o que impede encerrar a
-fase enquanto ele ainda tomba devagar pela quina. Todo o resto do teste erra de
-propósito para o lado de "ainda dá" — uma peça em contato, ou perto o bastante para
-tombar sobre ele, mantém a fase viva.
+fase enquanto ele ainda tomba devagar pela quina. Todo toque o acorda (`wakeAround`),
+então o relógio recomeça a cada jogada. Como a obsidiana nunca fica nas duas linhas de
+baixo, o encalhe típico fecha a fase com uma ou duas estrelas — vitória.
 
 ### Combo, trilha e pausa
 
@@ -406,15 +481,14 @@ porque quem jogou a fase 1 e perdeu continua com `unlocked` em 1 — e para ele 
 
 ### Fluxo contínuo entre fases
 
-**Dentro de um mundo, vencer não abre tela.** `finishWin()` grava o prêmio, a contagem
+**Vencer não abre tela, do começo ao fim do jogo.** `finishWin()` grava o prêmio, a contagem
 da celebração sai, um selo entra no lugar dela com o `+moedas` e a linha de bônus, as
 moedas voam para o contador `#gameCoins` do HUD, e um segundo depois a fase seguinte
 entra atrás de um corte de 200 ms (`.wipe`). Ninguém clica em nada.
 
-A régua é `WORLD_SIZES`, a mesma fonte de verdade de todo o resto: `flowContinues()`
-para na **última fase de cada mundo** e na fase final do jogo, e em nenhum outro lugar.
-Com uma exceção: abaixo de `FASES_SEM_CARTAO` (21) nem a fronteira de mundo para o
-fluxo, então o **primeiro cartão do jogo aparece na fase 30**, o fim do mundo 3.
+`flowContinues()` só para na **fase 100** — nem o fim de mundo abre o cartão de vitória.
+Ele ainda aparece na fase final, quando a automação desliga o fluxo (`flowLevels`) e,
+claro, na derrota, que não mudou.
 
 A medida vem de um playtest da Poki relatado por outro desenvolvedor: tirando as telas
 de "fase concluída", o tempo médio de sessão dele foi de 3 min 49 s para 7 min 05 s em
@@ -422,16 +496,17 @@ quatro dias, e cerca de dois minutos do salto vieram só dessa mudança. O bench
 Poki é 3 minutos de mínimo aceitável e 5 de jogo que dá certo — e o cartão a cada fase
 cobrava cinco segundos de parada mais um clique, cento e sessenta vezes.
 
-A carência veio depois, do funil do próprio jogo. Na versão em que o mundo 1 tinha
-vinte fases, a passagem da 20 para a 21 foi o **único** ponto do jogo em que a perda
-não se explicava por quem deixou de concluir a fase: pela taxa de conclusão da fase 20
-deviam seguir 91 jogadores, seguiram 77. Os 15% que faltam são o preço de três coisas
-que acontecem só ali e todas juntas — o primeiro cartão em tela cheia do jogo inteiro,
-o intervalo comercial de `advanceLevel()` e a troca de tema e de música. Nas outras
-dezenove transições do mundo o desvio ficou abaixo de 2%: o fluxo contínuo não perde
-jogador, a parada perde. O custo da carência é que o vídeo de dobrar prêmio e a
-encenação do portão não existem antes da fase 30 — e o vídeo rende 5%, contra os 15%
-que a parada custa.
+O fim de mundo já foi parada, e depois parada só a partir da fase 30 (`FASES_SEM_CARTAO`,
+que não existe mais). Na versão em que o mundo 1 tinha vinte fases, a passagem da 20
+para a 21 foi o **único** ponto do jogo em que a perda não se explicava por quem deixou
+de concluir a fase: pela taxa de conclusão da fase 20 deviam seguir 91 jogadores,
+seguiram 77. Os 15% que faltam são o preço de três coisas que aconteciam só ali e todas
+juntas — o primeiro cartão em tela cheia do jogo inteiro, o intervalo comercial de
+`advanceLevel()` e a troca de tema e de música. Nas outras dezenove transições do mundo
+o desvio ficou abaixo de 2%: o fluxo contínuo não perde jogador, a parada perde. Com
+mundos de cinco fases o cartão pararia o jogo a cada cinco, e a decisão foi não parar
+nunca. O custo é que o vídeo de dobrar prêmio e a encenação do portão saem do jogo
+corrido — o vídeo rende 5%, contra os 15% que cada parada custou.
 
 Quatro coisas que esse fluxo precisa respeitar:
 
@@ -442,9 +517,8 @@ Quatro coisas que esse fluxo precisa respeitar:
   `poki.commercialBreak()`: o direto pularia a carência de `FASES_SEM_INTERVALO`.
 - **O vídeo de dobrar prêmio não cabe no selo.** A Poki exige um botão padrão de tamanho
   igual ou maior ao lado do vídeo, e um par de botões sobre a cena é o cartão de volta.
-  Então `#winDouble` continua só no cartão — ou seja, no fim de cada mundo a partir da
-  fase 30. É o custo desta mudança, e a régua de quanto ele custa é `WORLD_SIZES` mais
-  `FASES_SEM_CARTAO`.
+  Então `#winDouble` continua só no cartão — ou seja, na fase 100. É o custo desta
+  mudança.
 - **O selo não repete as estrelas.** A fileira do HUD já acende durante a jogada, e o kit
   do mundo decide se ela fica em cima ou embaixo; uma fileira própria no selo era o mesmo
   recado duas vezes, às vezes colado nela.
@@ -455,8 +529,9 @@ Quatro coisas que esse fluxo precisa respeitar:
   trás dos botões desabilitados.
 
 `flowLevels = false` é o que mantém o `playsweep` medindo uma fase por vez. Quem cobre o
-caminho do fluxo é o `sdkcheck`: ele joga a fase 1 (a 2 tem que entrar sozinha) e a 20
-(o cartão tem que voltar), e reprova se algum dos dois se inverter.
+caminho do fluxo é o `sdkcheck`: ele joga a fase 1 (a 2 tem que entrar sozinha), a 20 e
+a 30 (fronteiras de mundo, que também não param), e confere que só a fase 100 para o
+fluxo.
 
 ### Renderização
 
@@ -692,8 +767,9 @@ A bandeira `_hasHold` desliga toda a varredura em fases sem esses materiais, o q
 mantém as fases antigas idênticas passo a passo.
 
 `tnt` não precisou de campo novo: `breakSpeed` + `explodeRadius` já compõem "detona com
-pancada forte". A cera só é sorteada no mundo lava, por peso em `levelConfig`, e não por
-uma bandeira no `LevelLayout` — assim `PhysicsWorld` segue sem conhecer tema.
+pancada forte". A cera é assinatura da lava e tempero raro nos outros mundos, por peso
+em `levelConfig`, e não por uma bandeira no `LevelLayout` — assim `PhysicsWorld` segue
+sem conhecer tema.
 
 ### Duas versoes: Poki e lisa
 
@@ -753,7 +829,9 @@ No cartão de derrota o vídeo é **pular fase**, ao lado de "tentar de novo", q
 maior e gratuito. Pular não dá estrela, então o portão do mundo seguinte continua
 cobrando o que cobrava: o vídeo adianta o caminho, nunca o progresso. **Não existe
 botão de encher corações** — eles voltam sozinhos com o tempo e, sem eles, o jogador
-continua jogando com metade do prêmio.
+continua jogando com metade do prêmio. Na homologação o jogo **não avisa** que os corações
+acabaram — nem no selo do fluxo nem nos cartões (`noHeartsBody` segue no i18n, sem
+uso); o prêmio pela metade continua valendo, em silêncio.
 
 Na versão lisa `.btn.ad` some por CSS, então lá o pular vira botão comum liberado
 depois de três derrotas, e o bônus diário sai sem vídeo. Quem decide a classe é o JS

@@ -9,7 +9,7 @@
 import { GameScene } from './game/scene.js';
 import { createSession } from './game/session.js';
 import {
-  levelConfig, LEVEL_COUNT, WORLD_THEMES, WORLD_COUNT, worldOf, worldStart, worldSize,
+  levelConfig, LEVEL_COUNT, WORLD_COUNT, worldOf, worldStart, worldSize,
   indexInWorld,
 } from './game/levelgen.js';
 import { LEVELS } from './game/levels.gen.js';
@@ -28,6 +28,12 @@ import { t, getLang, setLang, LANGS, LANG_NAMES, onLangChange } from './core/i18
 import { load, save, isPersistent } from './core/storage.js';
 import { Rng } from './core/rng.js';
 
+/** Nome e dica, no i18n, das mecanicas que estreiam sem ser material. */
+const HAZARD_TEXT = {
+  swing: ['hazardSwing', 'hintSwing'],
+  wind: ['hazardWind', 'hintWind'],
+};
+
 /** Margens que a HUD de jogo reserva no enquadramento da cena. */
 const GAME_INSET_TOP = 108;
 const GAME_INSET_BOTTOM = 40;
@@ -41,24 +47,6 @@ const GAME_INSET_BOTTOM = 40;
  * progresso salvo, nao a sessao: quem volta ja passou dessa decisao.
  */
 const FASES_SEM_INTERVALO = 5;
-
-/**
- * Ate onde o fluxo continuo ignora a fronteira de mundo.
- *
- * Abaixo desta fase nem o fim de um mundo abre o cartao de fim de fase: a
- * seguinte entra sozinha, como entra dentro de um mundo. Com quinze mundos de
- * dez fases, a primeira parada do jogo passa a ser a fase 30, o fim do mundo 3
- * - e nao a 10, que e onde a fronteira cairia sozinha.
- *
- * O numero e 21 e nao 20 porque a comparacao e `level < FASES_SEM_CARTAO`:
- * vencer a fase 20 ainda flui, e a 30 e a primeira fronteira acima dela.
- *
- * O preco esta documentado em `flowContinues`: e no cartao que moram o video
- * de dobrar premio e a encenacao do portao, entao ate a fase 30 nenhum dos
- * dois aparece. A troca vale porque a parada foi medida e custa 15% dos
- * jogadores, e o video rende 5%.
- */
-const FASES_SEM_CARTAO = 21;
 
 /**
  * Botoes que viram Interaction Event na Poki, por id do elemento.
@@ -308,6 +296,8 @@ class Game {
     this.screen = name;
     this._ofertasVistas.clear();
     if (name !== 'game') {
+      // A fila de estreias reabriria o cartao por cima da tela seguinte.
+      window.clearTimeout(this.tutTimer);
       const tut = $('tut');
       if (tut) tut.classList.add('hide');
     }
@@ -515,7 +505,7 @@ class Game {
       audio.buttonBack();
       this.show('home');
     };
-    // Numa fita de quinze mundos a fase atual sai da tela em dois gestos; o
+    // Numa fita de vinte mundos a fase atual sai da tela em dois gestos; o
     // atalho so aparece quando ela sumiu, para nao virar enfeite fixo.
     $('mapHere').onclick = () => {
       audio.button();
@@ -782,23 +772,42 @@ class Game {
   showTutorial() {
     const tut = $('tut');
     const config = levelConfig(this.level - 1);
-    /** @type {string|null} */
-    let msg = null;
-    if (this.level === 1) msg = t('tutorialTap');
-    else if (this.level === 2) msg = t('tutorialGoal');
-    else if (this.level === 3) msg = t('tutorialStars');
-    else if (config.newMaterials.length) {
-      const id = config.newMaterials[0];
-      msg = `${t('newMaterial')}: ${t(getMaterial(id).nameKey)} - ${t(getMaterial(id).hintKey)}`;
+    /** @type {string[]} */
+    const msgs = [];
+    if (this.level === 1) msgs.push(t('tutorialTap'));
+    else if (this.level === 2) msgs.push(t('tutorialGoal'));
+    else if (this.level === 3) msgs.push(t('tutorialStars'));
+    else {
+      // Da fase 4 a 10 cada fase estreia uma ou duas coisas, e o cartao mostra
+      // todas em fila. Mostrando so a primeira, a segunda estreia de uma fase
+      // dupla - o gelo ao lado da pedra, o metal ao lado do vidro - entrava na
+      // torre sem nunca ser apresentada.
+      for (const id of config.newMaterials) {
+        const m = getMaterial(id);
+        msgs.push(`${t('newMaterial')}: ${t(m.nameKey)} - ${t(m.hintKey)}`);
+      }
+      for (const id of config.newHazards) {
+        const [nome, dica] = HAZARD_TEXT[id] || [];
+        if (nome) msgs.push(`${t('newHazard')}: ${t(nome)} - ${t(dica)}`);
+      }
     }
     window.clearTimeout(this.tutTimer);
-    if (!msg) {
+    if (!msgs.length) {
       tut.classList.add('hide');
       return;
     }
-    tut.textContent = msg;
-    tut.classList.remove('hide');
-    this.tutTimer = window.setTimeout(() => tut.classList.add('hide'), 5200);
+    const porMsg = msgs.length > 1 ? 3400 : 5200;
+    /** @param {number} k */
+    const mostra = (k) => {
+      if (k >= msgs.length) {
+        tut.classList.add('hide');
+        return;
+      }
+      tut.textContent = msgs[k];
+      tut.classList.remove('hide');
+      this.tutTimer = window.setTimeout(() => mostra(k + 1), porMsg);
+    };
+    mostra(0);
   }
 
   /** @param {number} n */
@@ -888,7 +897,7 @@ class Game {
     this.showWin(pend.stars, result, session);
   }
 
-  /** Fase que fecha um mundo: e onde o cartao de fim de fase ainda para. */
+  /** Fase que fecha um mundo: da o titulo de "mundo concluido" ao cartao. */
   atWorldEnd() {
     const i = this.level - 1;
     return indexInWorld(i) === worldSize(worldOf(i)) - 1;
@@ -897,28 +906,27 @@ class Game {
   /**
    * A fase seguinte entra sozinha?
    *
-   * Nao entra no fim de um mundo nem na ultima fase do jogo: sao as duas
-   * paradas que valem um cartao, e a fronteira sai de WORLD_SIZES, nao de um
-   * "10" cravado aqui. E nao entra quando a automacao desliga o fluxo.
+   * Sempre, ate a ultima fase do jogo - inclusive no fim de cada mundo. O
+   * cartao de vitoria so volta na fase 100 e quando a automacao desliga o fluxo.
    *
-   * A excecao sao as `FASES_SEM_CARTAO` primeiras: ate ali nem a fronteira de
-   * mundo para o fluxo. Medido no funil da Poki, a passagem da fase 20 para a
-   * 21 - a unica fronteira de mundo com amostra - foi o UNICO ponto do jogo em
-   * que a perda nao se explicava por quem deixou de concluir a fase: pela taxa
-   * de conclusao da 20 deviam seguir 91 jogadores, seguiram 77. Os 15% que
-   * faltam sao o preco de tres coisas que acontecem so ali e todas juntas - o
-   * primeiro cartao em tela cheia do jogo inteiro, o intervalo comercial de
-   * `advanceLevel` e a troca de tema e de musica.
-   *
-   * Nas outras dezenove transicoes do mundo 1 o desvio ficou abaixo de 2%: o
+   * O fim de mundo ja foi parada, e depois parada so a partir da fase 30. Medido
+   * no funil da Poki, a passagem da fase 20 para a 21 - a unica fronteira de
+   * mundo com amostra - foi o UNICO ponto do jogo em que a perda nao se
+   * explicava por quem deixou de concluir a fase: pela taxa de conclusao da 20
+   * deviam seguir 91 jogadores, seguiram 77. Os 15% que faltam eram o preco do
+   * primeiro cartao em tela cheia, do intervalo comercial e da troca de tema,
+   * todos juntos. Nas outras dezenove transicoes o desvio ficou abaixo de 2%: o
    * fluxo continuo nao perde jogador, a parada perde.
+   *
+   * Com mundos de cinco fases o cartao pararia o jogo o dobro de vezes, e a
+   * decisao foi nao parar nunca. O custo e que o video de dobrar premio e a
+   * encenacao do portao, que moram no cartao, saem do jogo corrido. A troca de
+   * tema e de musica continua a cada cinco fases, so que sem tela no meio.
    * @returns {boolean}
    */
   flowContinues() {
     if (!this.flowLevels) return false;
-    if (this.level >= LEVEL_COUNT) return false;
-    if (this.level < FASES_SEM_CARTAO) return true;
-    return !this.atWorldEnd();
+    return this.level < LEVEL_COUNT;
   }
 
   /**
@@ -954,8 +962,9 @@ class Game {
     this.flyCoins($('flowCoins'), Math.min(12, Math.max(4, Math.round(moedas / 3))), 200, $('gameCoins'));
     this.countUp($('gameCoins'), this.progress.data.coins, 260, false, bolsaAntes);
 
-    if (result.halved) this.toast(t('noHeartsBody'));
-    else if (result.best) this.toast(t('newRecord'));
+    // Sem aviso de coracoes vazios, aqui e nos cartoes: na homologacao o jogo
+    // segue jogando sem coracao e sem mensagem nenhuma sobre isso.
+    if (result.best) this.toast(t('newRecord'));
     if (result.rankUp) {
       window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), 700);
     }
@@ -1107,7 +1116,7 @@ class Game {
     this.setStars('winStars', 0);
     $('winCoins').textContent = '0';
     $('winXp').textContent = '0';
-    $('winNote').textContent = result.halved ? t('noHeartsBody') : result.best ? t('newRecord') : '';
+    $('winNote').textContent = result.best ? t('newRecord') : '';
     // Linha de bonus: so aparece quando houve merito a mostrar, e diz de onde
     // veio - senao o jogador ve uma moeda a mais e nao sabe por que.
     const bonusEl = $('winBonus');
@@ -1220,7 +1229,7 @@ class Game {
     audio.lose();
     $('loseTitle').textContent = t('gameOver');
     const p = this.progress;
-    $('loseNote').textContent = p.depleted ? t('noHeartsBody') : '';
+    $('loseNote').textContent = '';
     // Embaralhar: so faz sentido quando a fase tem mais de um layout aprovado.
     // Cinco das cem tem um so; ali o botao nao aparece em vez de gastar um
     // consumivel para devolver a mesma coisa.
@@ -1498,7 +1507,13 @@ class Game {
    *
    * O numero de ondas acompanha o tamanho do mundo em vez de ser fixo: com o
    * mundo 1 em vinte fases, tres ondas cravadas dobrariam o periodo e a
-   * serpentina viraria uma cobra esticada.
+   * serpentina viraria uma cobra esticada. Com cinco fases o piso de tres ondas
+   * fazia o contrario - cinco nos em zigue-zague de uma borda a outra -, e o
+   * minimo passou a ser onda e meia, um S suave.
+   *
+   * A margem de cima e de baixo tambem acompanha `n`: a trilha tem `--nos`
+   * vezes 70 px, e com cinco nos os 4% de antes deixavam metade do ultimo
+   * hexagono para fora da faixa do mundo.
    *
    * @param {number} i 0 a n-1, de baixo para cima
    * @param {number} n quantas fases o mundo tem
@@ -1506,10 +1521,11 @@ class Game {
    */
   nodeSpot(i, n) {
     const t = n > 1 ? i / (n - 1) : 0;
-    const ondas = Math.max(3, Math.round(n / 3.4));
+    const ondas = Math.max(1.5, n / 3.4);
+    const margem = Math.max(4, 50 / Math.max(1, n));
     return {
       x: 50 + 27 * Math.sin(t * Math.PI * ondas),
-      y: 96 - t * 92,
+      y: 100 - margem - t * (100 - 2 * margem),
     };
   }
 
@@ -1690,7 +1706,7 @@ class Game {
   /**
    * Mantem o cabecalho fixo dizendo em que mundo a rolagem esta.
    *
-   * Numa fita de quinze mundos o jogador perde a referencia em tres segundos
+   * Numa fita de vinte mundos o jogador perde a referencia em tres segundos
    * de rolagem; o titulo "Fases" nao dizia nada.
    */
   watchMapWorlds() {

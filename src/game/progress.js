@@ -22,8 +22,12 @@ const HEART_REFILL_MS = 10 * 60 * 1000;
  * primeira do mundo 3, e um save antigo levaria o jogador para um mundo que
  * ele nunca abriu, com estrelas gravadas em fases de outro tema - e podia
  * trazer `unlocked` acima de `LEVEL_COUNT`.
+ *
+ * Foi para 3 quando o jogo passou a ter cem fases em mundos de cinco: o save
+ * da versao anterior podia trazer `unlocked` ate 150 e estrelas nas fases 101
+ * a 150, que inflariam o total e abririam portoes sem merito.
  */
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 
 /**
  * @typedef {object} SaveData
