@@ -115,7 +115,7 @@ function bakeLevel(index) {
 
       const report = evaluateVariant(layout, seed, {
         smartRuns: SMART_RUNS,
-        naiveRuns: roteiro ? 6 : 3,
+        naiveRuns: config.naiveRuns || (roteiro ? 6 : 3),
         minSmartWins: 2,
       });
       if (!report.accepted) continue;

@@ -23,6 +23,12 @@ const BONUS_BURST_RADIUS = 2.4;
 const BONUS_BURST_FORCE = 3.2;
 /** Tempo depois do ultimo estouro, para os estilhacos cairem. */
 const BONUS_OUTRO = 0.9;
+/**
+ * Com um toque na celebracao, uma peca a cada dois quadros e o assentar final
+ * pela metade: trinta pecas estouram em um segundo, e nao em tres.
+ */
+const BONUS_HURRY = 0.035;
+const BONUS_OUTRO_HURRY = 0.45;
 
 // --- combo ----------------------------------------------------------------
 /** Teto de espera para fechar uma jogada, mesmo sem tudo parar. */
@@ -48,6 +54,8 @@ export class Session {
    * @param {(n:number, x:number, y:number)=>void} [opts.onCombo]
    * @param {(done:number, total:number, x?:number, y?:number)=>void} [opts.onBonusPiece]
    * @param {(total:number)=>void} [opts.onBonusDone]
+   * @param {number} [opts.autoHintAfter] segundos parado ate a dica acender sozinha; 0 desliga
+   * @param {()=>void} [opts.onAutoHint]
    */
   constructor(opts) {
     this.layout = opts.layout;
@@ -83,6 +91,13 @@ export class Session {
     this.hintTimer = 0;
     this.paused = false;
 
+    // Dica automatica. Desligada por padrao: o validador monta a mesma Session
+    // e nao pode ganhar dica de ninguem. Quem liga e main.js, por fase.
+    this.autoHintAfter = opts.autoHintAfter || 0;
+    this.onAutoHint = opts.onAutoHint || null;
+    /** Segundos sem toque e sem dica acesa. */
+    this.idle = 0;
+
     // Celebracao de fim de fase.
     this.bonus = false;
     /** @type {*[]} */
@@ -92,6 +107,7 @@ export class Session {
     this.bonusTimer = 0;
     this.bonusElapsed = 0;
     this.bonusOutro = BONUS_OUTRO;
+    this.bonusHurry = false;
 
     // --- combo -----------------------------------------------------------
     this.comboOpen = false;
@@ -105,6 +121,21 @@ export class Session {
     this.comboPieces = 0;
     /** Maior combo da fase, so para exibir. */
     this.bestCombo = 0;
+
+    // --- voltar uma jogada ------------------------------------------------
+    /**
+     * Estado de antes do ultimo toque dado com o hexagono parado. E dele que
+     * sai a volta automatica das fases de ensino e o video de "voltar uma
+     * jogada" do cartao de derrota.
+     * @type {{world:*}|null}
+     */
+    this.checkpoint = null;
+    /** Perder volta uma jogada em vez de encerrar. Quem liga e main.js. */
+    this.rewindOnLoss = false;
+    /** @type {(()=>void)|null} */
+    this.onRewind = opts.onRewind || null;
+    /** Quantas vezes a fase voltou uma jogada. */
+    this.rewinds = 0;
   }
 
   /**
@@ -169,8 +200,21 @@ export class Session {
     this.bonusTimer = 0;
     this.bonusElapsed = 0;
     this.bonusOutro = BONUS_OUTRO;
+    this.bonusHurry = false;
     this.bonus = vivas.length > 0;
     return this.bonusTotal;
+  }
+
+  /**
+   * O jogador tocou durante a celebracao: a cascata aperta o passo. Nao pula a
+   * contagem - cada peca intacta ainda estoura e ainda vale moeda -, so tira a
+   * espera entre uma e outra.
+   */
+  hurryBonus() {
+    if (!this.bonus) return;
+    this.bonusHurry = true;
+    this.bonusTimer = Math.min(this.bonusTimer, BONUS_HURRY);
+    this.bonusOutro = Math.min(this.bonusOutro, BONUS_OUTRO_HURRY);
   }
 
   /** @param {number} dt */
@@ -217,7 +261,7 @@ export class Session {
     const ideal = BONUS_FIRST + (BONUS_LAST - BONUS_FIRST) * fracao;
     const sobra = Math.max(0, BONUS_MAX_TIME - this.bonusElapsed);
     const cabe = restantes > 0 ? sobra / restantes : ideal;
-    this.bonusTimer = Math.max(BONUS_LAST, Math.min(ideal, cabe));
+    this.bonusTimer = this.bonusHurry ? BONUS_HURRY : Math.max(BONUS_LAST, Math.min(ideal, cabe));
   }
 
   /** @returns {number} estrelas conquistadas ate agora */
@@ -250,17 +294,25 @@ export class Session {
     }
     this.taps++;
     this.hintPiece = null;
+    this.idle = 0;
     // Abre a jogada ANTES de destruir: a propria peca tocada e a primeira da
     // conta, e o que a queda dela derrubar entra na mesma.
     this.comboOpen = true;
     this.comboCount = 0;
     this.comboTimer = 0;
+    // O ponto de volta so anda com o hexagono parado. Um toque dado com ele ja
+    // tombando levaria a volta para dentro da queda, e o jogador cairia de novo
+    // sem poder fazer nada; entao ali a volta fica no toque anterior.
+    if (!this.checkpoint || this.world.hexAtRest()) {
+      this.checkpoint = { world: this.world.snapshot() };
+    }
     this.world.destroyPiece(piece, 'tap');
     return { piece, ok: true };
   }
 
   /**
-   * Destaca uma peca segura. Usado pelo video recompensado de dica.
+   * Destaca uma peca segura. Usado pelo video recompensado de dica e pela dica
+   * automatica.
    * @returns {*|null}
    */
   requestHint() {
@@ -293,6 +345,7 @@ export class Session {
 
     this.world.step(dt);
     this._updateCombo(dt);
+    this._updateAutoHint(dt);
 
     while (this.starsShown < this.world.starsCrossed) {
       this.starsShown++;
@@ -300,11 +353,66 @@ export class Session {
     }
 
     const verdict = this.world.evaluate();
+    const perdeu = verdict === 'lost' || (verdict === 'stuck' && this.world.starsCrossed === 0);
+    if (perdeu && this.rewindOnLoss && this.rewind()) {
+      if (this.onRewind) this.onRewind();
+      return;
+    }
     if (verdict !== 'playing') {
       this.state = verdict;
       this.endedAt = this.elapsed;
       if (this.onEnd) this.onEnd(this.state);
     }
+  }
+
+  /**
+   * Acende a dica sozinha quando o jogador fica parado.
+   *
+   * Na 1.0.3 a unica dica era um video depois de duas derrotas, e ninguem a
+   * pediu: zero cliques em 135 partidas que a viram. Quem trava sem saber o que
+   * tocar nao pede ajuda - vai embora.
+   *
+   * A dica espera a torre parar: o solucionador escolheria a peca sobre uma
+   * torre que ainda nao assentou. Sobre o pedestal que balanca as pecas nunca
+   * repousam, e ali ela vem tres segundos depois em vez de nunca.
+   * @param {number} dt
+   */
+  _updateAutoHint(dt) {
+    if (this.autoHintAfter <= 0 || this.hintPiece) return;
+    this.idle += dt;
+    if (this.idle < this.autoHintAfter) return;
+    if (this.idle < this.autoHintAfter + 3 && !this.world.everythingAtRest()) return;
+    this.idle = 0;
+    if (this.requestHint() && this.onAutoHint) this.onAutoHint();
+  }
+
+  /**
+   * Volta a fase ao ponto de antes do ultimo toque dado com o hexagono parado.
+   *
+   * Serve a dois lados. Nas fases de ensino, perder nao existe: a Poki cita o
+   * Subway Surfers - "players can't die during onboarding; they just try again
+   * until it clicks" -, e na 1.0.3 de 18% a 28% dos jogadores perdiam cada uma
+   * das primeiras fases. E no cartao de derrota ela e o video recompensado de
+   * "voltar uma jogada", o "revive" que a Poki poe no topo da lista de ajuda.
+   *
+   * O toque que derrubou tudo continua contado: voltar desfaz a queda, nao a
+   * jogada. As estrelas que a queda tinha cruzado voltam a apagar.
+   * @returns {boolean} false se ainda nao ha ponto de volta
+   */
+  rewind() {
+    if (!this.checkpoint || this.bonus) return false;
+    this.world.restore(this.checkpoint.world);
+    this.state = 'playing';
+    this.endedAt = 0;
+    this.starsShown = Math.min(this.starsShown, this.world.starsCrossed);
+    this.comboOpen = false;
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    this.hintPiece = null;
+    this.hintTimer = 0;
+    this.idle = 0;
+    this.rewinds++;
+    return true;
   }
 
   destroy() {

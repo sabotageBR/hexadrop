@@ -303,6 +303,7 @@ export const TUBO = { raio: 0.11, vao: 0.055, fio: 0.047, faixa: 0.028 };
  * @param {import('./themes.js').Theme} th
  */
 export function usaTubo(th) {
+  if (th.pecas) return th.pecas === 'glow';
   return th.style === 'puzzle' || th.style === 'neon';
 }
 
@@ -419,7 +420,10 @@ function sil(ctx, cells, scale, ox, oy, r) {
  * @param {number} colorIx
  */
 function lookFor(th, materialId, colorIx) {
-  // Mundo 1 e mundo neon usam o tubo; os outros treze ficam no toon.
+  // Um tema pode pedir um estilo so para todas as pecas (`pecas` em themes.js).
+  if (th.pecas) return th.pecas;
+  // O mundo neon usa o tubo (o puzzle tambem usava, ate a 1.0.5 - hoje ele
+  // pede gelatina por `pecas`); os outros ficam no toon.
   if (th.style === 'puzzle' || th.style === 'neon') return 'glow';
   void colorIx;
   if (
@@ -800,7 +804,7 @@ export class SpriteCache {
       cx,
       cy,
       r,
-      skin.model || 'liso',
+      skin.model || 'joia',
       {
         fill: skin.fill || th.hexagon.fill,
         stroke: skin.stroke || th.hexagon.stroke,

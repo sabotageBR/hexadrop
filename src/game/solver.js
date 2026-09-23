@@ -277,12 +277,42 @@ function planPlayout(world, options, rng, width = 6) {
 
 /**
  * Escolhe a proxima peca conforme a politica.
+ *
+ * As politicas que planejam destroem candidatas e simulam antes de voltar
+ * atras com restore(), e isso tem que acontecer em silencio. No validador o
+ * mundo nasce sem callbacks, mas no jogo requestHint() roda sobre o mundo REAL,
+ * cujos onDestroy e onImpact a GameScene embrulhou: cada candidata "destruida"
+ * soltava estilhaco, som de quebra e tremor de camera, e voltava inteira no
+ * restore(). Com a dica automatica isso virou uma explosao de mentira a cada
+ * poucos segundos com o jogador parado - e a sessao ainda contava essas pecas
+ * no combo. Os callbacks nao mexem em fisica, entao cala-los nao muda escolha
+ * nenhuma.
+ *
  * @param {PhysicsWorld} world
  * @param {string} policy
  * @param {Rng} rng
  * @returns {import('../physics/world.js').PieceState|null}
  */
 export function choosePiece(world, policy, rng) {
+  const onDestroy = world.onDestroy;
+  const onImpact = world.onImpact;
+  world.onDestroy = null;
+  world.onImpact = null;
+  try {
+    return escolher(world, policy, rng);
+  } finally {
+    world.onDestroy = onDestroy;
+    world.onImpact = onImpact;
+  }
+}
+
+/**
+ * @param {PhysicsWorld} world
+ * @param {string} policy
+ * @param {Rng} rng
+ * @returns {import('../physics/world.js').PieceState|null}
+ */
+function escolher(world, policy, rng) {
   const options = destructible(world);
   if (!options.length) return null;
   const hex = world.hexTransform();

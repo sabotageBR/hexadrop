@@ -14,7 +14,7 @@
  * @property {number} cost 0 = gratis
  * @property {number} rank patente minima
  * @property {boolean} [rewarded] desbloqueavel com um video
- * @property {string} [model] id de HEX_MODELS; ausente = 'liso'
+ * @property {string} [model] id de HEX_MODELS; ausente = 'joia'
  * @property {string} [fill]
  * @property {string} [stroke]
  * @property {string} [core]
@@ -28,7 +28,7 @@ export const SKINS = [
     name: 'Original',
     cost: 0,
     rank: 0,
-    model: 'liso',
+    model: 'joia',
   },
   {
     id: 'ember',
@@ -215,7 +215,6 @@ export const UPGRADES = [
   { id: 'stability', nameKey: 'upgStability', descKey: 'upgStabilityDesc', max: 3, costs: [80, 200, 420] },
   { id: 'grip', nameKey: 'upgGrip', descKey: 'upgGripDesc', max: 3, costs: [90, 220, 460] },
   { id: 'fortune', nameKey: 'upgFortune', descKey: 'upgFortuneDesc', max: 3, costs: [140, 300, 600] },
-  { id: 'heart', nameKey: 'upgHeart', descKey: 'upgHeartDesc', max: 2, costs: [250, 700] },
 ];
 
 /**
@@ -226,12 +225,10 @@ export function upgradeEffects(levels) {
   const s = levels.stability || 0;
   const g = levels.grip || 0;
   const f = levels.fortune || 0;
-  const h = levels.heart || 0;
   return {
     angularDamping: 0.08 + s * 0.16,
     frictionBonus: g * 0.07,
     coinMultiplier: 1 + f * 0.15,
-    extraHearts: h,
   };
 }
 

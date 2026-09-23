@@ -173,11 +173,14 @@ export function baseMaterial(theme, level = LEVEL_COUNT, seguro = false) {
  * que acaba antes de o jogador entender o que fez.
  *
  * O roteiro ja exigiu perdao TOTAL (`minForgiveness: 1`, toda partida ao acaso
- * vencia). Foi o que o funil da 1.0.2 condenou: na fase 1 saiam 11% dos
- * jogadores, e so 2,3% perdiam - quem ia embora ia no meio de uma fase que se
- * resolvia sozinha. Hoje o roteiro abre em 6x8 com pedestal de 1,5x a torre, e
- * o perdao das tres fases sai da faixa comum (`forgivenessBand`), que comeca em
- * 0,5.
+ * vencia), e depois caiu para a faixa comum abrindo em 0,5 sobre pedestal de
+ * 1,5x, porque o funil da 1.0.2 parecia dizer que o jogador saia da fase 1 por
+ * tedio. O funil da 1.0.3 desmentiu: com a fase 1 derrubando 20% dos jogadores,
+ * cerca de 36% de quem perde uma fase desiste dela, e quem saia no meio da fase
+ * 1 era o jogador de desktop (18%, contra 5,6% no celular) que nem via o
+ * pedestal na tela. Hoje o roteiro continua em 6x8 e 6x9 - a altura e o que da
+ * tempo de fase -, mas o pedestal volta a 1,9x a torre e a faixa de perdao abre
+ * em 0,85.
  */
 const PRIMEIRAS_FASES = [
   // "Toque nas pecas": oito linhas de borracha, formas de ate quatro blocos.
@@ -193,10 +196,24 @@ const PRIMEIRAS_FASES = [
  *
  * O pedestal que balanca e o vento moram aqui, e nao em `MATERIAL_DEBUT`,
  * porque o `PhysicsWorld` nao conhece calendario: ele recebe a amplitude e a
- * forca prontas no layout. Como as pecas, as duas estreiam ate a fase 10 - o
- * jogador conhece tudo o que o jogo tem antes de o mundo 3 comecar.
+ * forca prontas no layout.
+ *
+ * O vento estreia na fase 10, com as pecas. O pedestal que balanca estreava na
+ * 8, junto com o cristal, e a fase 8 da 1.0.3 derrubou 37% dos jogadores (45% no
+ * celular) contra 25% a 29% das vizinhas: duas estreias numa fase so, e uma
+ * delas a mecanica mais dura do jogo. Ele passou para a 11, a primeira fase
+ * depois do trecho de ensino, onde estreia sozinho.
  */
-const HAZARD_DEBUT = { swing: 8, wind: 10 };
+const HAZARD_DEBUT = { swing: 11, wind: 10 };
+
+/**
+ * De onde a amplitude do pedestal que balanca comeca a crescer.
+ *
+ * Era a propria estreia do balanco, a fase 8. A estreia mudou, a rampa nao: a
+ * amplitude entra no layout, e mexer nela trocaria o pedestal de toda fase com
+ * balanco do jogo e invalidaria as seeds assadas das fases 26 a 100.
+ */
+const BALANCO_RAMPA_DESDE = 8;
 
 /**
  * Peso de cada material quando ele entra numa torre fora do kit do tema.
@@ -228,9 +245,9 @@ const PESO_EXTRA = {
  * `SMART_RULER_FROM`.
  *
  * "Perdao" e a fracao de partidas que um jogador tocando **ao acaso** ganha,
- * medida pelo validador em seis partidas por seed (tools/generate-levels.mjs,
- * `naiveRuns`) - por isso a faixa tem meia largura de 1/6, que e o passo da
- * medida.
+ * medida pelo validador em seis partidas por seed, doze no trecho de ensino
+ * (tools/generate-levels.mjs, `naiveRuns`) - por isso a faixa tem meia largura
+ * de 1/6, que e o passo da medida mais grossa.
  *
  * Antes disto so as tres primeiras fases exigiam algo do validador, e da quarta
  * em diante o gerador ficava com a primeira seed que um jogador competente
@@ -266,11 +283,16 @@ const PESO_EXTRA = {
  * zero e ordenacao pelo menor perdao, medido, a curva que devia fechar em 13%
  * fechava em 2% a 5% - o paredao voltava, so que no fim em vez do comeco.
  *
- * `INICIO` ja foi 1,0: na fase 1 toda partida ao acaso vencia, e o funil da
- * 1.0.2 mostrou 11% dos jogadores indo embora no meio dela com so 2,3% de
- * derrota. Hoje a fase 1 pede perdao de 0,5 - metade das partidas ao acaso -
- * numa torre de 6x8 de borracha sobre pedestal de 1,5x, que medido sem filtro
- * da 0,33.
+ * `INICIO` ja foi 1,0 e depois 0,5. Com 0,5 a derrota da 1.0.3 ficou entre 18%
+ * e 28% da fase 1 a 7 - plana, e nao rampa -, e cerca de 36% de quem perde uma
+ * fase desiste nela: metade de toda a perda das dez primeiras fases veio logo
+ * depois de uma derrota. Hoje a fase 1 pede 0,85, sobre pedestal de 1,9x.
+ *
+ * A medida tem que ter resolucao para o piso segurar alguma coisa. Com seis
+ * partidas ao acaso o perdao so vale 0, 1/6, 2/6..., e as variantes assadas da
+ * 1.0.3 sairam todas em 0,50, 0,33 ou 0,17 - quase tudo 0,33 da fase 3 a 8.
+ * Ate `worldStart(2)` o validador joga doze partidas ao acaso (`naiveRuns` na
+ * configuracao): as torres dali sao curtas e baratas de simular.
  *
  * Nada disto mexe em linha, largura, material ou pedestal: sao exigencias de
  * VALIDADOR, nao de layout.
@@ -279,7 +301,7 @@ const PESO_EXTRA = {
  * @returns {[number, number, number]} piso, teto e alvo
  */
 function forgivenessBand(i) {
-  const INICIO = 0.5;
+  const INICIO = 0.85;
   const FIM = 0.12;
   const PASSO = 1 / 6;
   const k = Math.max(0, Math.min(1, i / Math.max(1, SMART_RULER_FROM - 1)));
@@ -373,6 +395,7 @@ function smartBand(i) {
  * @property {number} [targetSmart] centro da faixa do jogador competente
  * @property {number} [minPieces] o validador so aceita layout com pelo menos tantas pecas
  * @property {number} [minPar] o validador so aceita seed cuja melhor solucao pede tantos toques
+ * @property {number} [naiveRuns] partidas ao acaso por seed na medida do perdao
  * @property {number} [softened] degrau de afrouxamento aplicado
  */
 
@@ -408,8 +431,14 @@ export function levelConfig(index, soften = 0) {
   // Em cinco colunas a mesma altura perdoa bem menos - 5x13 mediu 0,17 de
   // perdao maximo -, e e por isso que a partir da fase 51, com torres de 16 a
   // 18 linhas, a chance de cinco colunas volta a cair.
+  //
+  // Cinco colunas ja apareciam a partir da fase 11. A primeira delas, a 13 da
+  // 1.0.3 - 5x12 com pedestal que balanca, bomba e TNT sobre pedestal de 1,1x -,
+  // derrubou METADE dos jogadores, nos dois tipos de aparelho. Agora a torre
+  // estreita so vem no mundo 5, e nunca com balanco antes da fase 30.
+  const cincoColunasDesde = worldStart(4);
   let width;
-  if (i < fimDoTutorial) width = 6;
+  if (i < cincoColunasDesde) width = 6;
   else if (i < 30) width = r.chance(0.4) ? 5 : 6;
   else if (i < 50) width = r.chance(0.5) ? 5 : 6;
   else width = r.chance(0.3) ? 5 : 6;
@@ -550,12 +579,17 @@ export function levelConfig(index, soften = 0) {
 
   // --- pedestal -----------------------------------------------------------
   // O pedestal comeca mais largo que a torre e encolhe ate ficar da largura
-  // dela na fase 26, como no jogo de referencia. Ja comecou em 1,9 vez a torre:
-  // nas dez primeiras fases o hexagono praticamente nao tinha como cair, e o
-  // funil da 1.0.2 mostrou o jogador saindo no meio delas sem ter perdido.
+  // dela na fase 26, como no jogo de referencia.
+  //
+  // Na 1.0.3 ele abria em 1,5x (1,3x da fase 6 a 10), e a derrota ficou entre
+  // 18% e 28% ja nas primeiras fases - com cerca de 36% de quem perde desistindo
+  // ali mesmo. O pedestal e a alavanca do perdao; a altura, a do tempo de fase.
+  // Por isso a torre continua alta e o pedestal voltou a abrir largo: 1,9x nas
+  // tres fases de roteiro, 1,7x na 4 e na 5, 1,45x da 6 a 10.
   let pedestalFrac;
-  if (i < 5) pedestalFrac = 0.75;
-  else if (i < fimDoTutorial) pedestalFrac = 0.65;
+  if (i < 3) pedestalFrac = 0.95;
+  else if (i < 5) pedestalFrac = 0.85;
+  else if (i < fimDoTutorial) pedestalFrac = 0.72;
   else if (i < 25) pedestalFrac = 0.55;
   else if (i < 50) pedestalFrac = 0.5;
   else pedestalFrac = 0.46;
@@ -565,12 +599,15 @@ export function levelConfig(index, soften = 0) {
   // Os dois estreiam ate a fase 10, com o minimo de amplitude e de forca, e
   // dali em diante aparecem em uma fase a cada cinco, subindo ate uma em duas.
   // Nunca juntos antes da fase 30: pedestal que foge e rajada que empurra, com
-  // torre alta e pedestal estreito, e uma fase que so o solucionador vence.
+  // torre alta e pedestal estreito, e uma fase que so o solucionador vence. Pela
+  // mesma conta, antes da 30 o balanco tambem nao entra em torre de cinco
+  // colunas. O sorteio vem ANTES da condicao de largura de proposito: pular o
+  // sorteio deslocaria todos os seguintes, e o layout das fases 26 a 29 mudaria.
   const chanceMecanica = Math.min(0.5, 0.2 + (level - fimDoTutorial) * 0.005);
   let oscillate = 0;
   if (level === HAZARD_DEBUT.swing) oscillate = 0.35;
-  else if (level > HAZARD_DEBUT.swing && r.chance(chanceMecanica)) {
-    oscillate = 0.35 + Math.min(0.55, (level - HAZARD_DEBUT.swing) * 0.012);
+  else if (level > HAZARD_DEBUT.swing && r.chance(chanceMecanica) && !(width < 6 && level < 30)) {
+    oscillate = 0.35 + Math.min(0.55, (level - BALANCO_RAMPA_DESDE) * 0.012);
   }
   let wind = 0;
   const lado = r.chance(0.5) ? 1 : -1;
@@ -649,6 +686,9 @@ export function levelConfig(index, soften = 0) {
   // Duas reguas, cada uma onde ela mede: perdao ate a fase 25, jogador
   // competente da 26 ao fim. Nenhuma fase usa as duas, senao elas se brigam.
   if (i < SMART_RULER_FROM) {
+    // Doze partidas ao acaso no trecho de ensino: com seis o perdao so assume
+    // sete valores e o piso da faixa nao separa uma seed da outra.
+    if (i < fimDoTutorial) config.naiveRuns = 12;
     const [perdaoMin, perdaoMax, perdaoAlvo] = forgivenessBand(i);
     if (config.minForgiveness === undefined) config.minForgiveness = perdaoMin;
     config.maxForgiveness = Math.max(config.minForgiveness, perdaoMax);

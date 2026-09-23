@@ -13,7 +13,6 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --gold: #ffd23c;
   --starOff: rgba(255, 255, 255, 0.22);
-  --heart: #ff4d6d;
   /* Valores de partida. applyUiTheme() sobrescreve tudo isto com a paleta do
      tema da fase assim que a primeira cena carrega. */
   --veil-rgb: 6, 3, 15;
@@ -78,10 +77,15 @@ html, body {
 .screen.on { display: flex; }
 /* Na tela de jogo o canvas precisa receber o toque em quase toda a area. So
    os controles de verdade capturam ponteiro; barras e espacadores nao, senao
-   o meio da tela fica morto e o jogador nao consegue tocar nas pecas. */
+   o meio da tela fica morto e o jogador nao consegue tocar nas pecas.
+   Todo controle de verdade tem que estar na lista abaixo: o `none` e herdado,
+   e quando voltar e pausar viraram `.iconbtn` sem entrar aqui, o toque passou
+   a atravessar os dois e cair no canvas. No desktop ninguem viu - Esc e Espaco
+   pausam pelo teclado -, e no celular nao havia saida da fase. */
 .screen.pass,
 .screen.pass > * { pointer-events: none; }
 .screen.pass .btn,
+.screen.pass .iconbtn,
 .screen.pass .badge,
 .screen.pass .level-pill { pointer-events: auto; }
 
@@ -132,6 +136,10 @@ html, body {
   color: #fff;
   box-shadow: 0 8px 24px rgba(var(--veil-rgb), 0.45);
 }
+/* Foco de teclado: setas e WASD andam pelos botoes (main.js, onKey). So o foco
+   vindo do teclado ganha anel - o toque e o clique continuam limpos. */
+button:focus { outline: none; }
+button:focus-visible { outline: 3px solid var(--accent2); outline-offset: 3px; }
 .btn.big { min-height: 56px; font-size: 17px; padding: 0 30px; }
 .btn.icon { width: 44px; min-height: 44px; padding: 0; font-size: 18px; }
 .btn.wide { width: 100%; }
@@ -171,7 +179,6 @@ html, body {
 }
 .badge .ico { font-size: 14px; line-height: 1; }
 .badge.coins .ico { color: var(--gold); }
-.badge.hearts .ico { color: var(--heart); }
 .badge small { color: var(--ink-soft); font-weight: 600; font-size: 11px; }
 
 .level-pill {
@@ -217,6 +224,11 @@ html, body {
 .card p { margin: 0 0 14px; color: var(--ink-soft); font-size: 14px; line-height: 1.45; }
 .card .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .card .row .btn { flex: 1 1 130px; }
+/* Os dois videos do cartao de derrota dividem a fileira de baixo, abaixo do
+   botao padrao. Texto comprido (alemao, turco) quebra em duas linhas em vez de
+   estourar o botao. */
+.card .ad-row { margin-top: 10px; }
+.card .ad-row .btn { white-space: normal; line-height: 1.15; font-size: 14px; padding: 8px 14px; }
 
 /* ------------------------------------------------------- tela de vitoria */
 /* Cartao simples: coroa, titulo, estrelas e as duas recompensas em texto. O
@@ -667,13 +679,16 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
 .stat .ico { font-size: 14px; line-height: 1; }
 .stat small { color: var(--ink-soft); font-weight: 400; font-size: 12px; }
 .stat.coins .ico { color: var(--gold); }
-.stat.hearts .ico { color: var(--heart); }
 
 .iconbtn {
+  position: relative;
   width: 34px; height: 34px; padding: 0;
   border: 0; background: transparent; cursor: pointer;
   color: var(--ink-soft); font-size: 19px; line-height: 1;
 }
+/* O desenho tem 34 px, mas o dedo precisa de 44: a area de toque cresce por
+   fora sem mexer no layout do HUD nem no espaco que a camera reserva. */
+.iconbtn::before { content: ''; position: absolute; inset: -5px; }
 .iconbtn:hover { color: var(--ink); }
 
 .home-foot {
@@ -696,6 +711,10 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
 .seg button { height: 32px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--edge);
   background: var(--wash); color: var(--ink-soft); font: 700 12px/1 var(--font); cursor: pointer; }
 .seg button.on { color: var(--ink); border-color: var(--accent2); background: rgba(51, 225, 255, 0.14); }
+/* Sete idiomas nao cabem numa fileira ao lado do rotulo: o seletor desce para
+   uma linha propria e quebra em quantas precisar. */
+.settings-row:has(#segLang) { flex-wrap: wrap; row-gap: 8px; }
+#segLang { flex-wrap: wrap; justify-content: flex-end; }
 
 /* ------------------------------------------------- celebracao de fim de fase */
 /* Sobre a cena, sem cartao: o que interessa ver e a torre estourando atras. */
@@ -759,6 +778,9 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   color: var(--ink-soft);
 }
 .flow-what:empty { display: none; }
+/* Derrota sem parada: o mesmo selo, com o "Quase!" na tinta do tema. O dourado
+   e a cor do premio, e aqui nao ha premio nenhum. */
+.flow.miss .flow-coins { color: var(--ink); }
 /* Nao ha animacao de saida: quem tira o selo de cena e o corte por cima. */
 @keyframes flowIn {
   from { transform: scale(0.82); opacity: 0; }
@@ -843,6 +865,10 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   opacity: 1; transition: opacity 0.5s ease; pointer-events: none; z-index: 20;
 }
 .tut.hide { opacity: 0; }
+/* Estreia de peca: o desenho dela, o nome em destaque e a dica curta. */
+.tut.com-icone { display: flex; align-items: center; gap: 10px; text-align: left; padding: 6px 16px 6px 8px; border-radius: 22px; }
+.tut-ico { width: 40px; height: 40px; flex: none; }
+.tut b { color: var(--ink); font-weight: 800; }
 
 #loader {
   position: fixed; inset: 0; display: grid; place-items: center;

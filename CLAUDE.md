@@ -28,7 +28,7 @@ node tools/generate-levels.mjs --levels 1-20     # só um trecho; o resto do arq
 ```
 
 Verificação — **todas as ferramentas de `tools/` sobem `google-chrome --headless=new`
-em uma porta de debug fixa (9222/9333/9555/9666/9777/9888), então rode uma por vez**,
+em uma porta de debug fixa (9222/9333/9444/9555/9666/9777/9888), então rode uma por vez**,
 e todas precisam de um servidor já no ar:
 
 ```bash
@@ -39,7 +39,20 @@ npm run playsweep        # joga fases de verdade no navegador; SWEEP_URL :4173
 SWEEP_LEVELS=42,43 npm run playsweep             # só essas fases
 node tools/playtest.mjs http://127.0.0.1:5173/prototypes/neon.html
 node tools/shot.mjs '[{"name":"home","url":"...","w":430,"h":880,"mobile":true}]'   # PNGs em /tmp/shots
+npm run thumbnail        # thumbnails da Poki em marketing/thumbnail/ (~60 s)
 ```
+
+`npm run thumbnail` é a exceção à regra do servidor no ar: copia o projeto para uma
+pasta temporária, faz o próprio build, serve em 127.0.0.1:4190 e captura quadro a quadro
+com relógio virtual — 60 fps cravados e o mesmo arquivo a cada execução. Sai o
+`.mp4` animado (1080x1080, 5,55 s, sem áudio) em três cenas (toque no mundo 1, TNT,
+pouso e cascata), duas estáticas 1080x1080 e uma folha de quadros; as opções estão no
+topo de `tools/thumbnail.mjs`. A máquina de desenvolvimento vive perto do limite de
+memória e o `earlyoom` mata o maior processo: a ferramenta sobe o próprio
+`oom_score_adj` para 1000 (Chrome, vite e ffmpeg herdam), grava os quadros em
+`~/.cache/hexadrop-thumb/` e não em `/tmp`, que aqui é RAM, e confere a memória antes
+de cada cena. Rode de novo depois de mexer em arte, e depois de `npm run levels`, porque o roteiro
+escolhe as fases pelas seeds atuais.
 
 `npm run check` roda `verify-build` (padrão :5173) e `sdkcheck` (padrão :4173): ou
 deixe `dev` e `preview` no ar ao mesmo tempo, ou aponte `VERIFY_URL` para o preview.
@@ -94,7 +107,7 @@ pergunta o tema de um mundo usa `worldTheme(w)`, que é `w % 9`: o mundo 10 volt
 puzzle e o 20 é o classic. O índice direto deixaria os mundos 10 a 20 sem tema, e o
 `THEMES[theme].label` de `main.js` quebraria a tela.
 
-O jogo já teve quinze mundos de dez fases, e antes disso um mundo 1 de vinte. Dois
+O jogo já teve quinze mundos de dez fases, e antes disso um mundo 1 de vinte. Três
 funis da Poki guiaram as trocas:
 
 - **1.0.1, 719 partidas.** A perda de uma fase para a seguinte era **exatamente** a
@@ -107,6 +120,19 @@ funis da Poki guiaram as trocas:
   1,9 vez a torre, que se vencia tocando ao acaso. Daí os mundos de cinco (cenário novo
   a cada cinco fases), tudo estreando até a fase 10, borracha no mundo 1, pedestal
   estreito e torre mais alta.
+- **1.0.3, 563 partidas; Player Fit Test reprovado** (média 2m48, 21% de engajados —
+  a Poki conta como engajado quem passa de 3 min, e a barra é média ≥ 3 min **e**
+  ≥ 25%). A lei continuou, mas o "tédio" da 1.0.2 não se confirmou. A derrota ficou
+  entre 18% e 28% da fase 1 à 7, **plana**, e cerca de 36% de quem perde uma fase
+  desiste nela: metade da perda das dez primeiras fases veio logo depois de uma
+  derrota, e 61% das partidas viram o cartão de derrota. Cortado por aparelho, o
+  abandono no meio da fase 1 é coisa do **desktop** (18%, contra 5,6% no celular),
+  onde a câmera deixava o pedestal fora da janela; o celular perde por derrota
+  (22% a 45% nas fases 1 a 8). Picos: a fase 8 (cristal e balanço estreando juntos,
+  37%) e a 13 (a primeira torre de cinco colunas, com balanço, bomba e TNT, 50%).
+  Daí a 1.0.4: derrota sem parada, pedestal largo de novo no começo, câmera pelo tipo
+  de ponteiro e dica automática. **Corte o funil por aparelho** (filtro Device
+  Category do painel): o total esconde que cada um perde por um motivo.
 
 **Altura é a alavanca do tempo de fase; pedestal e altura decidem o perdão.** Medido
 com seis colunas, sobre o pedestal largo antigo:
@@ -133,12 +159,16 @@ torre de 35 fica de pé sozinha, mas o jogador competente do solucionador não v
 nenhuma de 24 ou 32 linhas, e cada partida simulada ali custa de 8 a 13 s. A rampa: 8
 linhas na fase 1, 12 na 10, 14 na 20 e na 27, 17 na 50, 18 da 70 em diante; a fase
 final de cada mundo ganha **uma** linha. Em **cinco** colunas a mesma altura perdoa bem
-menos — 5x13 mediu 0,17 de perdão máximo —, então o trecho de ensino é todo em seis
-colunas e, a partir da fase 51, a chance de cinco colunas volta a 30%.
+menos — 5x13 mediu 0,17 de perdão máximo —, então os quatro primeiros mundos são todos
+em seis colunas (`worldStart(4)`), cinco colunas nunca saem com pedestal que balança
+antes da fase 30 e, a partir da fase 51, a chance de cinco colunas volta a 30%. Elas já
+começavam na fase 11, e a primeira delas, a 13 da 1.0.3, derrubou metade dos jogadores.
 
-**O pedestal** vai de 1,5 vez a largura da torre (fases 1 a 5) a 1,3 (6 a 10), 1,1 (11
-a 25), 1,0 — a largura da torre, como na referência — (26 a 50) e 0,92 (51 a 100). Nas
-dez primeiras fases ele já foi 1,9 vez a torre.
+**O pedestal** vai de 1,9 vez a largura da torre (fases 1 a 3) a 1,7 (4 e 5), 1,45 (6 a
+10), 1,1 (11 a 25), 1,0 — a largura da torre, como na referência — (26 a 50) e 0,92 (51
+a 100). Na 1.0.3 ele abria em 1,5 e 1,3, e a derrota do começo ficou entre 18% e 28%:
+o pedestal é a alavanca do perdão, a altura a do tempo de fase, então a torre continuou
+alta e só o pedestal voltou a abrir largo.
 
 **Torre grande não basta: `minPar` é o piso de toques.** O validador escolhe a
 variante mais próxima do *alvo de perdão*, e nada nesse critério olha para o tamanho
@@ -153,10 +183,11 @@ o zera no degrau 3, onde o objetivo já é só a fase existir.
 `levelgen.js`, aplicado por cima da curva). Elas fixam a torre — 6x8, 6x8 e 6x9 de
 borracha —, as barras e duas exigências que só o gerador lê: `minPieces` (10: nada de
 torre só de barras) e `minPar` (4). O roteiro já exigiu `minForgiveness: 1`, toda
-partida ao acaso vencendo, e foi exatamente isso que o funil da 1.0.2 condenou; hoje o
-perdão delas sai da faixa comum, que abre em 0,5. Toda fase da régua de perdão (1 a
-25) tem orçamento de seeds seis vezes maior e joga as políticas ingênuas duas vezes
-cada.
+partida ao acaso vencendo, e depois a faixa comum abrindo em 0,5; hoje ela abre em
+0,85. Toda fase da régua de perdão (1 a 25) tem orçamento de seeds seis vezes maior e
+joga as políticas ingênuas duas vezes cada — quatro vezes até a fase 10 (`naiveRuns:
+12` na configuração). Com seis partidas o perdão só assume sete valores, e as variantes
+da 1.0.3 saíram quase todas em 0,33 da fase 3 à 8: o piso não separava nada.
 
 `GATE_STARS` (`game/content.js`) tem uma entrada por mundo e foi re-escalado pela
 mesma fração do que já estava disponível em cada ponto, para o aperto percebido
@@ -194,7 +225,7 @@ Duas regras que nasceram de medição:
   apoio. Ali o objetivo é só a fase existir, e um degrau 3 feito de gelo sairia mais
   difícil que o original.
 
-**Tudo estreia até a fase 10** — `MATERIAL_DEBUT` (`physics/materials.js`) para as
+**Tudo estreia até a fase 11** — `MATERIAL_DEBUT` (`physics/materials.js`) para as
 peças e `HAZARD_DEBUT` (`levelgen.js`) para as mecânicas que não são material:
 
 | fase | estreia |
@@ -204,9 +235,16 @@ peças e `HAZARD_DEBUT` (`levelgen.js`) para as mecânicas que não são materia
 | 5 | obsidiana |
 | 6 | vidro e metal |
 | 7 | bomba e espuma |
-| 8 | cristal e pedestal que balança |
+| 8 | cristal |
 | 9 | TNT |
 | 10 | cera e vento |
+| 11 | pedestal que balança |
+
+O pedestal que balança é a exceção: estreava na 8, junto com o cristal, e a fase 8 da
+1.0.3 derrubou 37% dos jogadores (45% no celular). Ele estreia sozinho na 11, a
+primeira depois do trecho de ensino. A amplitude continua crescendo a partir da 8
+(`BALANCO_RAMPA_DESDE`): ela entra no layout, e mover a rampa junto trocaria o pedestal
+de toda fase com balanço e invalidaria as seeds assadas das fases 26 a 100.
 
 A regra antiga — cada material estreia no mundo anterior àquele em que vira dominante —
 espalhava as estreias pelo jogo inteiro (a TNT só na fase 81), e o jogador do funil ia
@@ -222,8 +260,17 @@ embora antes de ver novidade. Três consequências que precisam continuar valend
   limite toda torre sortearia os onze materiais e a base cairia para um quinto das
   peças — o fim da peça que define o mundo.
 - **O cartão do tutorial mostra todas as estreias da fase, em fila** (`showTutorial`
-  em `main.js`). As fases 1 a 3 continuam com os textos fixos de toque, objetivo e
-  estrelas, e por isso as estreias com cartão começam na 4.
+  em `main.js`). As fases 1 a 3 continuam com os textos fixos — objetivo e toque em
+  fila na 1, objetivo na 2, estrelas na 3 —, e por isso as estreias com cartão começam
+  na 4. Cada estreia mostra **a peça**, uma célula pintada pelo `SpriteCache` da fase
+  (`debutIcon`), ou um ícone desenhado para o balanço e o vento (`hazardIcon`), com o
+  nome em destaque e a dica curta — e não mais "Material novo: Metal - Pesadíssima…".
+  A Poki: *"Walls of text intimidate, and English text excludes a lot of our global
+  audience. Use images, animations, and gestures instead."* Nas fases 1 a 3 a dica
+  automática vem com **a mão tocando a peça** (`render/hand.js`, ligada por
+  `scene.tapHand`): desce, aperta e solta, com uma onda saindo do ponto tocado, na
+  célula da peça mais perto do meio dela (`hintSpot`; o meio da caixa cai no vazio de
+  um L).
 
 Depois da estreia, pedestal que balança e vento aparecem em uma fase de cada cinco,
 subindo até uma em duas, e nunca os dois juntos antes da fase 30.
@@ -308,9 +355,10 @@ entrega 0,16 ali, e um piso desses no fim obrigaria o validador a afrouxar quase
 **São duas réguas, e cada uma vale onde ela mede** (`SMART_RULER_FROM`, que é
 `worldStart(5)` — a fase 26, e não um número cravado):
 
-- **Perdão** (vitórias de um jogador tocando ao acaso) nas fases 1 a 25, de 0,5 a 0,12.
-  É a régua que importa onde a retenção se decide. Já abriu em 1,0 — e o funil da 1.0.2
-  mostrou o jogador saindo no meio da fase 1 sem ter perdido.
+- **Perdão** (vitórias de um jogador tocando ao acaso) nas fases 1 a 25, de 0,85 a 0,12.
+  É a régua que importa onde a retenção se decide. Já abriu em 1,0 e depois em 0,5 —
+  e com 0,5 a 1.0.3 derrubou de 18% a 28% dos jogadores em cada uma das sete
+  primeiras fases.
 - **Taxa do jogador competente** da fase 26 em diante. O perdão satura ali: a torre
   passa de 14 linhas, o pedestal encosta na largura da torre e toda peça especial já
   estreou. Na versão de 150 fases a mesma saturação só chegava no mundo 8, e no mundo
@@ -456,7 +504,14 @@ onde o jogador quer ir. Escondido, "próxima" ocupa a fileira inteira sozinha �
 
 O ritmo acelera pela posição na fila e pelo tempo restante, com teto em
 `BONUS_MAX_TIME`: com trinta peças sobrando a celebração aperta o passo em vez de
-arrastar. `tools/playsweep.mjs` espera a tela sair de `game` antes de anotar o
+arrastar. **Um toque durante a celebração aperta mais** (`Session.hurryBonus`: uma peça
+a cada dois quadros, assentar final pela metade), e um toque com o selo do fluxo já na
+tela vai direto para a fase seguinte (`skipWait` em `main.js`, com piso de 300 ms para o
+mesmo toque não engolir o selo). A Poki mede que *"games where the player can constantly
+perform an action outperform games with waiting and downtime"*, e entre vencer e a fase
+seguinte havia até ~5 s só de espera. Medido na fase 6: a cascata de 2,3 s caiu para 1 s
+e o selo de 1 s para 0,3 s. O toque não pula a contagem: toda peça intacta ainda estoura
+e ainda vale moeda. `tools/playsweep.mjs` espera a tela sair de `game` antes de anotar o
 resultado — sem isso toda vitória com muitas peças vira "ainda jogando"; é por isso
 que ele desliga o fluxo contínuo (abaixo).
 
@@ -487,8 +542,30 @@ moedas voam para o contador `#gameCoins` do HUD, e um segundo depois a fase segu
 entra atrás de um corte de 200 ms (`.wipe`). Ninguém clica em nada.
 
 `flowContinues()` só para na **fase 100** — nem o fim de mundo abre o cartão de vitória.
-Ele ainda aparece na fase final, quando a automação desliga o fluxo (`flowLevels`) e,
-claro, na derrota, que não mudou.
+Ele ainda aparece na fase final e quando a automação desliga o fluxo (`flowLevels`).
+
+**Nas fases 1 a 3, perder não existe** (`FASES_SEM_DERROTA` em `main.js`, as três do
+roteiro de ensino). Quando o hexágono cai, `Session.step` chama `rewind()` em vez de
+encerrar: a torre volta ao `checkpoint`, o estado de antes do último toque dado **com o
+hexágono parado** (um toque dado com ele já tombando levaria a volta para dentro da
+queda). Nada de `fail` nem `gameplayStop` — sai só `measure('level', N, 'rewind')`, que
+cai na aba Other —, o selo "Quase!" passa sem texto e a dica acende em 1,2 s. A Poki cita
+o Subway Surfers: *"players can't die during onboarding; they just try again until it
+clicks."* O toque que derrubou tudo continua contado, e as estrelas que a queda tinha
+cruzado apagam de novo.
+
+**Perder também não abre tela, nas duas primeiras vezes.** Na derrota, `onLevelEnd`
+manda o `fail` e chama `flowRetry()`: o mesmo selo, agora com
+"Quase!" na tinta do tema (`.flow.miss`), e ~900 ms depois `retryLevel()` passa pelo
+intervalo comercial, pelo corte e recomeça a **mesma variante**. Da terceira derrota
+seguida na mesma fase em diante (`RETRIES_SEM_CARTAO`) o cartão de derrota volta, porque
+é ali que embaralhar e pular fase têm trabalho a fazer. Na 1.0.3 o cartão de derrota
+era a única parada em tela cheia do jogo, 61% das partidas passaram por ele e cerca de
+36% de quem perdia uma fase desistia dela. No cartão, 63% tocavam em "tentar de novo"
+e 13% em "embaralhar": por isso o recomeço automático repete o layout. O recomeço
+acende a dica em 1,2 s (`DICA_NO_RECOMECO_S`), e o cartão que ainda existe mora em
+`loseTimer`, com guarda: sem ela, um toque em voltar nos 650 ms depois da derrota abria
+o cartão por cima da tela seguinte. Um toque no selo "Quase!" adianta o recomeço.
 
 A medida vem de um playtest da Poki relatado por outro desenvolvedor: tirando as telas
 de "fase concluída", o tempo médio de sessão dele foi de 3 min 49 s para 7 min 05 s em
@@ -523,15 +600,19 @@ Quatro coisas que esse fluxo precisa respeitar:
   do mundo decide se ela fica em cima ou embaixo; uma fileira própria no selo era o mesmo
   recado duas vezes, às vezes colado nela.
 - **O HUD fica fora do ar da celebração até a fase seguinte.** `hideBonusCounter(false)`
-  esconde a contagem sem devolver `gameBack` e `gamePause`; quem os devolve é o
-  `hideBonusCounter()` de `startLevel`. `pauseLevel()` também recusa enquanto
-  `pendingWin`, `flowTimer` ou `advancing` estiverem de pé — senão `Escape` entrava por
-  trás dos botões desabilitados.
+  esconde a contagem sem devolver `gameBack` e `gamePause`, e `flowRetry()` os desliga
+  do mesmo jeito; quem os devolve é o `hideBonusCounter()` de `startLevel`.
+  `pauseLevel()` também recusa enquanto `pendingWin`, `flowTimer`, `advancing` ou
+  `loseTimer` estiverem de pé, e com a sessão já terminada — senão `Escape` entrava por
+  trás dos botões desabilitados, ou escondia o cartão de derrota a caminho e deixava uma
+  fase terminada sem saída.
 
-`flowLevels = false` é o que mantém o `playsweep` medindo uma fase por vez. Quem cobre o
-caminho do fluxo é o `sdkcheck`: ele joga a fase 1 (a 2 tem que entrar sozinha), a 20 e
-a 30 (fronteiras de mundo, que também não param), e confere que só a fase 100 para o
-fluxo.
+`flowLevels = false` é o que mantém o `playsweep` medindo uma fase por vez — ele desliga
+também a derrota sem parada, e cada derrota volta a abrir o cartão. Quem cobre o
+caminho do fluxo é o `sdkcheck`: ele joga a fase 1 (a 2 tem que entrar sozinha), força
+três derrotas seguidas na 2 (as duas primeiras recomeçam sozinhas com `fail` → `start`,
+a terceira abre o cartão), joga a 20 e a 30 (fronteiras de mundo, que também não param),
+e confere que só a fase 100 para o fluxo.
 
 ### Renderização
 
@@ -549,9 +630,19 @@ São cinco, e cada um existe porque um material precisava dele:
 - `toon-hq` — contorno mais grosso com um filete claro logo por dentro, que lê como
   chapa polida: metal e obsidiana.
 - `gelatina` — corpo quase transparente com miolo claro e um reflexo oval: gelo,
-  vidro, cristal, cera, espuma e borracha.
-- `glow` — o tubo de neon dos **mundos 1 (puzzle) e neon**, copiado do jogo de
-  referência medindo a foto pixel a pixel.
+  vidro, cristal, cera, espuma e borracha — e **todas as peças do mundo 1**.
+- `glow` — o tubo de neon do **mundo neon**, copiado do jogo de referência medindo a
+  foto pixel a pixel.
+
+**O mundo 1 é de gelatina desde a 1.0.5**, pelo campo `pecas` do tema (`themes.js`), que
+força um estilo só para todas as peças por cima da escolha por material de `lookFor()` —
+e faz `usaTubo()` responder de acordo. Até a 1.0.4 ele era o tubo, e o tubo era a parte
+do jogo mais parecida com a referência, justo na primeira impressão e na arte da
+thumbnail; a Poki recusa jogo que *"overlaps too much with what's already on Poki"*. O
+Evandro escolheu entre cinco estilos desenhados na fase 5 (tubo, `toon`, `gelatina`,
+`toon-hq`, `toon-cel`). O `glow` do puzzle desceu para **0,4**, o ponto exato em que nada
+muda além das peças: acima de 0,45 toda peça que não é tubo ganha o halo borrado de
+`paintPiece`, e abaixo de 0,4 o hexágono cai no ramo de tema claro e ganha sombra.
 
 **O contorno é a própria peça, um passo adiante** (`contorno()` em `sprites.js`), e não
 uma tinta preta cravada: peça clara escurece 46%, peça já escura **clareia** 34%. A
@@ -620,9 +711,9 @@ O miolo é translúcido de propósito (50% do fundo passa). Opaco demais a torre
 um bloco de cor; transparente demais duas peças vizinhas viram a mesma mancha — o
 que separa as duas é o fio, não a opacidade.
 
-No mundo puzzle a cor do fio não vem do material: cada peça sorteia uma das sete cores
+No mundo puzzle a cor da base não vem do material: cada peça sorteia uma das sete cores
 da marca pela posição de origem (`PUZZLE_BLOCK_COLORS`), que é o que dá o arco-íris da
-torre. Por isso a posição entra na chave do cache de sprites — sem ela, todas as barras
+torre — no fio, quando era tubo, e no corpo, desde que é gelatina. Por isso a posição entra na chave do cache de sprites — sem ela, todas as barras
 iguais sairiam da mesma cor.
 
 A **bomba** é desenhada inteira dentro de **uma célula**, a mais próxima do centro da
@@ -640,7 +731,7 @@ TNT: a bomba espera o dedo do jogador e o vidro não espalha nada.
 
 `src/render/hexmodels.js` separa o **estilo de construção** do hexágono da cor, como
 `lookFor()` faz com as peças. `paintHexModel(ctx, cx, cy, r, modelo, cores, glow)`
-tem onze modelos (`liso`, `cristal`, `neon`, `placa`, `nucleo`, `gema`, `favo`,
+tem doze modelos (`joia`, `liso`, `cristal`, `neon`, `placa`, `nucleo`, `gema`, `favo`,
 `vidro`, `origami`, `ouro`, `selo`); a vitrine deles é `prototypes/hexagonos.html`,
 que desenha com a mesma função, sobre os mesmos temas e as mesmas cores de skin.
 
@@ -653,7 +744,7 @@ de todas as fases já validadas. A variação vem do miolo, das arestas, do orna
 do brilho.
 
 **A skin escolhe o modelo**, no campo `model` de `SKINS` (`game/content.js`); ausente
-vale `liso`. `Sprites.hexagon()` não desenha mais hexágono nenhum: chama
+vale `joia`. `Sprites.hexagon()` não desenha mais hexágono nenhum: chama
 `paintHexModel` com a cor da skin — ou a do tema, quando a skin não define a sua — e
 carimba `skin.mark` por cima, porque a marca é ornamento **sobre** o modelo, não parte
 dele (o circuito e o véu da Aurora continuam valendo em qualquer construção). O Ouro
@@ -668,10 +759,27 @@ quadrado arredondado com o azul do tema neon cravado — a skin "Original" apare
 mesmo no mundo puzzle, onde o hexágono é amarelo, nenhuma tinha forma de hexágono, e a
 loja vendia cor.
 
-A distribuição atual: `classic → liso` (o hexágono de sempre, para quem nunca entrou na
-loja não ver nada mudar), `ember → nucleo`, `mint → vidro`, `violet → cristal`,
-`gold → ouro`, `circuit → placa`, `aurora → gema`, `shadow → selo`. Sobram `neon`,
-`favo` e `origami` sem skin — cada um é uma entrada nova em `SKINS`, nada mais.
+A distribuição atual: `classic → joia`, `ember → nucleo`, `mint → vidro`,
+`violet → cristal`, `gold → ouro`, `circuit → placa`, `aurora → gema`, `shadow → selo`.
+Sobram `liso`, `neon`, `favo` e `origami` sem skin — cada um é uma entrada nova em
+`SKINS`, nada mais.
+
+**O padrão é a joia chapada, e não mais o `liso`.** O `liso` era um degradê radial com o
+`core` quase branco no meio, e o que o jogador via era um disco claro dentro de uma peça
+amarela — uma lâmpada —, cercado por um halo borrado que as peças do mundo 1 já não
+tinham. O Evandro achou amador. A `joia` tem seis facetas em tons chapados (luz de
+cima) em volta de uma mesa central, contorno fino por dentro da silhueta e **nenhum
+halo, centelha ou mancha redonda**: o que a separa da torre é ser um objeto sólido no
+meio de peças de contorno. Foi escolhida olhando quatro candidatas desenhadas na fase 1
+de verdade — tubo aceso, emblema, joia e com rosto.
+
+A skin Original continua **na cor de cada mundo** (e não amarela fixa: essa também foi
+posta lado a lado e perdeu). Como só ela lê as cores do tema, o `hexagon.fill` de
+`themes.js` é o **corpo da joia** e tem que ser opaco e saturado: translúcido o hexágono
+some no céu, claro demais vira adesivo pálido. Em sete temas ele repete o `stroke`;
+puzzle e rústico ficam com o `fill` próprio. O `stroke` continua pintando o `--w-hex` da
+interface. O contorno escurece o corpo (clareia se ele for escuro), como o das peças, com
+limiar mais baixo que o de `sprites.js` para o azul do clássico escurecer como os outros.
 
 ### A tela de fases
 
@@ -771,6 +879,21 @@ pancada forte". A cera é assinatura da lava e tempero raro nos outros mundos, p
 em `levelConfig`, e não por uma bandeira no `LevelLayout` — assim `PhysicsWorld` segue
 sem conhecer tema.
 
+### Idiomas
+
+Sete: `en`, `pt`, `es`, `fr`, `it`, `de` e `tr` (`core/i18n.js`), escolhidos pela ordem
+da Poki — *"English, French, Italian, German, Spanish"* e *"We recommend adding Turkish
+to this first batch"* —, com o idioma do navegador detectado pelo prefixo da tag.
+Todas as tabelas têm as mesmas chaves de `en`; chave que falta cai para o inglês, e
+chave que não existe em nenhuma aparece crua na tela. Português e espanhol levam acento
+em **toda** string exibida (até a 1.0.4 saíam sem nenhum: "Leve o hexagono ate a
+plataforma"); os comentários de código continuam em ASCII. O nome do mundo também passa
+pelo i18n (`themeLabel()` em `main.js`, chaves `theme*`): o `label` de `themes.js` é só o
+nome interno, e era ele, em português, que aparecia no HUD, na pausa e no mapa para
+qualquer idioma. Botão com texto comprido (alemão, turco) quebra em duas linhas na
+fileira dos vídeos do cartão de derrota, e o seletor de idioma dos ajustes quebra em
+quantas linhas precisar.
+
 ### Duas versoes: Poki e lisa
 
 O alvo do build entra por `VITE_PLATAFORMA` e vive em `src/core/platform.js`.
@@ -825,24 +948,42 @@ Regras de evento que `tools/sdkcheck.mjs` cobra:
   intervalo acontecer — sem esse segundo trecho ele não veria intervalo nenhum e as
   regras de ordem acima passariam sem conferir nada.
 
-No cartão de derrota o vídeo é **pular fase**, ao lado de "tentar de novo", que é
-maior e gratuito. Pular não dá estrela, então o portão do mundo seguinte continua
-cobrando o que cobrava: o vídeo adianta o caminho, nunca o progresso. **Não existe
-botão de encher corações** — eles voltam sozinhos com o tempo e, sem eles, o jogador
-continua jogando com metade do prêmio. Na homologação o jogo **não avisa** que os corações
-acabaram — nem no selo do fluxo nem nos cartões (`noHeartsBody` segue no i18n, sem
-uso); o prêmio pela metade continua valendo, em silêncio.
+No cartão de derrota há dois vídeos, **voltar uma jogada** e **pular fase**, lado a lado
+e **abaixo** de "tentar de novo", que ocupa a fileira de cima sozinho, maior e gratuito
+(*"standard button equal or larger size than reward button"*, *"positioned next to or
+above"*). Voltar uma jogada é o `Session.rewind()` das fases de ensino, pago: o "revive"
+que a Poki põe no topo das ajudas, e o único vídeo que cabe no momento em que o jogador
+mais quer ajuda — com o fluxo contínuo, dobrar prêmio só existe na fase 100. Ele só
+aparece quando há `checkpoint` (sem jogada, voltar seria o "tentar de novo" gratuito),
+devolve a fase em estado `ready` — o `gameplayStart` sai no primeiro toque, não ao fechar
+o vídeo — e manda um `start` novo, porque o `fail` daquela tentativa já saiu e a Poki não
+aceita `complete` e `fail` na mesma. Pular não dá estrela, então o portão do mundo
+seguinte continua cobrando o que cobrava: o vídeo adianta o caminho, nunca o progresso.
+
+**Não há mais corações** (1.0.5). Eles eram "suaves" — acabando, o prêmio caía pela
+metade —, mas o efeito era invisível, porque o jogo já não avisava que tinham acabado, e
+o contador era um segundo recurso ao lado das moedas no HUD. A Poki pede economia com uma
+moeda só. Quem tinha comprado o "coração extra" recebe as moedas de volta ao carregar o
+save (`Progress`), e os campos velhos somem dele.
 
 Na versão lisa `.btn.ad` some por CSS, então lá o pular vira botão comum liberado
-depois de três derrotas, e o bônus diário sai sem vídeo. Quem decide a classe é o JS
-(`skip.classList.toggle('ad', COM_ANUNCIOS)`), e não o HTML: com a classe cravada no
+depois de três derrotas, voltar uma jogada sai de graça e o bônus diário sai sem vídeo.
+Quem decide a classe é o JS (`skip.classList.toggle('ad', COM_ANUNCIOS)`), e não o HTML: com a classe cravada no
 markup, o botão de bônus diário apagava o rodapé inteiro do mapa na versão lisa.
 
 Vídeo recompensado só por escolha explícita do jogador, sempre ao lado de um botão
 padrão de tamanho igual ou maior, e a recompensa só vale quando o retorno é
-estritamente `true`. Nada de vídeo como condição para progredir: os corações são
-"suaves" — sem corações o jogador continua jogando e só ganha metade das recompensas
-(`game/progress.js`).
+estritamente `true`. Nada de vídeo como condição para progredir.
+
+**O SDK só está pronto quando o `init` responde** (`poki.ready`), resolvendo ou
+rejeitando — rejeitar é o próprio SDK avisando de bloqueador, e ele se vira. O
+carregador da Poki enfileira toda chamada até o núcleo chegar e não tem `onerror`: com
+um bloqueador que deixa passar o carregador e barra só o núcleo, a fila nunca anda. Até
+a 1.0.4 o jogo se dava por pronto assim mesmo (`ok !== null || !!sdk()`), e cada
+intervalo depois da carência esperava os 45 s de `BREAK_TIMEOUT` com a tela parada.
+Agora `commercialBreak` e `rewardedBreak` saem na hora sem `ready`; se o `init` responder
+depois dos 4 s de `INIT_TIMEOUT`, o `then` liga o SDK dali em diante. Medido com o núcleo
+bloqueado: a passagem de fase caiu para 200 ms.
 
 ### Telemetria: progresso e interação
 
@@ -861,6 +1002,13 @@ botões que nascem em tempo de execução e por isso não têm id — os da loja
 melhoria e impulso — declaram `data-ev`, que o mesmo ouvinte lê. O par `visible` sai
 de `ofertaVisivel()`, que conta uma vez por abertura de tela (`show()` zera o
 conjunto): sem ele o painel diz quantos clicaram e nunca quantos tiveram a chance.
+**O painel só lista evento que tem `visible`**: `reiniciar` e `sair-da-fase` saíam como
+`interact` desde a 1.0.2 e nunca apareceram na aba, até `startLevel` emitir o par. Os
+dois importam porque sair e reiniciar no meio da fase deixam a tentativa sem `complete`
+nem `fail`, e a Poki conta as duas como "Left". `dica-auto` é só `visible`: conta
+quantas vezes a dica automática acendeu, ou seja, quanta gente travou. `voltar-jogada`
+é o par do vídeo de voltar uma jogada, e o `rewind` das fases de ensino (ação própria,
+aba Other) conta quantas vezes o hexágono caiu onde perder não existe.
 
 Os **nomes** do mapa mudam com mais cuidado que os ids: um nome trocado quebra a série
 histórica do relatório. O mesmo nome em telas diferentes é de propósito onde a ação é a
@@ -881,7 +1029,10 @@ Reflete a QA da Poki e roda sobre `dist/`:
 - build acima de 5 MB comprimido.
 
 `window.__game` e `window.__audio` são expostos no fim de `main.js` só para essa
-automação; `playsweep.mjs` depende deles.
+automação, e **só em `127.0.0.1`/`localhost`**: a Poki pede *"remove all development
+tools, debug code, and testing artifacts before publication"*, e publicado o `__game`
+deixava qualquer jogador abrir o console e chamar `startLevel(100)`. Toda ferramenta de
+`tools/` serve o jogo em 127.0.0.1; `playsweep.mjs` depende deles.
 
 ### Desktop
 
@@ -894,7 +1045,59 @@ do navegador.
 A barra de rolagem da fita é escondida no celular e **visível onde o ponteiro é fino**
 (`@media (pointer: fine)`): no desktop ela é a única pista de que há mais mundos abaixo.
 
+**A câmera mira célula de 30 px com mouse e de 56 px com dedo** (`CELULA_MOUSE_PX` e
+`CELULA_DEDO_PX` em `game/scene.js`, lidos por `Camera.fit`; o teto de linhas visíveis
+sobe de 13 para 24 junto). Quem decide é `hasFinePointer()` (`core/viewport.js`): o
+ponteiro **principal**, e não `isTouchDevice()`, que marca como toque qualquer notebook
+com tela sensível. Com 56 px em todo aparelho, a janela da Poki de 836x470 mostrava
+6 m de uma cena de 12 na fase 1, e a de 1031x580 mostrava 8. A câmera abre no topo,
+então o pedestal — o objetivo — começava fora da tela, e o texto da fase 1 só dizia
+"toque nas peças". Na 1.0.3, 18% dos jogadores de desktop saíram no meio da fase 1,
+contra 5,6% no celular. Com 30 px a mesma janela mostra 11 m, e a de 1031x580, 15. A
+fase 1 também passou a dizer o objetivo antes do gesto (`showTutorial`).
+
+**A dica acende sozinha quando o jogador para** (`Session.autoHintAfter`, desligada por
+padrão para o validador): 2,5 s na fase 1 — com a mão tocando a peça até a fase 3 —, 6 s até a
+fase 15 e 1,2 s no recomeço de uma derrota. Ela espera a torre parar, menos sobre
+pedestal que balança, onde as peças nunca repousam e ela vem três segundos depois. A
+única dica da 1.0.3 era um vídeo depois de duas derrotas: zero cliques em 135 partidas
+que a viram.
+
+**A dica simula em silêncio.** `requestHint()` roda o solucionador sobre o mundo
+**real**: `planAhead` destrói até nove candidatas, simula e volta com `restore()`. Com
+`onDestroy` e `onImpact` ligados, cada candidata soltava estilhaço, som de quebra e
+tremor de câmera — uma explosão sem peça quebrada a cada ~8,5 s com o jogador parado —,
+e o `Session._onDestroy` ainda contava essas peças no combo. Por isso `choosePiece`
+(`game/solver.js`) desliga os dois callbacks durante a escolha e os devolve num
+`finally`. Eles não mexem em física, então a peça escolhida é a mesma e as seeds
+assadas continuam valendo. Custo que ficou: uma dica leva de 46 a 85 ms síncronos
+(medido em Node), mas cai com a torre parada.
+
+**No celular, o HUD da fase só recebe toque pelo que está na exceção de `.screen.pass`**
+(`ui/game.css`). A tela de jogo desliga `pointer-events` dos filhos para o toque chegar
+ao canvas, e o `none` é herdado: quando voltar e pausar viraram `.iconbtn` sem entrar
+na lista, o toque passou a atravessar os dois e o jogador de celular ficou sem saída da
+fase — no desktop Esc e Espaço escondiam o defeito. Controle novo no `#s-game` entra na
+lista. O `.iconbtn` desenha 34 px e pega toque em 44 (um `::before` com `inset: -5px`).
+
+**Os menus andam pelo teclado** (`onKey` em `main.js`). A Poki pede *"WASD or arrows
+through menus, space or return for the primary button"*: setas e WASD levam o foco ao
+botão mais próximo naquela direção — o desvio lateral medido entre as **caixas**, não
+entre os centros, senão a seta pulava a fileira dos dois vídeos do cartão de derrota —,
+Enter e Espaço acionam o botão focado ou, sem foco, o principal da tela
+(`TECLA_PRINCIPAL`; no mapa, o nó atual), e Esc volta (`TECLA_VOLTA`). Na fase, Esc e
+Espaço continuam pausando. Tecla segurada só repete para andar: Espaço segurado na fase
+alternava pausa e volta sem parar. O `input.js` barra o Enter padrão, senão um botão
+focado disparava duas vezes. O anel de foco é `:focus-visible`, então toque e clique
+continuam sem ele.
+
+**Tablet é celular, mesmo com trackpad** (`isTablet()` em `core/viewport.js`, que faz
+`hasFinePointer()` responder falso). A Poki pede *"automatically force mobile control
+schemes on tablet devices"*; um iPad com teclado informa ponteiro principal fino e caía
+na câmera do desktop, de peças pequenas para o dedo. O iPadOS se apresenta como Mac, e a
+pista que sobra é o toque múltiplo num "Macintosh".
+
 Em tela larga (`min-width: 760px` e paisagem) a faixa de cima da home vale a **tela
-inteira**, não os 430px da coluna: corações, moedas e engrenagem vão para os cantos, que
+inteira**, não os 430px da coluna: moedas e engrenagem vão para os cantos, que
 é onde se procura por eles. O resto da home continua na coluna, e a logo continua
 seguindo a regra de paisagem baixa — em 16:9 ela sozinha cobre a torre.

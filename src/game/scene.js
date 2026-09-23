@@ -4,7 +4,7 @@
  * classe, entao o que se ve num prototipo e literalmente o jogo.
  */
 
-import { Viewport, isTouchDevice } from '../core/viewport.js';
+import { Viewport, isTouchDevice, hasFinePointer } from '../core/viewport.js';
 import { Input } from '../core/input.js';
 import { Loop } from '../core/loop.js';
 import { Camera } from '../render/camera.js';
@@ -16,6 +16,17 @@ import { material as getMaterial } from '../physics/materials.js';
 import { audio } from '../core/audio.js';
 import { Tweens } from '../core/tween.js';
 import { Rng } from '../core/rng.js';
+import { paintTapHand } from '../render/hand.js';
+
+/**
+ * Tamanho de celula que a camera mira durante a fase, em pixels CSS.
+ *
+ * O dedo precisa de peca grande. O mouse nao, e com os 56 px do dedo a janela
+ * de desktop da Poki (836x470) mostrava metade da cena da fase 1, com o pedestal
+ * fora da tela. Ver `Camera.fit`.
+ */
+const CELULA_DEDO_PX = 56;
+const CELULA_MOUSE_PX = 30;
 
 export class GameScene {
   /**
@@ -61,6 +72,10 @@ export class GameScene {
     );
 
     this.viewport.onResize(() => this.refit());
+    /** @type {(()=>void)|null} toque do jogador com a fase ja terminada */
+    this.onTapAfterEnd = null;
+    /** Desenha a mao tocando a peca da dica. Quem liga e main.js, nas fases de ensino. */
+    this.tapHand = false;
     this.input.onDown((p) => this.handleDown(p));
     this.input.onMove((p) => this.handleMove(p));
     this.input.onFirstGesture(() => audio.unlock());
@@ -135,6 +150,7 @@ export class GameScene {
       topInset: top,
       bottomInset: bottom,
       fitWhole: this.fitWhole,
+      cellPx: hasFinePointer() ? CELULA_MOUSE_PX : CELULA_DEDO_PX,
     });
     const dpr = this.quality === 'low' ? 1 : this.viewport.dpr;
     this.sprites = new SpriteCache(this.theme, this.camera.pxPerMeter, dpr);
@@ -198,6 +214,13 @@ export class GameScene {
   /** @param {{x:number,y:number}} p */
   handleDown(p) {
     if (!this.session) return;
+    // Fase terminada: o toque nao quebra nada, mas encurta a espera - aperta a
+    // cascata da celebracao e deixa main.js pular o selo (onTapAfterEnd).
+    if (this.session.finished) {
+      if (this.session.bonus) this.session.hurryBonus();
+      if (this.onTapAfterEnd) this.onTapAfterEnd();
+      return;
+    }
     const [wx, wy] = this.camera.toWorld(p.x, p.y);
     const finger = this.touch ? 0.32 : 0;
     const result = this.session.tap(wx, wy, finger);
@@ -247,7 +270,40 @@ export class GameScene {
         hovered: this.hovered,
       });
     }
+    const s = this.session;
+    if (this.tapHand && s && s.hintPiece && s.hintPiece.alive && !s.finished) {
+      const [x, y] = this.hintSpot(s.hintPiece);
+      const tam = Math.max(40, Math.min(72, this.camera.pxPerMeter * 1.05));
+      paintTapHand(ctx, x, y, tam, this.time);
+    }
     if (this.onOverlay) this.onOverlay(ctx);
+  }
+
+  /**
+   * Onde a mao toca: o centro da celula da peca mais perto do meio dela. O
+   * meio da caixa nao serve - num L ele cai no vazio, fora da peca.
+   * @param {*} piece
+   * @returns {number[]} px CSS
+   */
+  hintSpot(piece) {
+    const pos = piece.body.getPosition();
+    const a = piece.body.getAngle();
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    let melhor = [0, 0];
+    let dist = Infinity;
+    for (const [cx, cy] of piece.cells) {
+      const lx = cx + 0.5 - piece.cw / 2;
+      const ly = cy + 0.5 - piece.ch / 2;
+      const d = lx * lx + ly * ly;
+      if (d < dist) {
+        dist = d;
+        melhor = [lx, ly];
+      }
+    }
+    const wx = pos.x + melhor[0] * cos - melhor[1] * sin;
+    const wy = pos.y + melhor[0] * sin + melhor[1] * cos;
+    return this.camera.toScreen(wx, wy);
   }
 
   start() {

@@ -33,6 +33,7 @@ export class Camera {
    * @param {number} o.topInset pixels reservados para o HUD no topo
    * @param {number} o.bottomInset
    * @param {boolean} [o.fitWhole] enquadrar a cena INTEIRA, sem piso de zoom
+   * @param {number} [o.cellPx] tamanho de celula que o zoom mira, em pixels CSS
    */
   fit(o) {
     this.viewW = o.viewW;
@@ -62,10 +63,18 @@ export class Camera {
     // jogo, e o que importa e a torre caber inteira no vao entre o titulo e os
     // botoes. Com o piso de 5,5 linhas o zoom nao recuava o bastante e a torre
     // transbordava por cima dos botoes em paisagem baixa.
-    const TARGET_CELL_PX = 56;
-    const visibleRows = o.fitWhole
-      ? sceneH
-      : Math.max(5.5, Math.min(13, usableH / TARGET_CELL_PX));
+    //
+    // A celula-alvo e de 56 px para o dedo e de 30 para o mouse (quem escolhe e
+    // GameScene.refit, pelo tipo de ponteiro). Com 56 px em qualquer aparelho, a
+    // janela da Poki de 836x470 mostrava 6 m de uma cena de 12 na fase 1: a
+    // camera abre no topo, e o pedestal - o objetivo - comecava fora da tela. Na
+    // 1.0.3, 18% dos jogadores de desktop sairam no meio da fase 1, contra 5,6%
+    // no celular. Com 30 px a mesma janela mostra 11 m, e a de 1031x580, 15.
+    // O teto de linhas sobe junto: com ele em 13, uma janela alta de desktop
+    // cortaria a torre de novo mesmo com a celula menor.
+    const cellPx = o.cellPx || 56;
+    const maxRows = cellPx < 56 ? 24 : 13;
+    const visibleRows = o.fitWhole ? sceneH : Math.max(5.5, Math.min(maxRows, usableH / cellPx));
     const byHeight = usableH / Math.min(sceneH, visibleRows);
     // O piso existe para a peca nao virar um ponto durante o jogo. Na home ele
     // cede: ali a cena e cenario, e transbordar por cima dos botoes e pior do

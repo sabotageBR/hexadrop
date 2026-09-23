@@ -1,6 +1,6 @@
 {
   "name": "hexa-drop",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "description": "Hexa Drop - jogo de fisica: derrube a torre e leve o hexagono ate a base.",
   "private": true,
   "type": "module",
@@ -16,6 +16,7 @@
     "verify:sdk": "node tools/sdkcheck.mjs",
     "verify:audio": "node tools/audiocheck.mjs",
     "playsweep": "node tools/playsweep.mjs",
+    "thumbnail": "node tools/thumbnail.mjs",
     "check": "npm run build && node tools/verify-build.mjs && node tools/sdkcheck.mjs",
     "verify:lisa": "DIST_DIR=dist-lisa VERIFY_URL=http://127.0.0.1:4174 node tools/verify-build.mjs"
   },

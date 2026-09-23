@@ -34,6 +34,53 @@ const HAZARD_TEXT = {
   wind: ['hazardWind', 'hintWind'],
 };
 
+/**
+ * Icone de estreia das mecanicas que nao sao peca: o pedestal que balanca
+ * (barra com setas para os dois lados) e o vento (tres rajadas).
+ * @param {string} id
+ * @returns {HTMLCanvasElement}
+ */
+function hazardIcon(id) {
+  const lado = 40;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(lado * dpr);
+  cv.height = Math.round(lado * dpr);
+  cv.className = 'tut-ico';
+  const ctx = cv.getContext('2d');
+  if (!ctx) return cv;
+  // O desenho abaixo e feito numa grade de 36.
+  ctx.scale((dpr * lado) / 36, (dpr * lado) / 36);
+  ctx.strokeStyle = '#ffffff';
+  ctx.fillStyle = '#ffffff';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  if (id === 'swing') {
+    ctx.beginPath();
+    ctx.roundRect(9, 20, 18, 7, 2);
+    ctx.fill();
+    for (const s of [-1, 1]) {
+      const x = 18 + s * 14;
+      ctx.beginPath();
+      ctx.moveTo(18 + s * 4, 12);
+      ctx.lineTo(x, 12);
+      ctx.moveTo(x - s * 4, 8);
+      ctx.lineTo(x, 12);
+      ctx.lineTo(x - s * 4, 16);
+      ctx.stroke();
+    }
+  } else {
+    for (const [y, a, b] of [[10, 5, 27], [18, 9, 31], [26, 5, 23]]) {
+      ctx.beginPath();
+      ctx.moveTo(a, y);
+      ctx.bezierCurveTo(a + (b - a) * 0.35, y - 4, a + (b - a) * 0.65, y + 4, b, y);
+      ctx.stroke();
+    }
+  }
+  return cv;
+}
+
 /** Margens que a HUD de jogo reserva no enquadramento da cena. */
 const GAME_INSET_TOP = 108;
 const GAME_INSET_BOTTOM = 40;
@@ -47,6 +94,55 @@ const GAME_INSET_BOTTOM = 40;
  * progresso salvo, nao a sessao: quem volta ja passou dessa decisao.
  */
 const FASES_SEM_INTERVALO = 5;
+
+/**
+ * Nome do mundo no idioma do jogador. O `label` de themes.js e so o nome
+ * interno, em portugues: era ele que aparecia no HUD, na pausa e no mapa para
+ * qualquer idioma.
+ * @param {string} id
+ * @returns {string}
+ */
+const themeLabel = (id) => t('theme' + id[0].toUpperCase() + id.slice(1));
+
+/** Botao que Enter/Espaco aciona sem foco, por tela. O mapa usa o no atual. */
+const TECLA_PRINCIPAL = {
+  home: 'btnPlay',
+  win: 'winNext',
+  lose: 'loseRetry',
+  pause: 'pauseResume',
+  settings: 'setClose',
+};
+
+/** Botao que Esc aciona, por tela. Nos cartoes de fim de fase Esc nao faz nada. */
+const TECLA_VOLTA = {
+  map: 'mapBack',
+  shop: 'shopBack',
+  settings: 'setClose',
+  pause: 'pauseResume',
+};
+
+/** Setas e WASD, como vetor de tela (y cresce para baixo). */
+const DIRECOES = {
+  ArrowUp: [0, -1],
+  KeyW: [0, -1],
+  ArrowDown: [0, 1],
+  KeyS: [0, 1],
+  ArrowLeft: [-1, 0],
+  KeyA: [-1, 0],
+  ArrowRight: [1, 0],
+  KeyD: [1, 0],
+};
+
+/**
+ * Botao que existe na tela agora: visivel, com tamanho e habilitado.
+ * @param {HTMLElement} el
+ * @returns {boolean}
+ */
+function acionavel(el) {
+  if (/** @type {HTMLButtonElement} */ (el).disabled || el.hidden || el.offsetParent === null) return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
 
 /**
  * Botoes que viram Interaction Event na Poki, por id do elemento.
@@ -84,6 +180,7 @@ const EVENTOS_UI = {
   loseRetry: 'repetir',
   loseShuffle: 'embaralhar',
   loseSkip: 'pular-fase',
+  loseRevive: 'voltar-jogada',
   loseHome: 'sair-da-fase',
   // mapa e loja
   mapHere: 'onde-estou',
@@ -105,6 +202,48 @@ const EVENTOS_UI = {
  */
 const FLOW_SEAL_MS = 1000;
 const WIPE_MS = 200;
+
+/**
+ * Derrota sem parada: quanto tempo o selo "Quase!" fica sobre a cena antes do
+ * corte, e quantas derrotas seguidas na mesma fase recomecam sozinhas antes de
+ * o cartao de derrota voltar.
+ *
+ * Na 1.0.3 o cartao de derrota era a unica parada em tela cheia que sobrava no
+ * jogo, e 61% das partidas passaram por ele. Cerca de 36% de quem perde uma
+ * fase desistia dela - metade de toda a perda das dez primeiras fases veio logo
+ * depois de uma derrota. E a mesma conta que tirou o cartao de vitoria: a
+ * parada perde jogador, o fluxo nao. Da terceira derrota seguida em diante o
+ * cartao volta, porque e ali que embaralhar e pular fase tem trabalho a fazer.
+ */
+const FLOW_RETRY_MS = 900;
+const RETRIES_SEM_CARTAO = 2;
+
+/**
+ * Dica automatica (`Session.autoHintAfter`): segundos parado ate a peca segura
+ * acender sozinha.
+ *
+ * Na fase 1 ela faz o papel da mao que o tutorial nunca teve. Da 2 a
+ * `DICA_AUTO_ATE_FASE` ela espera o jogador travar de verdade. E no recomeco
+ * de uma derrota ela vem logo: quem acabou de perder e quem mais precisa dela.
+ */
+const DICA_AUTO_FASE1_S = 2.5;
+const DICA_AUTO_S = 6;
+const DICA_AUTO_ATE_FASE = 15;
+const DICA_NO_RECOMECO_S = 1.2;
+
+/**
+ * Fases em que perder nao existe: o hexagono que cai volta uma jogada
+ * (Session.rewind) em vez de encerrar a fase. Sao as tres do roteiro de ensino
+ * (`PRIMEIRAS_FASES` em levelgen.js).
+ *
+ * A Poki: "A safe beginner environment. [...] In Subway Surfers, players can't
+ * die during onboarding; they just try again until it clicks." Na 1.0.3 a
+ * derrota ficou entre 18% e 28% em cada uma das sete primeiras fases, e cerca
+ * de 36% de quem perdia desistia ali mesmo. O recomeco automatico da 1.0.4 ja
+ * tirava a tela, mas ainda jogava fora a fase inteira; voltar uma jogada
+ * guarda o que o jogador ja tinha feito.
+ */
+const FASES_SEM_DERROTA = 3;
 
 /** Trilha sonora por tema. */
 const MUSIC = {
@@ -156,8 +295,18 @@ class Game {
     this._ofertasVistas = new Set();
     /** Temporizador do selo de recompensa; zero quando nao ha transicao. */
     this.flowTimer = 0;
+    /** Temporizador que esconde o selo "Quase!" da volta de jogada. */
+    this.rewindTimer = 0;
+    /** @type {(()=>void)|null} passo agendado do fluxo, que o toque pode adiantar */
+    this.flowNext = null;
+    /** Quando o selo entrou, em performance.now(). */
+    this.flowShownAt = 0;
     /** true entre o fim do selo e a fase seguinte estar no ar. */
     this.advancing = false;
+    /** Temporizador do cartao de derrota; zero quando nao ha cartao a caminho. */
+    this.loseTimer = 0;
+    /** A proxima fase a carregar e o recomeco de uma derrota: a dica vem logo. */
+    this.hintOnStart = false;
     this.rng = new Rng(Date.now() & 0x7fffffff);
     this.canvas = /** @type {HTMLCanvasElement} */ ($('game'));
     this.scene = new GameScene(this.canvas, { topInset: GAME_INSET_TOP, bottomInset: GAME_INSET_BOTTOM });
@@ -173,7 +322,6 @@ class Game {
     this.shopTab = 'skins';
     this.toastTimer = 0;
     this.tutTimer = 0;
-    this.pendingHeart = false;
     this.homeWorld = worldOf(this.level - 1);
     this.homeSwiped = false;
     /** @type {IntersectionObserver|null} Vigia qual mundo esta na tela no mapa. */
@@ -242,7 +390,7 @@ class Game {
       this.refreshScreen();
     });
     this.scene.input.onKey((code) => this.onKey(code));
-    window.setInterval(() => this.tickHearts(), 5000);
+    this.scene.onTapAfterEnd = () => this.skipWait();
     // O reenquadramento da home vem depois do refit da cena, senao mede o
     // layout antigo.
     window.addEventListener('resize', () => {
@@ -334,13 +482,7 @@ class Game {
 
   refreshScreen() {
     const p = this.progress;
-    p.refreshHearts();
-    const hearts = String(p.data.hearts);
     const coins = String(p.data.coins);
-    for (const id of ['homeHearts', 'mapHearts', 'gameHearts']) {
-      const el = document.getElementById(id);
-      if (el) el.textContent = hearts;
-    }
     for (const id of ['homeCoins', 'mapCoins', 'shopCoins', 'gameCoins']) {
       const el = document.getElementById(id);
       if (el) el.textContent = coins;
@@ -382,12 +524,6 @@ class Game {
     }
   }
 
-  tickHearts() {
-    const before = this.progress.data.hearts;
-    this.progress.refreshHearts();
-    if (this.progress.data.hearts !== before) this.refreshScreen();
-  }
-
   // -------------------------------------------------------------- idioma
 
   applyLang() {
@@ -419,6 +555,7 @@ class Game {
     set('loseShuffle', t('shuffle'));
     set('loseHome', t('home'));
     set('loseSkip', t('skipLevel'));
+    set('loseRevive', t('revive'));
     set('pauseTitle', t('paused'));
     set('pauseResume', t('resume'));
     set('pauseSoundLbl', t('sound'));
@@ -562,6 +699,7 @@ class Game {
       this.show('home');
     };
     $('loseSkip').onclick = () => this.skipByAd();
+    $('loseRevive').onclick = () => this.reviveByAd();
     $('btnDaily').onclick = () => this.dailyByAd();
     $('tabSkins').onclick = () => {
       this.shopTab = 'skins';
@@ -599,10 +737,97 @@ class Game {
   }
 
   /** @param {string} code */
+  /**
+   * Teclado. Na fase, Esc e Espaco pausam. Nas outras telas a Poki pede
+   * "WASD or arrows through menus, space or return for the primary button": setas
+   * e WASD andam o foco ate o botao mais proximo naquela direcao, Enter e Espaco
+   * acionam o botao focado - ou, sem foco, o principal da tela - e Esc volta.
+   * Antes so a pausa respondia ao teclado; o resto pedia mouse.
+   * @param {string} code
+   */
   onKey(code) {
-    if (code === 'Escape' || code === 'Space') {
-      if (this.screen === 'game') this.pauseLevel();
-      else if (this.screen === 'pause') this.resumeLevel();
+    if (this.screen === 'game') {
+      if (code === 'Escape' || code === 'Space') this.pauseLevel();
+      return;
+    }
+    const tela = document.getElementById('s-' + this.screen);
+    if (!tela) return;
+    if (code === 'Escape') {
+      const volta = TECLA_VOLTA[this.screen];
+      const botao = volta ? document.getElementById(volta) : null;
+      if (botao && acionavel(botao)) botao.click();
+      return;
+    }
+    if (code === 'Enter' || code === 'NumpadEnter' || code === 'Space') {
+      const focado = document.activeElement;
+      const alvo =
+        focado instanceof HTMLButtonElement && tela.contains(focado) && acionavel(focado)
+          ? focado
+          : this.primaryButton(tela);
+      if (alvo) alvo.click();
+      return;
+    }
+    const dir = DIRECOES[code];
+    if (dir) this.moveFocus(tela, dir);
+  }
+
+  /**
+   * O botao que Enter aciona quando nada esta focado.
+   * @param {HTMLElement} tela
+   * @returns {HTMLButtonElement|null}
+   */
+  primaryButton(tela) {
+    const id = TECLA_PRINCIPAL[this.screen];
+    const el = id ? document.getElementById(id) : tela.querySelector('.node.current');
+    return el instanceof HTMLButtonElement && acionavel(el) ? el : null;
+  }
+
+  /**
+   * Leva o foco ao botao visivel mais proximo na direcao pedida. O que conta e
+   * a distancia ao longo da direcao, com o desvio lateral pesando o dobro: na
+   * fita de fases, seta para cima vai ao no de cima, e nao ao vizinho do lado.
+   * O desvio e medido entre as CAIXAS, nao entre os centros: saindo de um botao
+   * largo, os dois de meia largura logo abaixo estao alinhados com ele - medido
+   * de centro a centro, a seta pulava a fileira dos videos do cartao de derrota
+   * e caia no "embaralhar".
+   * @param {HTMLElement} tela
+   * @param {number[]} dir
+   */
+  moveFocus(tela, dir) {
+    const botoes = /** @type {HTMLButtonElement[]} */ ([...tela.querySelectorAll('button')]).filter(acionavel);
+    if (!botoes.length) return;
+    const atual = document.activeElement;
+    if (!(atual instanceof HTMLButtonElement) || !botoes.includes(atual)) {
+      const inicio = this.primaryButton(tela) || botoes[0];
+      inicio.focus();
+      return;
+    }
+    const a = atual.getBoundingClientRect();
+    const ax = a.left + a.width / 2;
+    const ay = a.top + a.height / 2;
+    const vertical = dir[1] !== 0;
+    let melhor = null;
+    let melhorNota = Infinity;
+    for (const b of botoes) {
+      if (b === atual) continue;
+      const r = b.getBoundingClientRect();
+      const vx = r.left + r.width / 2 - ax;
+      const vy = r.top + r.height / 2 - ay;
+      const ao_longo = vx * dir[0] + vy * dir[1];
+      if (ao_longo <= 1) continue;
+      // Folga lateral entre as caixas; zero quando elas se sobrepoem.
+      const lateral = vertical
+        ? Math.max(0, Math.max(a.left, r.left) - Math.min(a.right, r.right))
+        : Math.max(0, Math.max(a.top, r.top) - Math.min(a.bottom, r.bottom));
+      const nota = ao_longo + lateral * 2;
+      if (nota < melhorNota) {
+        melhorNota = nota;
+        melhor = b;
+      }
+    }
+    if (melhor) {
+      melhor.focus();
+      melhor.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
   }
 
@@ -656,6 +881,7 @@ class Game {
     session.onCombo = null;
     session.onBonusPiece = null;
     session.onBonusDone = null;
+    this.scene.tapHand = false;
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
     applyUiTheme(this.scene.theme);
     // A trilha da home e sempre a mesma; so o cenario muda com o carrossel.
@@ -690,7 +916,7 @@ class Game {
     if (!host) return;
     const w = Math.max(0, Math.min(WORLD_COUNT - 1, this.homeWorld | 0));
     const themeId = levelConfig(worldStart(w)).theme;
-    if (label) label.textContent = `${t('world')} ${w + 1} · ${THEMES[themeId].label}`;
+    if (label) label.textContent = `${t('world')} ${w + 1} · ${themeLabel(themeId)}`;
     if (host.childElementCount !== WORLD_COUNT) {
       host.innerHTML = '';
       for (let i = 0; i < WORLD_COUNT; i++) {
@@ -738,10 +964,17 @@ class Game {
     this.level = Math.max(1, Math.min(LEVEL_COUNT, level));
     if (mudouDeFase) this.lossStreak = 0;
     this.paused = false;
-    this.pendingHeart = true;
     this.pendingWin = null;
     this.hideBonusCounter();
     const { session, theme } = this.makeSession(this.level, variantIndex);
+    session.autoHintAfter = this.autoHintFor(this.level, this.hintOnStart);
+    session.onAutoHint = () => this.ofertaVisivel('dica-auto');
+    session.rewindOnLoss = this.level <= FASES_SEM_DERROTA;
+    session.onRewind = () => this.onRewind();
+    // Nas fases de ensino a dica vem com a mao tocando a peca: o gesto que o
+    // texto "toque nas pecas" so descrevia.
+    this.scene.tapHand = this.level <= FASES_SEM_DERROTA;
+    this.hintOnStart = false;
     this.scene.setInsets(GAME_INSET_TOP, GAME_INSET_BOTTOM, false);
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
     applyUiTheme(this.scene.theme);
@@ -749,7 +982,7 @@ class Game {
     audio.releaseMusic();
     this.setStars('gameStars', 0);
     const themeId = levelConfig(this.level - 1).theme;
-    $('gameLevel').textContent = `${THEMES[themeId].label} · ${this.level}`;
+    $('gameLevel').textContent = `${themeLabel(themeId)} · ${this.level}`;
     this.homeWorld = worldOf(this.level - 1);
     // A dica so aparece depois de tropecar duas vezes na mesma fase, e sempre
     // ao lado de um botao padrao. Nunca e condicao para progredir.
@@ -764,7 +997,15 @@ class Game {
     this.show('game');
     // Depois do show, que e quem zera as ofertas contadas na tela.
     this.ofertaVisivel('pausa');
-    if (showHelp) this.ofertaVisivel('dica');
+    // Sair e reiniciar no meio da fase deixam a tentativa sem `complete` nem
+    // `fail`, e a Poki conta as duas como abandono. Sem o `visible` elas nem
+    // aparecem na aba de interacao - o `interact` saia, mas o painel so lista
+    // o que tem o par -, e o "saiu no meio" ficava impossivel de separar.
+    this.ofertaVisivel('sair-da-fase');
+    if (showHelp) {
+      this.ofertaVisivel('dica');
+      this.ofertaVisivel('reiniciar');
+    }
     this.showTutorial();
     poki.measure('level', String(this.level), 'start');
   }
@@ -772,23 +1013,30 @@ class Game {
   showTutorial() {
     const tut = $('tut');
     const config = levelConfig(this.level - 1);
-    /** @type {string[]} */
+    /** @type {{texto:string, titulo?:string, icone?:HTMLCanvasElement}[]} */
     const msgs = [];
-    if (this.level === 1) msgs.push(t('tutorialTap'));
-    else if (this.level === 2) msgs.push(t('tutorialGoal'));
-    else if (this.level === 3) msgs.push(t('tutorialStars'));
+    // A fase 1 diz o objetivo antes do gesto. So "toque nas pecas" deixava o
+    // jogador quebrando a torre sem saber para que - e no desktop, onde o
+    // pedestal nem aparecia na tela, 18% sairam no meio da fase 1 da 1.0.3.
+    if (this.level === 1) msgs.push({ texto: t('tutorialGoal') }, { texto: t('tutorialTap') });
+    else if (this.level === 2) msgs.push({ texto: t('tutorialGoal') });
+    else if (this.level === 3) msgs.push({ texto: t('tutorialStars') });
     else {
       // Da fase 4 a 10 cada fase estreia uma ou duas coisas, e o cartao mostra
       // todas em fila. Mostrando so a primeira, a segunda estreia de uma fase
       // dupla - o gelo ao lado da pedra, o metal ao lado do vidro - entrava na
       // torre sem nunca ser apresentada.
+      //
+      // Cada estreia mostra a PECA, pintada no tema da fase, com o nome e uma
+      // dica curta: a Poki pede imagem no lugar de texto, e o nome sozinho nao
+      // dizia qual das pecas da torre era a nova.
       for (const id of config.newMaterials) {
         const m = getMaterial(id);
-        msgs.push(`${t('newMaterial')}: ${t(m.nameKey)} - ${t(m.hintKey)}`);
+        msgs.push({ titulo: t(m.nameKey), texto: t(m.hintKey), icone: this.debutIcon(id) });
       }
       for (const id of config.newHazards) {
         const [nome, dica] = HAZARD_TEXT[id] || [];
-        if (nome) msgs.push(`${t('newHazard')}: ${t(nome)} - ${t(dica)}`);
+        if (nome) msgs.push({ titulo: t(nome), texto: t(dica), icone: hazardIcon(id) });
       }
     }
     window.clearTimeout(this.tutTimer);
@@ -803,11 +1051,48 @@ class Game {
         tut.classList.add('hide');
         return;
       }
-      tut.textContent = msgs[k];
+      const msg = msgs[k];
+      tut.replaceChildren();
+      if (msg.icone) tut.append(msg.icone);
+      const corpo = document.createElement('span');
+      if (msg.titulo) {
+        const nome = document.createElement('b');
+        nome.textContent = msg.titulo;
+        corpo.append(nome, ' ');
+      }
+      corpo.append(msg.texto);
+      tut.append(corpo);
+      tut.classList.toggle('com-icone', !!msg.icone);
       tut.classList.remove('hide');
       this.tutTimer = window.setTimeout(() => mostra(k + 1), porMsg);
     };
     mostra(0);
+  }
+
+  /**
+   * A peca que estreia, uma celula, pintada pelo mesmo SpriteCache da fase.
+   * @param {string} materialId
+   * @returns {HTMLCanvasElement}
+   */
+  debutIcon(materialId) {
+    const lado = 40;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(lado * dpr);
+    cv.height = Math.round(lado * dpr);
+    cv.className = 'tut-ico';
+    const sprites = this.scene.sprites;
+    const ctx = cv.getContext('2d');
+    if (!sprites || !ctx) return cv;
+    const sp = sprites.piece([[0, 0]], materialId, 0, 0);
+    // O sprite traz margem para brilho e contorno: a celula e o miolo dele, e
+    // e ela que tem que ocupar o icone.
+    const celula = Math.max(1, sp.w - sp.pad * 2);
+    const k = (cv.width * 0.84) / celula;
+    const w = sp.w * k;
+    const h = sp.h * k;
+    ctx.drawImage(sp.canvas, (cv.width - w) / 2, (cv.height - h) / 2, w, h);
+    return cv;
   }
 
   /** @param {number} n */
@@ -854,12 +1139,130 @@ class Game {
     } else {
       this.lossStreak++;
       poki.measure('level', String(this.level), 'fail');
-      if (this.pendingHeart) {
-        this.progress.spendHeart();
-        this.pendingHeart = false;
+      window.clearTimeout(this.loseTimer);
+      if (this.flowLevels && this.lossStreak <= RETRIES_SEM_CARTAO) {
+        this.flowRetry();
+        return;
       }
-      window.setTimeout(() => this.showLose(), 650);
+      // Com guarda: sem ela, um toque em voltar ou reiniciar nesses 650 ms
+      // abria o cartao de derrota por cima da tela seguinte.
+      this.loseTimer = window.setTimeout(() => {
+        this.loseTimer = 0;
+        if (this.screen === 'game') this.showLose();
+      }, 650);
     }
+  }
+
+  /**
+   * A fase de ensino voltou uma jogada: o hexagono caiu e a torre reapareceu
+   * como estava antes do ultimo toque.
+   *
+   * Nada de `fail` nem de `gameplayStop`: para a Poki a tentativa continua, e
+   * e isso mesmo - o jogador nao perdeu nada. O selo "Quase!" passa sobre a
+   * cena sem texto de explicacao, e a dica acende logo, como no recomeco.
+   */
+  onRewind() {
+    const session = this.scene.session;
+    if (!session) return;
+    audio.lose();
+    this.scene.particles.clear();
+    this.scene.camera.addTrauma(0.12);
+    this.setStars('gameStars', session.stars);
+    session.idle = Math.max(0, session.autoHintAfter - DICA_NO_RECOMECO_S);
+    const box = $('flowSeal');
+    box.classList.add('miss');
+    $('flowCoins').textContent = t('retryAutoTitle');
+    $('flowWhat').textContent = '';
+    box.hidden = false;
+    window.clearTimeout(this.rewindTimer);
+    this.rewindTimer = window.setTimeout(() => {
+      if (!this.flowTimer) this.hideFlowSeal();
+    }, 900);
+    poki.measure('level', String(this.level), 'rewind');
+  }
+
+  /**
+   * Video recompensado do cartao de derrota: volta uma jogada e a fase segue.
+   *
+   * E o "revive" que a Poki poe no topo das ajudas ("revives, level skips,
+   * hints..."), e o unico video que cabe no momento em que o jogador mais quer
+   * ajuda - com o fluxo continuo, dobrar premio so existe na fase 100. Fica
+   * abaixo de "tentar de novo", que e maior e gratuito.
+   *
+   * O `fail` desta tentativa ja saiu, entao a volta abre outra com `start`:
+   * a Poki nao aceita `complete` e `fail` na mesma tentativa. Na versao lisa
+   * nao ha video, e a volta e de graca.
+   */
+  async reviveByAd() {
+    const session = this.scene.session;
+    const btn = /** @type {HTMLButtonElement} */ ($('loseRevive'));
+    if (!session || !session.checkpoint) return;
+    btn.disabled = true;
+    const ok = COM_ANUNCIOS ? await poki.rewardedBreak('medium') : true;
+    if (!ok || this.screen !== 'lose' || this.scene.session !== session) {
+      btn.disabled = false;
+      return;
+    }
+    window.clearTimeout(this.loseTimer);
+    this.loseTimer = 0;
+    session.rewind();
+    // De volta a "pronta": o gameplayStart sai no primeiro toque de verdade,
+    // pelo mesmo onFirstTap de qualquer fase, e nao ao fechar o video.
+    session.state = 'ready';
+    this.hideBonusCounter();
+    this.setStars('gameStars', session.stars);
+    this.show('game');
+    this.ofertaVisivel('pausa');
+    this.ofertaVisivel('sair-da-fase');
+    poki.measure('level', String(this.level), 'start');
+  }
+
+  /**
+   * Dica automatica desta fase, em segundos parado; 0 desliga.
+   * @param {number} level
+   * @param {boolean} recomeco a fase recomeca depois de uma derrota
+   * @returns {number}
+   */
+  autoHintFor(level, recomeco) {
+    if (recomeco) return DICA_NO_RECOMECO_S;
+    if (level === 1) return DICA_AUTO_FASE1_S;
+    return level <= DICA_AUTO_ATE_FASE ? DICA_AUTO_S : 0;
+  }
+
+  /**
+   * Derrota sem parada: um selo curto sobre a cena e a mesma fase de novo.
+   *
+   * O `fail` ja saiu em onLevelEnd; o recomeco dispara o `start` da mesma fase
+   * em startLevel, e o `gameplayStart` volta no primeiro toque, como em
+   * qualquer fase. A variante e a mesma porque e o que o jogador escolhe quando
+   * pode: no cartao da 1.0.3, 63% tocaram em "tentar de novo" e 13% em
+   * "embaralhar". O HUD fica fora do ar ate a fase recomecar, como na
+   * celebracao - quem o devolve e o hideBonusCounter() de startLevel.
+   */
+  flowRetry() {
+    audio.lose();
+    const box = $('flowSeal');
+    box.classList.add('miss');
+    $('flowCoins').textContent = t('retryAutoTitle');
+    $('flowWhat').textContent = t('retryAuto');
+    box.hidden = false;
+    /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = true;
+    /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = true;
+    this.hintOnStart = true;
+    this.scheduleFlow(() => this.retryLevel(), FLOW_RETRY_MS);
+  }
+
+  /**
+   * O corte do recomeco. Mesma ordem de advanceLevel(): o intervalo comercial
+   * termina antes de startLevel, e passa pela carencia da classe.
+   */
+  async retryLevel() {
+    this.flowTimer = 0;
+    this.advancing = true;
+    await this.commercialBreak();
+    $('wipe').classList.add('on');
+    await new Promise((resolve) => window.setTimeout(resolve, WIPE_MS));
+    this.startLevel(this.level, this.variantIndex);
   }
 
   /**
@@ -934,7 +1337,7 @@ class Game {
    *
    * Tudo que o cartao dizia continua sendo dito, so nao em tela cheia - as
    * estrelas na fileira do HUD, as moedas no selo e no contador do topo, e o
-   * resto (recorde, patente, premio pela metade) nos toasts que o jogo ja usa
+   * resto (recorde e patente) nos toasts que o jogo ja usa
    * em qualquer outra tela. O que nao cabe no selo e o video de dobrar
    * recompensa: ele exige um botao padrao do mesmo tamanho ao lado, e um par
    * de botoes e o cartao de volta. Ele fica no fim de mundo.
@@ -954,6 +1357,7 @@ class Game {
     if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
     if (session && session.bestCombo > 1) partes.push(`${t('combo')} x${session.bestCombo}`);
     $('flowWhat').textContent = partes.join('  \u00b7  ');
+    box.classList.remove('miss');
     box.hidden = false;
 
     // As moedas pousam no contador do HUD, nao numa bolsa de cartao: o premio
@@ -962,15 +1366,49 @@ class Game {
     this.flyCoins($('flowCoins'), Math.min(12, Math.max(4, Math.round(moedas / 3))), 200, $('gameCoins'));
     this.countUp($('gameCoins'), this.progress.data.coins, 260, false, bolsaAntes);
 
-    // Sem aviso de coracoes vazios, aqui e nos cartoes: na homologacao o jogo
-    // segue jogando sem coracao e sem mensagem nenhuma sobre isso.
     if (result.best) this.toast(t('newRecord'));
     if (result.rankUp) {
       window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), 700);
     }
 
+    this.scheduleFlow(() => this.advanceLevel(), FLOW_SEAL_MS);
+  }
+
+  /**
+   * Agenda o proximo passo do fluxo continuo e guarda qual e, para o toque do
+   * jogador poder adianta-lo (skipWait).
+   * @param {()=>void} passo
+   * @param {number} ms
+   */
+  scheduleFlow(passo, ms) {
     window.clearTimeout(this.flowTimer);
-    this.flowTimer = window.setTimeout(() => this.advanceLevel(), FLOW_SEAL_MS);
+    this.flowNext = passo;
+    this.flowShownAt = performance.now();
+    this.flowTimer = window.setTimeout(() => {
+      this.flowNext = null;
+      passo();
+    }, ms);
+  }
+
+  /**
+   * Toque depois do fim da fase.
+   *
+   * A Poki mede que "games where the player can constantly perform an action
+   * outperform games with waiting and downtime", e entre vencer e a fase
+   * seguinte havia ate ~5 s so de espera: a cascata (ate 3,2 s), o assentar
+   * final (0,9 s), o selo (1 s) e o corte. A cena ja aperta a cascata sozinha
+   * (Session.hurryBonus); aqui, com o selo na tela, o toque vai direto para a
+   * fase seguinte - ou para o recomeco, na derrota sem parada. Os 300 ms de
+   * piso impedem que o mesmo toque que apressou a cascata engula o selo.
+   */
+  skipWait() {
+    if (this.screen !== 'game' || !this.flowTimer || this.advancing || !this.flowNext) return;
+    if (performance.now() - this.flowShownAt < 300) return;
+    const passo = this.flowNext;
+    window.clearTimeout(this.flowTimer);
+    this.flowTimer = 0;
+    this.flowNext = null;
+    passo();
   }
 
   /** Esconde o selo do fluxo. */
@@ -983,6 +1421,9 @@ class Game {
   cancelFlow() {
     window.clearTimeout(this.flowTimer);
     this.flowTimer = 0;
+    this.flowNext = null;
+    window.clearTimeout(this.loseTimer);
+    this.loseTimer = 0;
     this.advancing = false;
     this.hideFlowSeal();
     const wipe = document.getElementById('wipe');
@@ -1252,8 +1693,17 @@ class Game {
     skip.disabled = false;
     skip.textContent = t('skipLevel');
     $('loseSkipNote').textContent = skip.hidden ? '' : t('skipNoStars');
+    // Voltar uma jogada so existe quando houve jogada: sem ponto de volta ele
+    // devolveria a fase do inicio, que e o "tentar de novo" gratuito ao lado.
+    const revive = /** @type {HTMLButtonElement} */ ($('loseRevive'));
+    const session = this.scene.session;
+    revive.classList.toggle('ad', COM_ANUNCIOS);
+    revive.hidden = !session || !session.checkpoint;
+    revive.disabled = false;
+    revive.textContent = t('revive');
     this.show('lose');
     this.ofertaVisivel('repetir');
+    if (!revive.hidden) this.ofertaVisivel('voltar-jogada');
     if (!skip.hidden) this.ofertaVisivel('pular-fase');
     if (!shuffle.hidden) this.ofertaVisivel('embaralhar');
   }
@@ -1263,6 +1713,9 @@ class Game {
     // Celebracao e transicao nao se pausam: a fase ja acabou e os botoes do
     // HUD estao fora do ar. Sem esta guarda, Escape entrava por tras deles.
     if (this.pendingWin || this.flowTimer || this.advancing) return;
+    // Nem com a derrota ja decidida: a pausa escondia o cartao que estava a
+    // caminho, e ao continuar sobrava uma fase terminada sem saida nenhuma.
+    if (this.loseTimer || this.scene.session.finished) return;
     this.paused = true;
     this.scene.session.paused = true;
     poki.gameplayStop();
@@ -1278,7 +1731,7 @@ class Game {
   buildPause() {
     const session = this.scene.session;
     const themeId = levelConfig(this.level - 1).theme;
-    $('pauseWhere').textContent = `${THEMES[themeId].label} \u00b7 ${t('level')} ${this.level}`;
+    $('pauseWhere').textContent = `${themeLabel(themeId)} \u00b7 ${t('level')} ${this.level}`;
     this.setStars('pauseStars', session ? session.stars : 0);
     const par = session && session.par ? ` \u00b7 ${t('par')} ${session.par}` : '';
     $('pauseTaps').textContent = session ? `${t('taps')} ${session.taps}${par}` : '';
@@ -1589,7 +2042,7 @@ class Game {
       const sec = document.createElement('section');
       sec.className = 'world' + (aberto ? '' : ' locked');
       sec.dataset.world = String(w);
-      sec.dataset.nome = `${t('world')} ${w + 1} · ${THEMES[themeId].label}`;
+      sec.dataset.nome = `${t('world')} ${w + 1} · ${themeLabel(themeId)}`;
       sec.dataset.tema = themeId;
       this.paintWorld(sec, themeId);
 
@@ -1600,7 +2053,7 @@ class Game {
       num.textContent = String(w + 1);
       const nome = document.createElement('span');
       nome.className = 'world-name';
-      nome.textContent = THEMES[themeId].label;
+      nome.textContent = themeLabel(themeId);
       const conta = document.createElement('span');
       conta.className = 'world-count';
       const st = this.worldStars(w);
@@ -1856,7 +2309,7 @@ class Game {
     const txt = document.createElement('div');
     txt.className = 'gate-text';
     const forte = document.createElement('b');
-    forte.textContent = `${t('world')} ${w + 1} · ${THEMES[themeId].label}`;
+    forte.textContent = `${t('world')} ${w + 1} · ${themeLabel(themeId)}`;
     txt.appendChild(forte);
 
     const barra = document.createElement('div');
@@ -1917,7 +2370,7 @@ class Game {
       lado / 2,
       lado / 2,
       lado * 0.37,
-      s.model || 'liso',
+      s.model || 'joia',
       {
         fill: s.fill || th.hexagon.fill,
         stroke: s.stroke || th.hexagon.stroke,
@@ -2226,6 +2679,12 @@ game.boot().catch((err) => {
   $('loader').classList.add('gone');
 });
 
-// Ganchos usados pela automacao de teste em tools/.
-/** @type {*} */ (window).__game = game;
-/** @type {*} */ (window).__audio = audio;
+// Ganchos usados pela automacao de teste em tools/ - so na maquina local.
+// A Poki pede "remove all development tools, debug code, and testing artifacts
+// before publication": publicado, `__game` deixava qualquer jogador abrir o
+// console e chamar startLevel(100). Toda ferramenta de tools/ serve o jogo em
+// 127.0.0.1, entao a trava pelo endereco nao custa nada a elas.
+if (/^(127\.0\.0\.1|localhost|\[::1\])$/.test(window.location.hostname)) {
+  /** @type {*} */ (window).__game = game;
+  /** @type {*} */ (window).__audio = audio;
+}

@@ -86,7 +86,49 @@ export class Viewport {
   }
 }
 
+/**
+ * Tablet, mesmo com teclado ou trackpad acoplado.
+ *
+ * A Poki pede "automatically force mobile control schemes on tablet devices". Um
+ * iPad com teclado e trackpad informa ponteiro principal fino e caia na camera
+ * do desktop, de pecas pequenas para o dedo. O iPadOS se apresenta como Mac, e
+ * a pista que sobra e o toque multiplo num "Macintosh".
+ * @returns {boolean}
+ */
+export function isTablet() {
+  try {
+    const ua = navigator.userAgent || '';
+    if (/iPad|Tablet|PlayBook|Silk|Kindle/i.test(ua)) return true;
+    if (/Android/i.test(ua) && !/Mobile/i.test(ua)) return true;
+    return /Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+  } catch {
+    return false;
+  }
+}
+
 /** @returns {boolean} */
+/**
+ * O ponteiro PRINCIPAL e preciso - qualquer coisa que nao seja o dedo?
+ *
+ * Nao e o contrario de `isTouchDevice()`: um notebook com tela de toque tem
+ * toque, mas quem joga nele usa o mouse. E o ponteiro principal que decide o
+ * tamanho de celula da camera - o dedo precisa de peca grande, o mouse nao, e
+ * no desktop a peca grande empurrava o pedestal para fora da janela da Poki.
+ *
+ * Pergunta por `coarse`, e nao por `fine`: sem ponteiro nenhum (`pointer:
+ * none`, que e o que o Chrome headless das ferramentas informa) a resposta
+ * certa e a do desktop.
+ * @returns {boolean}
+ */
+export function hasFinePointer() {
+  if (isTablet()) return false;
+  try {
+    return !window.matchMedia('(pointer: coarse)').matches;
+  } catch {
+    return true;
+  }
+}
+
 export function isTouchDevice() {
   try {
     return (

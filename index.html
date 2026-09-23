@@ -23,7 +23,6 @@
   <section class="screen" id="s-home">
     <div class="home-top" id="homeTop">
       <div class="hud-top">
-        <div class="stat hearts"><span class="ico">&#10084;</span><span id="homeHearts">5</span></div>
         <div class="stat coins"><span class="ico">&#9679;</span><span id="homeCoins">0</span></div>
         <div class="grow"></div>
         <button class="iconbtn" id="btnSettings" aria-label="Ajustes">&#9881;</button>
@@ -71,7 +70,6 @@
     <div class="hud-bottom">
       <button class="btn" id="btnDaily"></button>
       <div class="grow"></div>
-      <div class="badge hearts"><span class="ico">&#10084;</span><span id="mapHearts">5</span></div>
     </div>
   </section>
 
@@ -88,7 +86,6 @@
       <!-- A bolsa fica a vista DENTRO da fase: e onde as moedas do premio
            pousam, e e o que permite a recompensa existir sem um cartao. -->
       <div class="stat coins"><span class="ico">&#9679;</span><span id="gameCoins">0</span></div>
-      <div class="stat hearts"><span class="ico">&#10084;</span><span id="gameHearts">5</span></div>
       <button class="iconbtn" id="gamePause" aria-label="Pausar">&#9208;</button>
     </div>
     <div class="starrow" id="gameStars"><i></i><i></i><i></i></div>
@@ -159,14 +156,17 @@
       <img class="card-logo" src="./src/ui/logo.webp" width="900" height="768" alt="Hexa Drop" />
       <h2 id="loseTitle"></h2>
       <p id="loseNote"></p>
-      <!-- Pular fase fica AO LADO de "tentar de novo", que e maior e
-           gratuito: exigencia da Poki e, aqui, tambem a verdade do jogo -
-           pular nao da estrela, entao o portao do mundo seguinte continua
-           cobrando o que cobrava. O video adianta o caminho, nao o progresso.
-           Nao ha botao de encher coracoes: eles voltam sozinhos com o tempo e
-           sem eles o jogador continua jogando, so com metade do premio. -->
+      <!-- "Tentar de novo" fica ACIMA dos dois videos e maior que cada um:
+           exigencia da Poki ("standard button equal or larger size than reward
+           button", "positioned next to or above"). Pular nao da estrela, entao
+           o portao do mundo seguinte continua cobrando o que cobrava: o video
+           adianta o caminho, nao o progresso. Voltar uma jogada desfaz so a
+           queda. -->
       <div class="row">
-        <button class="btn primary big" id="loseRetry"></button>
+        <button class="btn primary big wide" id="loseRetry"></button>
+      </div>
+      <div class="row ad-row">
+        <button class="btn" id="loseRevive"></button>
         <button class="btn" id="loseSkip"></button>
       </div>
       <p class="fineprint" id="loseSkipNote"></p>

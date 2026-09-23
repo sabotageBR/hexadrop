@@ -22,6 +22,9 @@
  * @property {number} glow 0 a 1
  * @property {number} corner raio dos cantos, em fracao da celula
  * @property {number} [traco] espessura do contorno das pecas, fracao do padrao (1)
+ * @property {'glow'|'toon'|'toon-cel'|'toon-hq'|'gelatina'} [pecas] estilo de pintura
+ *   unico para todas as pecas do tema, por cima da escolha por material de
+ *   `lookFor()` (render/sprites.js). Ausente, vale a escolha por material.
  * @property {string[]} sky gradiente vertical do fundo
  * @property {string} horizon
  * @property {string} ground
@@ -36,7 +39,12 @@
  * @property {string} veilRgb "r, g, b" do veu que escurece a cena atras das telas
  * @property {Record<string, PieceStyle>} materials
  * @property {{fill:string, stroke:string, glow:string, style:string}} pedestal
- * @property {{fill:string, stroke:string, core:string}} hexagon
+ * @property {{fill:string, stroke:string, core:string}} hexagon cores da skin
+ *   Original, a unica que nao traz as suas. `fill` e o corpo da joia
+ *   (`render/hexmodels.js`) e tem que ser OPACO e saturado: translucido, o
+ *   hexagono some no ceu; claro demais, vira um adesivo palido. Por isso, em
+ *   sete dos nove temas ele repete o `stroke`. O `stroke` tambem pinta o `--w-hex`
+ *   da interface.
  * @property {string} star
  * @property {string} starOff
  * @property {string} guide cor das linhas tracejadas
@@ -62,9 +70,19 @@ export const THEMES = {
     id: 'puzzle',
     label: 'Puzzle',
     style: 'puzzle',
-    // O halo do tubo de neon sai daqui: abaixo de 0,4 o hexagono cai no ramo
-    // de tema claro e ganha sombra em vez de brilho.
-    glow: 0.55,
+    // Gelatina, e nao mais o tubo de neon: o tubo tinha sido copiado do jogo
+    // de referencia medindo a foto pixel a pixel, e o mundo 1 - a primeira
+    // impressao do jogo e a arte da thumbnail - era o que mais lembrava ele. A
+    // Poki recusa jogo que "overlaps too much with what's already on Poki". A
+    // gelatina e das pecas do proprio jogo, casa com a borracha que e a base
+    // deste mundo (quica e agarra) e mantem o arco-iris da marca. O Evandro
+    // escolheu entre cinco estilos desenhados na fase 5. O tubo continua no
+    // mundo neon.
+    pecas: 'gelatina',
+    // 0,4 e o ponto exato em que nada muda alem das pecas: acima de 0,45 cada
+    // peca que nao e tubo ganha um halo borrado (paintPiece), e abaixo de 0,4
+    // o hexagono cai no ramo de tema claro e ganha sombra.
+    glow: 0.4,
     corner: 0.28,
     sky: ['#07102c', '#0a1a48', '#12305c'],
     horizon: '#4fc8ff',
@@ -141,7 +159,7 @@ export const THEMES = {
       wax: { fill: '#e89830', stroke: '#ffbe5a', inner: 'rgba(255,230,160,0.55)', top: '#ffe6a0' },
     },
     pedestal: { style: 'neon', fill: 'rgba(92,46,190,0.85)', stroke: '#b98cff', glow: '#a066ff' },
-    hexagon: { fill: 'rgba(190,240,255,0.2)', stroke: '#4fc8ff', core: '#ffffff' },
+    hexagon: { fill: '#4fc8ff', stroke: '#4fc8ff', core: '#ffffff' },
     star: '#ffd23c',
     starOff: 'rgba(120,90,60,0.55)',
     guide: 'rgba(200,180,255,0.5)',
@@ -183,7 +201,7 @@ export const THEMES = {
       wax: { fill: '#e0b050', stroke: '#ffe090', top: 'rgba(255,240,200,0.3)' },
     },
     pedestal: { style: 'hangar', fill: '#152a38', stroke: '#2ee6c4', glow: '#2ee6c4' },
-    hexagon: { fill: '#173c48', stroke: '#5ff0d8', core: '#d8fff6' },
+    hexagon: { fill: '#5ff0d8', stroke: '#5ff0d8', core: '#d8fff6' },
     star: '#ffd75e',
     starOff: 'rgba(90,110,120,0.5)',
     guide: 'rgba(46,230,196,0.45)',
@@ -267,7 +285,7 @@ export const THEMES = {
       wax: { fill: '#f5cf7a', stroke: '#b08c34', top: 'rgba(255,255,255,0.45)' },
     },
     pedestal: { style: 'degraus', fill: '#7b8aa0', stroke: '#48556a', glow: '#2f6df0' },
-    hexagon: { fill: '#dce9ff', stroke: '#1f4fd0', core: '#ffffff' },
+    hexagon: { fill: '#1f4fd0', stroke: '#1f4fd0', core: '#ffffff' },
     star: '#f5b921',
     starOff: 'rgba(150,160,175,0.5)',
     guide: 'rgba(60,80,110,0.4)',
@@ -309,7 +327,7 @@ export const THEMES = {
       wax: { fill: '#ffd98a', stroke: '#d0a03c', top: 'rgba(255,255,255,0.75)' },
     },
     pedestal: { style: 'bolo', fill: '#b28ce8', stroke: '#6f4dad', glow: '#ff9ed4' },
-    hexagon: { fill: '#ffc2dd', stroke: '#e6247e', core: '#fffdfe' },
+    hexagon: { fill: '#e6247e', stroke: '#e6247e', core: '#fffdfe' },
     star: '#ffd53d',
     starOff: 'rgba(180,150,190,0.55)',
     guide: 'rgba(120,70,140,0.42)',
@@ -351,7 +369,7 @@ export const THEMES = {
       wax: { fill: '#e0b860', stroke: '#ffe8a8', top: 'rgba(255,245,215,0.35)' },
     },
     pedestal: { style: 'gelo', fill: '#2c5a75', stroke: '#9fe0f5', glow: '#9fe0f5' },
-    hexagon: { fill: 'rgba(225,250,255,0.75)', stroke: '#59c4e8', core: '#ffffff' },
+    hexagon: { fill: '#59c4e8', stroke: '#59c4e8', core: '#ffffff' },
     star: '#ffe27a',
     starOff: 'rgba(120,150,170,0.5)',
     guide: 'rgba(200,240,255,0.5)',
@@ -393,7 +411,7 @@ export const THEMES = {
       wax: { fill: '#ff9a30', stroke: '#ffd27a', top: 'rgba(255,240,190,0.45)' },
     },
     pedestal: { style: 'obsidiana', fill: '#3b1b12', stroke: '#ff8a2a', glow: '#ff6a12' },
-    hexagon: { fill: 'rgba(255,220,170,0.28)', stroke: '#ffb347', core: '#fff4dc' },
+    hexagon: { fill: '#ffb347', stroke: '#ffb347', core: '#fff4dc' },
     star: '#ffd04a',
     starOff: 'rgba(120,70,40,0.6)',
     guide: 'rgba(255,190,140,0.5)',
@@ -435,7 +453,7 @@ export const THEMES = {
       wax: { fill: '#eccb8e', stroke: '#a8863f', top: 'rgba(255,255,255,0.5)' },
     },
     pedestal: { style: 'dobra', fill: '#c0a880', stroke: '#7c6748', glow: '#d2603a' },
-    hexagon: { fill: '#ffdcc6', stroke: '#b8441f', core: '#fffcf7' },
+    hexagon: { fill: '#b8441f', stroke: '#b8441f', core: '#fffcf7' },
     star: '#e8a82e',
     starOff: 'rgba(160,145,120,0.55)',
     guide: 'rgba(90,75,55,0.4)',

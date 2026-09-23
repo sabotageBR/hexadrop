@@ -21,7 +21,8 @@
 /** @typedef {{fill:string, stroke:string, core:string}} Cores */
 
 export const HEX_MODELS = [
-  { id: 'liso', nome: 'Liso', desc: 'O de hoje: corpo em degrade e contorno aceso.' },
+  { id: 'joia', nome: 'Joia chapada', desc: 'O padrao: facetas chapadas, mesa no centro e contorno fino.' },
+  { id: 'liso', nome: 'Liso', desc: 'O padrao antigo: corpo em degrade radial e contorno aceso.' },
   { id: 'cristal', nome: 'Cristal facetado', desc: 'Seis facetas do centro para as arestas.' },
   { id: 'neon', nome: 'Tubo de neon', desc: 'Vao escuro, fio vivo e miolo translucido.' },
   { id: 'placa', nome: 'Placa metalica', desc: 'Chapa escovada, chanfro e seis rebites.' },
@@ -77,6 +78,12 @@ const claro = (cor, t) => mistura(cor, '#ffffff', t);
 /** @param {string} cor @param {number} t */
 const escuro = (cor, t) => mistura(cor, '#000000', t);
 
+/** Luminancia percebida, 0 a 255 - a mesma conta de `render/sprites.js`. */
+function lum(cor) {
+  const [r, g, b] = rgb(cor);
+  return r * 0.299 + g * 0.587 + b * 0.114;
+}
+
 // ------------------------------------------------------------ geometria ----
 
 /**
@@ -111,7 +118,72 @@ function vert(cx, cy, r, i, giro = 0) {
 
 /** @type {Record<string, (ctx:CanvasRenderingContext2D, cx:number, cy:number, r:number, c:Cores, glow:number)=>void>} */
 const PINTORES = {
-  /** O hexagono de sempre: gradiente radial deslocado para cima e halo. */
+  /**
+   * Joia chapada: o hexagono padrao.
+   *
+   * Seis facetas entre a borda e uma mesa central, cada uma num tom chapado. A
+   * luz vem de cima: a faceta do topo e a mais clara, a da base a mais escura.
+   * Substituiu o `liso`, cujo degrade radial com miolo quase branco lia como
+   * uma lampada no meio da peca, cercada por um halo borrado que as pecas do
+   * mundo 1 ja nao tinham. Aqui nao ha halo, centelha nem mancha redonda: o que
+   * separa o hexagono da torre e ser um objeto solido no meio de pecas de
+   * contorno.
+   *
+   * O corpo e `fill`, que por isso e opaco em todo tema. O contorno e a propria
+   * cor um passo adiante, como o das pecas (`contorno()` em sprites.js).
+   */
+  joia(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    const mesa = r * 0.56;
+    // A aresta i liga o vertice i ao i+1: 0-1 e a de cima a direita, 1-2 o
+    // topo, 2-3 a de cima a esquerda, e dai as tres de baixo.
+    const tons = [0.2, 0.45, 0.2, -0.12, -0.28, -0.12];
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.clip();
+    for (let i = 0; i < 6; i++) {
+      const a = vert(cx, cy, r, i);
+      const b = vert(cx, cy, r, (i + 1) % 6);
+      const bm = vert(cx, cy, mesa, (i + 1) % 6);
+      const am = vert(cx, cy, mesa, i);
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.lineTo(bm[0], bm[1]);
+      ctx.lineTo(am[0], am[1]);
+      ctx.closePath();
+      const t = tons[i];
+      ctx.fillStyle = t > 0 ? claro(corpo, t) : escuro(corpo, -t);
+      ctx.fill();
+      // Traco fino da mesma cor: fecha a fresta de antisserrilhado que sobraria
+      // entre duas facetas vizinhas.
+      ctx.strokeStyle = ctx.fillStyle;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    hexPath(ctx, cx, cy, mesa);
+    const g = ctx.createLinearGradient(0, cy - mesa, 0, cy + mesa);
+    g.addColorStop(0, claro(corpo, 0.25));
+    g.addColorStop(1, corpo);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+
+    // O contorno vai por dentro da silhueta: centrado em r - L/2, o traco de
+    // largura L termina na borda. Corpo claro escurece e corpo escuro clareia,
+    // como nas pecas - so o limiar e mais baixo que o de sprites.js, para o
+    // azul do mundo classico (lum ~79) escurecer como as outras oito cores.
+    const largura = r * 0.05;
+    ctx.save();
+    hexPath(ctx, cx, cy, r - largura / 2);
+    ctx.strokeStyle = lum(corpo) < 64 ? claro(corpo, 0.34) : escuro(corpo, 0.46);
+    ctx.lineWidth = largura;
+    ctx.lineJoin = 'miter';
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  /** O padrao antigo: gradiente radial deslocado para cima e halo. */
   liso(ctx, cx, cy, r, c, glow) {
     const g = ctx.createRadialGradient(cx, cy - r * 0.12, r * 0.05, cx, cy, r * 1.05);
     g.addColorStop(0, c.core);
@@ -562,7 +634,7 @@ function contorno(ctx, cx, cy, r, c, glow) {
  * @param {number} [glow] 0 a 1, intensidade do tema
  */
 export function paintHexModel(ctx, cx, cy, r, modelo, cores, glow = 0.6) {
-  const pintor = PINTORES[modelo] || PINTORES.liso;
+  const pintor = PINTORES[modelo] || PINTORES.joia;
   // A sombra projetada so existe em tema claro, onde o hexagono sumiria no
   // fundo. Fica fora do pintor porque vale para todos os modelos.
   if (glow < 0.4) {

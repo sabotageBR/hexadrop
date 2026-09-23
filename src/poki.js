@@ -83,18 +83,32 @@ class Poki {
       this.ready = false;
       return;
     }
-    const ok = await withTimeout(
-      (() => {
-        try {
-          return api.init();
-        } catch {
-          return null;
-        }
-      })(),
-      INIT_TIMEOUT,
-      null,
-    );
-    this.ready = ok !== null || !!sdk();
+    // Pronto so quando o init RESPONDE, resolvendo ou rejeitando (rejeitar e o
+    // proprio SDK avisando de bloqueador: ele carregou e sabe se virar). O
+    // carregador da Poki enfileira toda chamada ate o nucleo chegar e nao tem
+    // onerror: com um bloqueador que deixa passar o carregador e barra so o
+    // nucleo, a fila nunca anda. Antes o jogo se dava por pronto assim mesmo, e
+    // cada intervalo comercial depois da carencia esperava os 45 s inteiros de
+    // BREAK_TIMEOUT com a tela parada. Se o init responder depois dos 4 s, o
+    // `then` liga o SDK dali em diante.
+    const pedido = (() => {
+      try {
+        return api.init();
+      } catch {
+        return null;
+      }
+    })();
+    if (pedido && typeof pedido.then === 'function') {
+      pedido.then(
+        () => {
+          this.ready = true;
+        },
+        () => {
+          this.ready = true;
+        },
+      );
+    }
+    await withTimeout(pedido, INIT_TIMEOUT, null);
     try {
       if (typeof api.getDeviceInfo === 'function') {
         const info = await withTimeout(api.getDeviceInfo(), 1500, null);
@@ -150,7 +164,7 @@ class Poki {
    * @returns {Promise<void>}
    */
   async commercialBreak() {
-    if (!COM_ANUNCIOS || this.inBreak) return;
+    if (!COM_ANUNCIOS || this.inBreak || !this.ready) return;
     this.gameplayStop();
     this.inBreak = true;
     if (this.onAdStart) this.onAdStart();
@@ -181,7 +195,9 @@ class Poki {
    * @returns {Promise<boolean>}
    */
   async rewardedBreak(size) {
-    if (!COM_ANUNCIOS || this.inBreak) return false;
+    // Sem SDK respondendo nao ha video, e sem video nao ha premio: a Poki pede
+    // que o jogo "do not follow through and provide rewards" com bloqueador.
+    if (!COM_ANUNCIOS || this.inBreak || !this.ready) return false;
     const wasPlaying = this.inGameplay;
     this.gameplayStop();
     this.inBreak = true;

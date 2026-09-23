@@ -1,18 +1,17 @@
 /**
  * Progresso do jogador.
  *
- * Coracoes "suaves": quando acabam, o jogador continua jogando normalmente e
- * so ganha metade das recompensas. Isso atende a regra da Poki que proibe
- * tanto espera obrigatoria quanto anuncio como condicao para progredir.
+ * Sem coracoes desde a 1.0.5. Eles eram "suaves" - acabando, o jogador seguia
+ * jogando com metade do premio -, mas o efeito era invisivel (a homologacao ja
+ * nao avisava que tinham acabado) e o contador era um segundo recurso ao lado
+ * das moedas no HUD. A Poki pede economia simples, com uma moeda so, e
+ * desaconselha os padroes de celular feitos para vender recarga.
  */
 
 import { load, save, isPersistent } from '../core/storage.js';
 import { LEVEL_COUNT, WORLD_COUNT, worldOf } from './levelgen.js';
 import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE } from './content.js';
 
-const BASE_HEARTS = 5;
-/** Um coracao a cada dez minutos de relogio real. */
-const HEART_REFILL_MS = 10 * 60 * 1000;
 /**
  * Progresso salvo de uma versao anterior e descartado quando este numero muda
  * (`stored.v === SAVE_VERSION` no construtor).
@@ -36,8 +35,6 @@ const SAVE_VERSION = 3;
  * @property {Record<string, number>} stars estrelas por fase
  * @property {number} coins
  * @property {number} xp
- * @property {number} hearts
- * @property {number} heartsAt timestamp da ultima recarga contabilizada
  * @property {string} skin
  * @property {string[]} skins
  * @property {Record<string, number>} upgrades
@@ -55,8 +52,6 @@ function blank() {
     stars: {},
     coins: 0,
     xp: 0,
-    hearts: BASE_HEARTS,
-    heartsAt: Date.now(),
     skin: 'classic',
     skins: ['classic'],
     upgrades: {},
@@ -83,59 +78,18 @@ export class Progress {
     for (const b of BOOSTS) {
       if (this.data.boosts[b.id] === undefined) this.data.boosts[b.id] = b.inicial;
     }
+    // Os coracoes sairam do jogo. Quem comprou o "coracao extra" recebe as
+    // moedas de volta, e os campos velhos somem do save.
+    const extra = Math.max(0, this.data.upgrades.heart || 0);
+    if (extra > 0) this.data.coins += [250, 700].slice(0, extra).reduce((a, b) => a + b, 0);
+    delete this.data.upgrades.heart;
+    delete (/** @type {*} */ (this.data)).hearts;
+    delete (/** @type {*} */ (this.data)).heartsAt;
     this.persistent = isPersistent();
-    this.refreshHearts();
   }
 
   flush() {
     save('save', this.data);
-  }
-
-  // ------------------------------------------------------------- coracoes
-
-  /** @returns {number} */
-  get maxHearts() {
-    return BASE_HEARTS + upgradeEffects(this.data.upgrades).extraHearts;
-  }
-
-  /** Converte tempo decorrido em coracoes recuperados. */
-  refreshHearts() {
-    const now = Date.now();
-    const d = this.data;
-    if (d.hearts >= this.maxHearts) {
-      d.heartsAt = now;
-      return;
-    }
-    if (!d.heartsAt || d.heartsAt > now) d.heartsAt = now;
-    const gained = Math.floor((now - d.heartsAt) / HEART_REFILL_MS);
-    if (gained > 0) {
-      d.hearts = Math.min(this.maxHearts, d.hearts + gained);
-      d.heartsAt = d.hearts >= this.maxHearts ? now : d.heartsAt + gained * HEART_REFILL_MS;
-      this.flush();
-    }
-  }
-
-  /** @returns {number} milissegundos ate o proximo coracao, 0 se cheio */
-  msToNextHeart() {
-    this.refreshHearts();
-    if (this.data.hearts >= this.maxHearts) return 0;
-    return Math.max(0, this.data.heartsAt + HEART_REFILL_MS - Date.now());
-  }
-
-  /** @returns {boolean} true se havia coracao para gastar */
-  spendHeart() {
-    this.refreshHearts();
-    if (this.data.hearts <= 0) return false;
-    if (this.data.hearts >= this.maxHearts) this.data.heartsAt = Date.now();
-    this.data.hearts--;
-    this.flush();
-    return true;
-  }
-
-  /** @returns {boolean} recompensas pela metade quando sem coracoes */
-  get depleted() {
-    this.refreshHearts();
-    return this.data.hearts <= 0;
   }
 
   // ------------------------------------------------------------- progresso
@@ -254,7 +208,7 @@ export class Progress {
    * @param {boolean} o.won
    * @param {number} o.taps
    * @param {number} o.par
-   * @returns {{coins:number, xp:number, halved:boolean, best:boolean, rankUp:boolean}}
+   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, best:boolean, rankUp:boolean}}
    */
   finishLevel(o) {
     const d = this.data;
@@ -288,13 +242,6 @@ export class Progress {
       bonusXp = bonusPieces * BONUS_XP_PER_PIECE + comboPieces;
     }
 
-    const halved = this.depleted;
-    if (halved) {
-      coins = Math.floor(coins / 2);
-      xp = Math.floor(xp / 2);
-      bonusCoins = Math.floor(bonusCoins / 2);
-      bonusXp = Math.floor(bonusXp / 2);
-    }
     const mult = upgradeEffects(d.upgrades).coinMultiplier;
     coins = Math.round(coins * mult);
     bonusCoins = Math.round(bonusCoins * mult);
@@ -304,7 +251,7 @@ export class Progress {
     d.xp += xp + bonusXp;
     const rankUp = this.rank > rankBefore;
     this.flush();
-    return { coins, xp, bonusCoins, bonusXp, bonusPieces, halved, best, rankUp };
+    return { coins, xp, bonusCoins, bonusXp, bonusPieces, best, rankUp };
   }
 
   /**

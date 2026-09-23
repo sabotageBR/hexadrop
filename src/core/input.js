@@ -42,6 +42,9 @@ const SCROLL_KEYS = new Set([
   'End',
 ]);
 
+/** Teclas que andam pelo menu e podem repetir quando seguradas. */
+const MOVE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
+
 export class Input {
   /** @param {HTMLCanvasElement} canvas */
   constructor(canvas) {
@@ -121,8 +124,14 @@ export class Input {
 
     this._onKey = (/** @type {KeyboardEvent} */ e) => {
       if (SCROLL_KEYS.has(e.code)) e.preventDefault();
+      // Enter tambem e do jogo: sem isto, um botao focado era acionado duas
+      // vezes - pelo navegador e pelo atalho de teclado do main.js.
+      if (e.code === 'Enter' || e.code === 'NumpadEnter') e.preventDefault();
       this._fireGesture();
       if (!this.enabled) return;
+      // Tecla segurada repete o keydown. Para andar pelo menu isso e bom; para
+      // acao nao: Espaco segurado na fase alternava pausa e volta sem parar.
+      if (e.repeat && !MOVE_KEYS.has(e.code)) return;
       for (const fn of this.keyHandlers) fn(e.code);
     };
 
