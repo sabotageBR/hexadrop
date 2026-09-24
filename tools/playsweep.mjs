@@ -84,10 +84,13 @@ for (const level of LEVELS) {
     if (tela !== 'game') break;
     await sleep(300);
   }
-  const res = await js('({screen: window.__game.screen, state: window.__game.scene.session ? window.__game.scene.session.state : "?", stars: window.__game.scene.session ? window.__game.scene.session.stars : 0})');
+  // Nas fases sem derrota (main.js, FASES_SEM_DERROTA) a queda volta uma
+  // jogada e a fase segue: sem esta contagem, vencer ali depois de tres voltas
+  // pareceria vencer de primeira.
+  const res = await js('({screen: window.__game.screen, state: window.__game.scene.session ? window.__game.scene.session.state : "?", stars: window.__game.scene.session ? window.__game.scene.session.stars : 0, voltas: window.__game.scene.session ? window.__game.scene.session.rewinds : 0})');
   const avgFps = fps.length ? Math.round(fps.reduce((a, b) => a + b, 0) / fps.length) : 0;
   if (res.screen === 'win') wins++; else if (res.screen === 'lose') losses++;
-  rows.push(`fase ${String(level).padStart(3)}  ${res.screen.padEnd(5)}  estado=${String(res.state).padEnd(7)} estrelas=${res.stars} toques=${String(taps).padStart(2)} fps~${avgFps}${errors.length ? '  ERRO: ' + errors[0] : ''}`);
+  rows.push(`fase ${String(level).padStart(3)}  ${res.screen.padEnd(5)}  estado=${String(res.state).padEnd(7)} estrelas=${res.stars} toques=${String(taps).padStart(2)} voltas=${res.voltas} fps~${avgFps}${errors.length ? '  ERRO: ' + errors[0] : ''}`);
   console.log(rows[rows.length - 1]);
   // volta ao menu para a proxima
   await js('window.__game.showAmbient(); window.__game.show("home");');

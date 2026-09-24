@@ -167,7 +167,6 @@ const EVENTOS_UI = {
   // durante a fase
   gameBack: 'sair-da-fase',
   gamePause: 'pausa',
-  gameHint: 'dica',
   gameRestart: 'reiniciar',
   pauseResume: 'continuar',
   pauseRestart: 'reiniciar',
@@ -212,11 +211,18 @@ const WIPE_MS = 200;
  * jogo, e 61% das partidas passaram por ele. Cerca de 36% de quem perde uma
  * fase desistia dela - metade de toda a perda das dez primeiras fases veio logo
  * depois de uma derrota. E a mesma conta que tirou o cartao de vitoria: a
- * parada perde jogador, o fluxo nao. Da terceira derrota seguida em diante o
- * cartao volta, porque e ali que embaralhar e pular fase tem trabalho a fazer.
+ * parada perde jogador, o fluxo nao.
+ *
+ * As duas primeiras derrotas seguidas repetem o layout
+ * (`RETRIES_MESMO_LAYOUT`); a terceira e a quarta trocam de variante sozinhas;
+ * so a quinta abre o cartao, onde moram pular fase e voltar uma jogada. Na
+ * 1.0.4 o cartao abria ja na terceira, e mais da metade de quem o viu saiu sem
+ * tocar em nada - e quem tocou escolheu mais "embaralhar" (22%) que "repetir"
+ * (19%). Tres derrotas no mesmo layout pedem outro layout, nao uma parada.
  */
 const FLOW_RETRY_MS = 900;
-const RETRIES_SEM_CARTAO = 2;
+const RETRIES_SEM_CARTAO = 4;
+const RETRIES_MESMO_LAYOUT = 2;
 
 /**
  * Dica automatica (`Session.autoHintAfter`): segundos parado ate a peca segura
@@ -233,8 +239,8 @@ const DICA_NO_RECOMECO_S = 1.2;
 
 /**
  * Fases em que perder nao existe: o hexagono que cai volta uma jogada
- * (Session.rewind) em vez de encerrar a fase. Sao as tres do roteiro de ensino
- * (`PRIMEIRAS_FASES` em levelgen.js).
+ * (Session.rewind) em vez de encerrar a fase. E o trecho de ensino inteiro, ate
+ * a ultima estreia de material (`worldStart(2)`, a fase 10).
  *
  * A Poki: "A safe beginner environment. [...] In Subway Surfers, players can't
  * die during onboarding; they just try again until it clicks." Na 1.0.3 a
@@ -242,8 +248,20 @@ const DICA_NO_RECOMECO_S = 1.2;
  * de 36% de quem perdia desistia ali mesmo. O recomeco automatico da 1.0.4 ja
  * tirava a tela, mas ainda jogava fora a fase inteira; voltar uma jogada
  * guarda o que o jogador ja tinha feito.
+ *
+ * Na 1.0.5 eram so as tres do roteiro. Na 1.0.4 as fases 4 a 10 ainda perdiam
+ * de 20% a 36% das tentativas, e a 7 (bomba e espuma) e a 9 (TNT) levaram 19% e
+ * 26% dos jogadores: cada uma estreia uma peca, e e justo na estreia que o
+ * jogador ainda nao sabe o que ela faz.
  */
-const FASES_SEM_DERROTA = 3;
+const FASES_SEM_DERROTA = worldStart(2);
+
+/**
+ * Fases em que a dica automatica vem com a mao tocando a peca: as tres do
+ * roteiro de ensino (`PRIMEIRAS_FASES` em levelgen.js). Dali em diante o gesto
+ * ja foi aprendido.
+ */
+const FASES_COM_MAO = 3;
 
 /** Trilha sonora por tema. */
 const MUSIC = {
@@ -662,7 +680,6 @@ class Game {
       audio.button();
       this.retry(true);
     };
-    $('gameHint').onclick = () => this.hintByAd();
     $('gamePause').onclick = () => this.pauseLevel();
     $('pauseResume').onclick = () => this.resumeLevel();
     $('pauseSound').onclick = () => {
@@ -973,7 +990,7 @@ class Game {
     session.onRewind = () => this.onRewind();
     // Nas fases de ensino a dica vem com a mao tocando a peca: o gesto que o
     // texto "toque nas pecas" so descrevia.
-    this.scene.tapHand = this.level <= FASES_SEM_DERROTA;
+    this.scene.tapHand = this.level <= FASES_COM_MAO;
     this.hintOnStart = false;
     this.scene.setInsets(GAME_INSET_TOP, GAME_INSET_BOTTOM, false);
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
@@ -984,15 +1001,13 @@ class Game {
     const themeId = levelConfig(this.level - 1).theme;
     $('gameLevel').textContent = `${themeLabel(themeId)} · ${this.level}`;
     this.homeWorld = worldOf(this.level - 1);
-    // A dica so aparece depois de tropecar duas vezes na mesma fase, e sempre
-    // ao lado de um botao padrao. Nunca e condicao para progredir.
+    // Reiniciar aparece depois de tropecar duas vezes na mesma fase. Ao lado
+    // dele morava o video de dica, que saiu na 1.0.6: zero cliques em 135
+    // partidas que o viram na 1.0.3 e em 79 na 1.0.4, porque a dica
+    // automatica ja entrega a mesma peca de graca.
     const showHelp = this.lossStreak >= 2;
-    const hintBtn = /** @type {HTMLButtonElement} */ ($('gameHint'));
     const restartBtn = /** @type {HTMLButtonElement} */ ($('gameRestart'));
-    hintBtn.hidden = !showHelp;
     restartBtn.hidden = !showHelp;
-    hintBtn.disabled = false;
-    hintBtn.textContent = t('hint');
     restartBtn.textContent = t('restart');
     this.show('game');
     // Depois do show, que e quem zera as ofertas contadas na tela.
@@ -1002,10 +1017,7 @@ class Game {
     // aparecem na aba de interacao - o `interact` saia, mas o painel so lista
     // o que tem o par -, e o "saiu no meio" ficava impossivel de separar.
     this.ofertaVisivel('sair-da-fase');
-    if (showHelp) {
-      this.ofertaVisivel('dica');
-      this.ofertaVisivel('reiniciar');
-    }
+    if (showHelp) this.ofertaVisivel('reiniciar');
     this.showTutorial();
     poki.measure('level', String(this.level), 'start');
   }
@@ -1234,35 +1246,41 @@ class Game {
    *
    * O `fail` ja saiu em onLevelEnd; o recomeco dispara o `start` da mesma fase
    * em startLevel, e o `gameplayStart` volta no primeiro toque, como em
-   * qualquer fase. A variante e a mesma porque e o que o jogador escolhe quando
-   * pode: no cartao da 1.0.3, 63% tocaram em "tentar de novo" e 13% em
-   * "embaralhar". O HUD fica fora do ar ate a fase recomecar, como na
-   * celebracao - quem o devolve e o hideBonusCounter() de startLevel.
+   * qualquer fase. As duas primeiras repetem a variante porque e o que o
+   * jogador escolhe quando pode: no cartao da 1.0.3, 63% tocaram em "tentar de
+   * novo" e 13% em "embaralhar". O HUD fica fora do ar ate a fase recomecar,
+   * como na celebracao - quem o devolve e o hideBonusCounter() de startLevel.
    */
   flowRetry() {
     audio.lose();
+    // Da terceira derrota seguida em diante o recomeco troca o layout: repetir
+    // a mesma torre pela terceira vez e o que o cartao da 1.0.4 mostrou que o
+    // jogador nao quer. Sai de graca - o embaralhar pago continua no cartao.
+    const trocar = this.lossStreak > RETRIES_MESMO_LAYOUT && (this.variantCount || 1) >= 2;
+    const variante = trocar ? this.outraVariante() : this.variantIndex;
     const box = $('flowSeal');
     box.classList.add('miss');
     $('flowCoins').textContent = t('retryAutoTitle');
-    $('flowWhat').textContent = t('retryAuto');
+    $('flowWhat').textContent = t(trocar ? 'shuffleUsed' : 'retryAuto');
     box.hidden = false;
     /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = true;
     /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = true;
     this.hintOnStart = true;
-    this.scheduleFlow(() => this.retryLevel(), FLOW_RETRY_MS);
+    this.scheduleFlow(() => this.retryLevel(variante), FLOW_RETRY_MS);
   }
 
   /**
    * O corte do recomeco. Mesma ordem de advanceLevel(): o intervalo comercial
    * termina antes de startLevel, e passa pela carencia da classe.
+   * @param {number} [variante] a mesma, se omitida
    */
-  async retryLevel() {
+  async retryLevel(variante = this.variantIndex) {
     this.flowTimer = 0;
     this.advancing = true;
     await this.commercialBreak();
     $('wipe').classList.add('on');
     await new Promise((resolve) => window.setTimeout(resolve, WIPE_MS));
-    this.startLevel(this.level, this.variantIndex);
+    this.startLevel(this.level, variante);
   }
 
   /**
@@ -1834,12 +1852,20 @@ class Game {
       return;
     }
     audio.button();
-    // Um indice diferente do atual, sempre: embaralhar tem que mudar algo.
-    const n = this.variantCount;
-    const proximo = (this.variantIndex + 1 + Math.floor(this.rng.next() * (n - 1))) % n;
     this.toast(t('shuffleUsed'));
-    this.startLevel(this.level, proximo);
+    this.startLevel(this.level, this.outraVariante());
     this.refreshScreen();
+  }
+
+  /**
+   * Um indice de variante diferente do atual, sempre: embaralhar tem que mudar
+   * algo. So faz sentido com duas ou mais.
+   * @returns {number}
+   */
+  outraVariante() {
+    const n = this.variantCount || 1;
+    if (n < 2) return this.variantIndex;
+    return (this.variantIndex + 1 + Math.floor(this.rng.next() * (n - 1))) % n;
   }
 
   /** @param {boolean} fromPause */
@@ -1888,26 +1914,6 @@ class Game {
     p.flush();
     this.level = Math.min(LEVEL_COUNT, this.level + 1);
     this.startLevel(this.level);
-  }
-
-  async hintByAd() {
-    const btn = /** @type {HTMLButtonElement} */ ($('gameHint'));
-    btn.disabled = true;
-    const ok = await poki.rewardedBreak('small');
-    if (!ok) {
-      btn.disabled = false;
-      return;
-    }
-    const piece = this.scene.session ? this.scene.session.requestHint() : null;
-    if (piece) {
-      audio.star(0);
-      this.toast(t('hintUsed'));
-      btn.hidden = true;
-    } else {
-      btn.disabled = false;
-    }
-    // O intervalo parou o gameplay; se a fase continua, ele recomeca.
-    if (this.scene.session && this.scene.session.state === 'playing') poki.gameplayStart();
   }
 
   async dailyByAd() {

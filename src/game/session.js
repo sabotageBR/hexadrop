@@ -36,6 +36,18 @@ const COMBO_WINDOW = 1.4;
 /** Piso: sem ele, a jogada fechava no mesmo quadro do toque. */
 const COMBO_MIN = 0.25;
 
+// --- voltar uma jogada ----------------------------------------------------
+/**
+ * Quedas seguidas a partir do mesmo ponto ate a volta ir para o comeco da fase.
+ *
+ * O ponto de volta e o estado de antes do ultimo toque, e nada garante que dali
+ * exista saida: um cristal ou uma cera que ja estavam cedendo sob o hexagono
+ * voltam com o mesmo relogio, e uma TNT que ja ia detonar detona de novo. Sem
+ * esta porta o jogador das fases sem derrota ficaria preso num laco de "Quase!"
+ * - o comeco da fase, esse sim, o validador provou que se vence.
+ */
+const QUEDAS_ATE_O_COMECO = 3;
+
 /**
  * @typedef {'ready'|'playing'|'won'|'lost'|'stuck'} SessionState
  */
@@ -136,6 +148,12 @@ export class Session {
     this.onRewind = opts.onRewind || null;
     /** Quantas vezes a fase voltou uma jogada. */
     this.rewinds = 0;
+    /** O estado de antes do primeiro toque: a volta de quem ficou sem saida. */
+    this.inicio = null;
+    /** Quedas seguidas desde o mesmo ponto de volta (QUEDAS_ATE_O_COMECO). */
+    this.quedasNoMesmoPonto = 0;
+    /** Toques desde a ultima volta; e com eles que se sabe se o ponto andou. */
+    this._toquesDesdeAVolta = 0;
   }
 
   /**
@@ -303,8 +321,13 @@ export class Session {
     // O ponto de volta so anda com o hexagono parado. Um toque dado com ele ja
     // tombando levaria a volta para dentro da queda, e o jogador cairia de novo
     // sem poder fazer nada; entao ali a volta fica no toque anterior.
+    this._toquesDesdeAVolta++;
     if (!this.checkpoint || this.world.hexAtRest()) {
       this.checkpoint = { world: this.world.snapshot() };
+      if (!this.inicio) this.inicio = this.checkpoint;
+      // O primeiro toque depois de uma volta sai do proprio ponto de volta; so
+      // o segundo prova que o anterior nao derrubou nada e que o ponto andou.
+      if (this._toquesDesdeAVolta > 1) this.quedasNoMesmoPonto = 0;
     }
     this.world.destroyPiece(piece, 'tap');
     return { piece, ok: true };
@@ -397,10 +420,19 @@ export class Session {
    *
    * O toque que derrubou tudo continua contado: voltar desfaz a queda, nao a
    * jogada. As estrelas que a queda tinha cruzado voltam a apagar.
+   *
+   * Da `QUEDAS_ATE_O_COMECO`-esima queda seguida do mesmo ponto em diante a
+   * volta vai para o comeco da fase, e o comeco vira o novo ponto de volta.
    * @returns {boolean} false se ainda nao ha ponto de volta
    */
   rewind() {
     if (!this.checkpoint || this.bonus) return false;
+    this.quedasNoMesmoPonto++;
+    if (this.quedasNoMesmoPonto >= QUEDAS_ATE_O_COMECO && this.inicio) {
+      this.checkpoint = this.inicio;
+      this.quedasNoMesmoPonto = 0;
+    }
+    this._toquesDesdeAVolta = 0;
     this.world.restore(this.checkpoint.world);
     this.state = 'playing';
     this.endedAt = 0;

@@ -133,6 +133,19 @@ funis da Poki guiaram as trocas:
   Daí a 1.0.4: derrota sem parada, pedestal largo de novo no começo, câmera pelo tipo
   de ponteiro e dica automática. **Corte o funil por aparelho** (filtro Device
   Category do painel): o total esconde que cada um perde por um motivo.
+- **1.0.4, 194 partidas; Player Fit Test interrompido** (o painel do teste mostra 0,
+  mas Game Events guarda o que entrou). Até a fase 8 o funil melhorou — 54% chegam à
+  fase 5 e 23% à 10, contra 44% e 17% —, o abandono da fase 1 no desktop caiu de 18%
+  para 2,9% e o cartão de derrota de 61% para 19% das partidas. Mas as fases ficaram
+  rápidas (~17 s cada, contando a transição; a 10 começa aos 157 s, contra 180 s), e os
+  3 minutos caíram entre a 11 e a 12 — justo onde a 1.0.4 perdia **mais** que a 1.0.3:
+  26%, 18%, 24% e 29% nas fases 9 a 12, contra 15% a 19%. Pela conta da 1.0.3 (a fase
+  que começa aos 180 s era alcançada por 17%, e o teste mediu 21%), a 1.0.4 daria uns
+  22% de engajados. Mais da metade de quem viu o cartão de derrota saiu sem tocar em
+  nada. Daí a 1.0.6: derrota que troca de layout antes do cartão e o ensino inteiro
+  sem derrota. **O que o teste mede é tempo, não
+  fase alcançada**: a mediana de início de cada fase aparece ao expandir a linha dela
+  em Progress Events.
 
 **Altura é a alavanca do tempo de fase; pedestal e altura decidem o perdão.** Medido
 com seis colunas, sobre o pedestal largo antigo:
@@ -169,6 +182,17 @@ começavam na fase 11, e a primeira delas, a 13 da 1.0.3, derrubou metade dos jo
 a 100). Na 1.0.3 ele abria em 1,5 e 1,3, e a derrota do começo ficou entre 18% e 28%:
 o pedestal é a alavanca do perdão, a altura a do tempo de fase, então a torre continuou
 alta e só o pedestal voltou a abrir largo.
+
+**Depois do ensino, alargar o pedestal não amacia nada — medido.** Na 1.0.4 as fases 9
+a 12 perderam de 18% a 29% dos jogadores, e na fase 11 o pedestal cai de 1,45 para 1,1
+junto com as barras (`barBias` de 0,12 para 0,06) e a estreia do balanço. Um degrau por
+mundo (1,28 e 1,16, barras em 0,09) foi gerado para as fases 11 a 20 e medido contra as
+variantes em uso, com o mesmo solucionador e 12 partidas de cada política por variante:
+competente de 64% para 67% e ao acaso de 20% para 20%, dentro do ruído. O validador
+persegue a curva de perdão, e as seeds aprovadas sobre o pedestal largo compensam no
+resto do layout. A mudança foi desfeita. Se o trecho 11 a 20 precisar mesmo de perdão,
+a alavanca é a própria curva (`forgivenessBand`) ou a altura — e altura menor é fase
+mais curta, que é justamente o que a 1.0.4 mostrou custar tempo de sessão.
 
 **Torre grande não basta: `minPar` é o piso de toques.** O validador escolhe a
 variante mais próxima do *alvo de perdão*, e nada nesse critério olha para o tamanho
@@ -544,25 +568,39 @@ entra atrás de um corte de 200 ms (`.wipe`). Ninguém clica em nada.
 `flowContinues()` só para na **fase 100** — nem o fim de mundo abre o cartão de vitória.
 Ele ainda aparece na fase final e quando a automação desliga o fluxo (`flowLevels`).
 
-**Nas fases 1 a 3, perder não existe** (`FASES_SEM_DERROTA` em `main.js`, as três do
-roteiro de ensino). Quando o hexágono cai, `Session.step` chama `rewind()` em vez de
+**Nas fases 1 a 10, perder não existe** (`FASES_SEM_DERROTA` em `main.js`, que é
+`worldStart(2)`: o ensino inteiro, até a última estreia de material). Quando o hexágono cai, `Session.step` chama `rewind()` em vez de
 encerrar: a torre volta ao `checkpoint`, o estado de antes do último toque dado **com o
 hexágono parado** (um toque dado com ele já tombando levaria a volta para dentro da
 queda). Nada de `fail` nem `gameplayStop` — sai só `measure('level', N, 'rewind')`, que
 cai na aba Other —, o selo "Quase!" passa sem texto e a dica acende em 1,2 s. A Poki cita
 o Subway Surfers: *"players can't die during onboarding; they just try again until it
 clicks."* O toque que derrubou tudo continua contado, e as estrelas que a queda tinha
-cruzado apagam de novo.
+cruzado apagam de novo. Na 1.0.5 eram só as três do roteiro; na 1.0.4 as fases 4 a 10
+ainda perdiam de 20% a 36% das tentativas, e a 7 (bomba) e a 9 (TNT) levaram 19% e 26%
+dos jogadores — cada uma é a estreia de uma peça. A mão que toca a peça continua só nas
+três do roteiro (`FASES_COM_MAO`).
 
-**Perder também não abre tela, nas duas primeiras vezes.** Na derrota, `onLevelEnd`
+**A volta tem saída.** Nada garante que do ponto de volta exista jogada: um cristal ou
+uma cera que já cediam voltam com o mesmo relógio, e uma TNT que ia detonar detona de
+novo. Da terceira queda seguida do mesmo ponto (`QUEDAS_ATE_O_COMECO` em `session.js`)
+a volta vai para **o começo da fase** — esse o validador provou que se vence. O ponto
+"andou" quando o segundo toque depois de uma volta sai com o hexágono parado: o primeiro
+sai do próprio ponto de volta.
+
+**Perder também não abre tela, nas quatro primeiras vezes.** Na derrota, `onLevelEnd`
 manda o `fail` e chama `flowRetry()`: o mesmo selo, agora com
 "Quase!" na tinta do tema (`.flow.miss`), e ~900 ms depois `retryLevel()` passa pelo
-intervalo comercial, pelo corte e recomeça a **mesma variante**. Da terceira derrota
-seguida na mesma fase em diante (`RETRIES_SEM_CARTAO`) o cartão de derrota volta, porque
-é ali que embaralhar e pular fase têm trabalho a fazer. Na 1.0.3 o cartão de derrota
-era a única parada em tela cheia do jogo, 61% das partidas passaram por ele e cerca de
-36% de quem perdia uma fase desistia dela. No cartão, 63% tocavam em "tentar de novo"
-e 13% em "embaralhar": por isso o recomeço automático repete o layout. O recomeço
+intervalo comercial, pelo corte e recomeça. As duas primeiras derrotas seguidas repetem
+a **mesma variante** (`RETRIES_MESMO_LAYOUT`); a terceira e a quarta trocam de variante
+sozinhas, de graça, com "Novo layout" no selo; só a quinta (`RETRIES_SEM_CARTAO`) abre o
+cartão de derrota, onde moram pular fase e voltar uma jogada. Na 1.0.3 o cartão de
+derrota era a única parada em tela cheia do jogo, 61% das partidas passaram por ele e
+cerca de 36% de quem perdia uma fase desistia dela. No cartão, 63% tocavam em "tentar
+de novo" e 13% em "embaralhar": por isso o recomeço automático começa repetindo o
+layout. Na 1.0.4, com o cartão abrindo na terceira derrota, mais da metade de quem o
+viu saiu sem tocar em nada, e quem tocou escolheu mais "embaralhar" (22%) que
+"repetir" (19%): três derrotas no mesmo layout pedem outro layout. O recomeço
 acende a dica em 1,2 s (`DICA_NO_RECOMECO_S`), e o cartão que ainda existe mora em
 `loseTimer`, com guarda: sem ela, um toque em voltar nos 650 ms depois da derrota abria
 o cartão por cima da tela seguinte. Um toque no selo "Quase!" adianta o recomeço.
@@ -610,9 +648,10 @@ Quatro coisas que esse fluxo precisa respeitar:
 `flowLevels = false` é o que mantém o `playsweep` medindo uma fase por vez — ele desliga
 também a derrota sem parada, e cada derrota volta a abrir o cartão. Quem cobre o
 caminho do fluxo é o `sdkcheck`: ele joga a fase 1 (a 2 tem que entrar sozinha), força
-três derrotas seguidas na 2 (as duas primeiras recomeçam sozinhas com `fail` → `start`,
-a terceira abre o cartão), joga a 20 e a 30 (fronteiras de mundo, que também não param),
-e confere que só a fase 100 para o fluxo.
+cinco derrotas seguidas na 2 (as quatro primeiras recomeçam sozinhas com `fail` →
+`start`, a terceira já em outro layout, e a quinta abre o cartão), confere que a fase 10
+ainda volta jogada e a 11 não, joga a 20 e a 30 (fronteiras de mundo, que também não
+param), e confere que só a fase 100 para o fluxo.
 
 ### Renderização
 
@@ -1061,7 +1100,8 @@ padrão para o validador): 2,5 s na fase 1 — com a mão tocando a peça até a
 fase 15 e 1,2 s no recomeço de uma derrota. Ela espera a torre parar, menos sobre
 pedestal que balança, onde as peças nunca repousam e ela vem três segundos depois. A
 única dica da 1.0.3 era um vídeo depois de duas derrotas: zero cliques em 135 partidas
-que a viram.
+que a viram, e de novo zero em 79 na 1.0.4, já com a dica automática ao lado. O vídeo
+saiu na 1.0.6; depois de duas derrotas sobra só "reiniciar" no rodapé.
 
 **A dica simula em silêncio.** `requestHint()` roda o solucionador sobre o mundo
 **real**: `planAhead` destrói até nove candidatas, simula e volta com `restore()`. Com

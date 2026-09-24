@@ -1,6 +1,6 @@
 {
   "name": "hexa-drop",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Hexa Drop - jogo de fisica: derrube a torre e leve o hexagono ate a base.",
   "private": true,
   "type": "module",

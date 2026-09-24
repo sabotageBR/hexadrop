@@ -124,7 +124,7 @@ async function esperarDesfecho(deLevel) {
  * jogador automatico nao diz nada sobre isso.
  *
  * Com a derrota sem parada (main.js, `flowRetry`) as primeiras derrotas nem
- * saem da tela de jogo: a fase recomeca sozinha, no mesmo nivel. So a terceira
+ * saem da tela de jogo: a fase recomeca sozinha, no mesmo nivel. So a quinta
  * seguida abre o cartao.
  * @param {number} nivel
  */
@@ -150,7 +150,7 @@ async function perder() {
   await js(`(() => { const s = window.__game.scene.session; s.state = 'lost'; s.endedAt = s.elapsed; s.onEnd('lost'); })()`);
 }
 
-const estado = () => js('({screen: window.__game.screen, level: window.__game.level})');
+const estado = () => js('({screen: window.__game.screen, level: window.__game.level, variante: window.__game.variantIndex})');
 
 // Perfil novo entra jogando: main.js manda `isNewcomer()` direto para a fase
 // 1 e a home nem chega a aparecer. O clique em "jogar" so existe para o caso
@@ -185,28 +185,37 @@ await js(`(() => { const w = window.__game.scene.session.world; const h = w.hexT
 await sleep(1500);
 const aposQueda = await js('({screen: window.__game.screen, level: window.__game.level, voltas: window.__game.scene.session.rewinds, estado: window.__game.scene.session.state})');
 
-// Derrota sem parada: as duas primeiras derrotas seguidas na mesma fase
-// recomecam sozinhas, sem cartao, e so a terceira abre o cartao de derrota
-// (main.js, RETRIES_SEM_CARTAO). Na 1.0.3 o cartao era a unica parada em tela
-// cheia do jogo, e cerca de 36% de quem perdia desistia ali.
+// Derrota sem parada: as quatro primeiras derrotas seguidas na mesma fase
+// recomecam sozinhas, sem cartao - as duas primeiras no mesmo layout, a
+// terceira e a quarta em outro -, e so a quinta abre o cartao de derrota
+// (main.js, RETRIES_SEM_CARTAO e RETRIES_MESMO_LAYOUT). Na 1.0.3 o cartao era
+// a unica parada em tela cheia do jogo, e cerca de 36% de quem perdia
+// desistia ali; na 1.0.4, abrindo na terceira, mais da metade.
 const faseDaDerrota = await js('window.__game.level');
+const varianteInicial = await js('window.__game.variantIndex');
 await perder();
 await sleep(1800);
 const aposDerrota1 = await estado();
 await perder();
 await sleep(1800);
 const aposDerrota2 = await estado();
-// Um toque antes da terceira: o cartao so oferece "voltar uma jogada" quando
+await perder();
+await sleep(1800);
+const aposDerrota3 = await estado();
+await perder();
+await sleep(1800);
+const aposDerrota4 = await estado();
+// Um toque antes da quinta: o cartao so oferece "voltar uma jogada" quando
 // houve jogada para voltar.
 await tocar();
 await sleep(1200);
 await perder();
 await sleep(1500);
-const aposDerrota3 = await estado();
+const aposDerrota5 = await estado();
 const voltaNoCartao = await js('!document.getElementById("loseRevive").hidden && document.getElementById("loseRevive").classList.contains("ad")');
 // O video de voltar uma jogada devolve a fase pronta para o toque seguinte, e
 // abre uma tentativa nova: o `fail` da anterior ja saiu.
-if (aposDerrota3 && aposDerrota3.screen === 'lose') await js('document.getElementById("loseRevive").click()');
+if (aposDerrota5 && aposDerrota5.screen === 'lose') await js('document.getElementById("loseRevive").click()');
 await sleep(1000);
 const aposVolta = await js('({screen: window.__game.screen, level: window.__game.level, estado: window.__game.scene.session.state})');
 await sleep(400);
@@ -224,6 +233,16 @@ await js('window.__game.pauseLevel()');
 await sleep(400);
 await js('document.getElementById("pauseResume").click()');
 await sleep(1200);
+
+// O ensino sem derrota vai ate a fase 10 (main.js, FASES_SEM_DERROTA), e a mao
+// que toca a peca so ate a 3 (FASES_COM_MAO). A 11, a primeira depois do
+// ensino, ja se perde.
+await js('window.__game.startLevel(10)');
+await sleep(600);
+const ensinoFim = await js('({volta: window.__game.scene.session.rewindOnLoss, mao: window.__game.scene.tapHand})');
+await js('window.__game.startLevel(11)');
+await sleep(600);
+const posEnsino = await js('({volta: window.__game.scene.session.rewindOnLoss})');
 
 // Fronteira de mundo: a fase 20 fecha o mundo 4 e nao pode parar o jogador. O
 // fluxo so para na ultima fase do jogo (main.js, `flowContinues`). E a regra
@@ -330,14 +349,24 @@ check(
   parada ? `tela ${parada.screen}, fase ${parada.level}` : 'sem estado',
 );
 check(
-  'primeira derrota recomeca a fase sozinha',
-  !!aposDerrota1 && aposDerrota1.screen === 'game' && aposDerrota1.level === faseDaDerrota,
-  aposDerrota1 ? `tela ${aposDerrota1.screen}, fase ${aposDerrota1.level}` : 'sem estado',
+  'primeira derrota recomeca a fase sozinha, no mesmo layout',
+  !!aposDerrota1 && aposDerrota1.screen === 'game' && aposDerrota1.level === faseDaDerrota && aposDerrota1.variante === varianteInicial,
+  aposDerrota1 ? `tela ${aposDerrota1.screen}, fase ${aposDerrota1.level}, variante ${varianteInicial} -> ${aposDerrota1.variante}` : 'sem estado',
 );
 check(
-  'segunda derrota seguida recomeca a fase sozinha',
-  !!aposDerrota2 && aposDerrota2.screen === 'game' && aposDerrota2.level === faseDaDerrota,
-  aposDerrota2 ? `tela ${aposDerrota2.screen}, fase ${aposDerrota2.level}` : 'sem estado',
+  'segunda derrota seguida recomeca a fase sozinha, no mesmo layout',
+  !!aposDerrota2 && aposDerrota2.screen === 'game' && aposDerrota2.level === faseDaDerrota && aposDerrota2.variante === varianteInicial,
+  aposDerrota2 ? `tela ${aposDerrota2.screen}, fase ${aposDerrota2.level}, variante ${aposDerrota2.variante}` : 'sem estado',
+);
+check(
+  'terceira derrota seguida recomeca sozinha em outro layout',
+  !!aposDerrota3 && aposDerrota3.screen === 'game' && aposDerrota3.level === faseDaDerrota && aposDerrota3.variante !== varianteInicial,
+  aposDerrota3 ? `tela ${aposDerrota3.screen}, fase ${aposDerrota3.level}, variante ${varianteInicial} -> ${aposDerrota3.variante}` : 'sem estado',
+);
+check(
+  'quarta derrota seguida ainda recomeca sozinha',
+  !!aposDerrota4 && aposDerrota4.screen === 'game' && aposDerrota4.level === faseDaDerrota,
+  aposDerrota4 ? `tela ${aposDerrota4.screen}, fase ${aposDerrota4.level}` : 'sem estado',
 );
 check(
   'fase de ensino volta uma jogada em vez de perder',
@@ -350,6 +379,11 @@ check(
   const i = seq.indexOf('rewind');
   check('a volta da fase de ensino nao manda fail', i >= 0 && seq.slice(0, i).every((a) => a !== 'fail'), seq.slice(0, i + 1).join(' '));
 }
+check(
+  'fase 10 ainda volta uma jogada, sem a mao; a 11 ja se perde',
+  !!ensinoFim && ensinoFim.volta === true && ensinoFim.mao === false && !!posEnsino && posEnsino.volta === false,
+  JSON.stringify({ ensinoFim, posEnsino }),
+);
 check('cartao de derrota oferece voltar uma jogada, como video', voltaNoCartao === true, String(voltaNoCartao));
 check(
   'voltar uma jogada devolve a fase pronta para o toque',
@@ -357,9 +391,9 @@ check(
   aposVolta ? `tela ${aposVolta.screen}, fase ${aposVolta.level}, ${aposVolta.estado}` : 'sem estado',
 );
 check(
-  'terceira derrota seguida abre o cartao',
-  !!aposDerrota3 && aposDerrota3.screen === 'lose',
-  aposDerrota3 ? `tela ${aposDerrota3.screen}, fase ${aposDerrota3.level}` : 'sem estado',
+  'quinta derrota seguida abre o cartao',
+  !!aposDerrota5 && aposDerrota5.screen === 'lose',
+  aposDerrota5 ? `tela ${aposDerrota5.screen}, fase ${aposDerrota5.level}` : 'sem estado',
 );
 {
   // Cada recomeco e uma tentativa nova: `fail` e logo depois o `start` da
@@ -367,7 +401,7 @@ check(
   const alvo = `level/${faseDaDerrota}/`;
   const seq = measures.filter((m) => m.startsWith(alvo)).map((m) => m.slice(alvo.length));
   const recomecos = seq.filter((a, i) => a === 'fail' && seq[i + 1] === 'start').length;
-  check('derrota sem parada manda fail e depois start da mesma fase', recomecos >= 2, seq.join(' '));
+  check('derrota sem parada manda fail e depois start da mesma fase', recomecos >= 4, seq.join(' '));
 }
 check(
   'so a ultima fase do jogo para o fluxo',
