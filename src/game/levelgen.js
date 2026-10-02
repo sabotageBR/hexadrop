@@ -468,6 +468,22 @@ export function levelConfig(index, soften = 0) {
         Math.round(
           Math.pow((i - fimDoTutorial) / (LEVEL_COUNT - fimDoTutorial - 1), 0.5) * 7,
         );
+  // A 1.0.8 sobe a torre do trecho em que mais gente joga, e so ele. O Web Fit
+  // Test da 1.0.7 deu 5:54 de tempo na pagina contra ~8:52 de referencia, com
+  // ~17 s por fase do comeco ao fim. Uma linha a mais rende tempo onde o
+  // pedestal e largo (fases 4 a 10) e onde o piso de perdao ainda segura a
+  // dificuldade (o mundo 3 leva duas). Contraprova medida no painel: a fase 25,
+  // tres linhas mais alta que a 10 sobre pedestal de 1,1x, conclui em 14 s
+  // contra 17 s - com pedestal estreito a torre desaba em blocos -, e por isso
+  // a rampa encosta sozinha na antiga quando ela chega a 16 linhas (fase 48).
+  // O roteiro das fases 1 a 3 fica como esta: o primeiro acerto tem que vir
+  // rapido. As linhas nao consomem o Rng, entao so as fases 4 a 47 mudam de
+  // layout e o resto das seeds assadas continua valendo.
+  if (i >= PRIMEIRAS_FASES.length) {
+    if (i < fimDoTutorial) rows += 1;
+    else if (i < worldStart(3)) rows += 2;
+    else if (rows < 16) rows += 1;
+  }
   const inWorld = indexInWorld(i);
   // A fase final do mundo ganha UMA linha. Nao ha mais a linha a menos na
   // abertura do mundo seguinte: com mundos de cinco fases ela cairia em uma
