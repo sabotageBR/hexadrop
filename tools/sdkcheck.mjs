@@ -8,9 +8,10 @@
  * tambem a carencia do comeco: nenhum intervalo antes de o jogador vencer as
  * primeiras fases, e o intervalo de volta depois delas.
  *
- * E cobra o fluxo continuo, que e a outra metade do desenho: dentro de um mundo
- * vencer nao abre tela e a fase seguinte entra sozinha; no fim do mundo o cartao
- * volta. Se um dos dois se inverter, o teste reprova.
+ * E cobra o fluxo continuo, que e a outra metade do desenho: vencer nao abre
+ * tela e a fase seguinte entra sozinha, inclusive na fronteira de mundo, onde o
+ * premio de mundo entra no proprio selo. So a fase 100 abre o cartao de vitoria,
+ * e dali "proxima" leva a 101, que tambem segue sem cartao.
  */
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -150,6 +151,41 @@ async function perder() {
   await js(`(() => { const s = window.__game.scene.session; s.state = 'lost'; s.endedAt = s.elapsed; s.onEnd('lost'); })()`);
 }
 
+/**
+ * Vitoria forcada, sem depender do jogador automatico: o mesmo veredito que
+ * `Session.step` da quando o hexagono pousa. Serve as fronteiras de mundo, em
+ * que o que se confere e o que vem DEPOIS da vitoria - e a torre da 1.0.8
+ * subiu, entao o jogador automatico ja nao vence a 20 e a 30 com folga.
+ */
+async function ganhar() {
+  // As estrelas moram no mundo (`Session.stars` e so um getter): sem as tres
+  // cruzadas, a vitoria forcada chegava ao save com zero estrelas.
+  // E toda vitoria de verdade vem depois de um toque: sem o `onFirstTap` o
+  // gameplayStart nunca saia, e a regra "gameplayStop antes de cada intervalo"
+  // reprovava uma partida que nenhum jogador jogaria.
+  await js(`(() => { const s = window.__game.scene.session; if (s.onFirstTap) s.onFirstTap();
+    s.world.starsCrossed = 3; s.state = 'won'; s.endedAt = s.elapsed; s.onEnd('won'); })()`);
+}
+
+/**
+ * Vence pela forca e espera o desfecho, guardando o selo do fluxo no meio do
+ * caminho - e o unico momento em que da para ver se o premio de mundo entrou.
+ * @param {number} nivel
+ */
+async function ganharEsperando(nivel) {
+  await ganhar();
+  let selo = null;
+  for (let t = 0; t < 48; t++) {
+    const st = await js(`({screen: window.__game.screen, level: window.__game.level, advancing: window.__game.advancing,
+      premio: document.getElementById('flowSeal').classList.contains('premio') && !document.getElementById('flowSeal').hidden})`);
+    if (st && st.premio) selo = true;
+    if (st && st.screen !== 'game') return { ...st, selo };
+    if (st && st.level !== nivel && !st.advancing) return { ...st, selo };
+    await sleep(250);
+  }
+  return { ...(await js('({screen: window.__game.screen, level: window.__game.level})')), selo };
+}
+
 const estado = () => js('({screen: window.__game.screen, level: window.__game.level, variante: window.__game.variantIndex})');
 
 // Perfil novo entra jogando: main.js manda `isNewcomer()` direto para a fase
@@ -250,7 +286,9 @@ const posEnsino = await js('({volta: window.__game.scene.session.rewindOnLoss})'
 // custou 15% dos jogadores.
 await js('window.__game.startLevel(20)');
 await sleep(1200);
-const fronteiraCedo = await vencer(20);
+const pipsNoHud = await js('document.querySelectorAll("#gameWorldPips i").length');
+const fronteiraCedo = await ganharEsperando(20);
+const premio20 = await js('window.__game.progress.prizeClaimed(3)');
 await sleep(700);
 if (fronteiraCedo && fronteiraCedo.screen === 'win') await js('document.getElementById("winNext").click()');
 else if (fronteiraCedo && fronteiraCedo.screen === 'lose') await js('document.getElementById("loseRetry").click()');
@@ -261,18 +299,48 @@ await sleep(1200);
 // tambem tem que seguir direto para a 31.
 await js('window.__game.startLevel(30)');
 await sleep(1200);
-const parada = await vencer(30);
+const parada = await ganharEsperando(30);
 await sleep(500);
 if (parada && parada.screen === 'win') await js('document.getElementById("winNext").click()');
 else if (parada && parada.screen === 'lose') await js('document.getElementById("loseRetry").click()');
 await sleep(1500);
 
-// So a ultima fase do jogo para o fluxo: e ali que o cartao de vitoria volta,
-// e com ele o video de dobrar premio. Conferido pela regra, sem jogar a fase
-// 100 - uma torre de dezoito linhas nao cabe no orcamento deste teste.
+// O primeiro premio de mundo: vencer a fase 5 entrega a skin do mundo 1, ja
+// equipada, e a fase 6 entra com o hexagono novo (main.js, `showPrize`).
+await js('window.__game.progress.data.prizes = (window.__game.progress.data.prizes || []).filter((w) => w !== 0)');
+await js('window.__game.progress.data.skins = window.__game.progress.data.skins.filter((id) => id === "classic")');
+await js('window.__game.startLevel(5)');
+await sleep(1200);
+const fimDoMundo1 = await ganharEsperando(5);
+const skinPremio = await js(`(() => { const g = window.__game; return { salva: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id }; })()`);
+await sleep(600);
+
+// So a fase 100 para o fluxo, e so por uma vez a cada vitoria: e o fim da
+// campanha, com o cartao e o video de dobrar premio. Dali "proxima" leva a
+// 101, que reusa uma fase validada da segunda metade (game/alem.js) e segue
+// sem cartao.
 const fimDoJogo = await js(
-  '(() => { const g = window.__game; const antes = g.level; g.level = 99; const a = g.flowContinues(); g.level = 100; const b = g.flowContinues(); g.level = antes; return a + "|" + b; })()',
+  '(() => { const g = window.__game; const antes = g.level; const r = [99, 100, 101].map((n) => { g.level = n; return g.flowContinues(); }); g.level = antes; return r.join("|"); })()',
 );
+await js('window.__game.startLevel(100)');
+await sleep(1500);
+const fim100 = await ganharEsperando(100);
+await sleep(600);
+const cartao100 = await js(`({ dobrar: !document.getElementById('winDouble').hidden, alem: window.__game.progress.data.alem,
+  premio: !document.getElementById('winPrize').hidden })`);
+if (fim100 && fim100.screen === 'win') await js('document.getElementById("winNext").click()');
+let em101 = null;
+for (let t = 0; t < 40; t++) {
+  em101 = await js('({screen: window.__game.screen, level: window.__game.level, tema: window.__game.scene.theme.id, advancing: window.__game.advancing})');
+  if (em101 && em101.level === 101 && !em101.advancing && em101.screen === 'game') break;
+  await sleep(250);
+}
+await sleep(800);
+const depois101 = await ganharEsperando(101);
+await sleep(500);
+await js('window.__game.quitLevel()');
+await sleep(900);
+const botaoHome = await js('document.getElementById("btnPlay").textContent');
 
 const log = await js('JSON.stringify(window.__sdkLog)');
 sock.close(); chrome.kill();
@@ -404,10 +472,47 @@ check(
   check('derrota sem parada manda fail e depois start da mesma fase', recomecos >= 4, seq.join(' '));
 }
 check(
-  'so a ultima fase do jogo para o fluxo',
-  fimDoJogo === 'true|false',
+  'so a fase 100 para o fluxo, e a 101 segue sem cartao',
+  fimDoJogo === 'true|false|true',
   fimDoJogo,
 );
+check('o HUD mostra um pip por fase do mundo', pipsNoHud === 5, String(pipsNoHud));
+check(
+  'fim de mundo entrega o premio no selo, sem parar (fase 20)',
+  premio20 === true && !!fronteiraCedo && fronteiraCedo.selo === true,
+  JSON.stringify({ premio20, selo: fronteiraCedo && fronteiraCedo.selo }),
+);
+check(
+  'premio do mundo 1 e um hexagono novo, equipado na fase 6',
+  !!fimDoMundo1 && fimDoMundo1.level === 6 && fimDoMundo1.screen === 'game' && !!skinPremio && skinPremio.salva !== 'classic' && skinPremio.salva === skinPremio.cena,
+  JSON.stringify({ fimDoMundo1, skinPremio }),
+);
+check(
+  'premio de mundo medido (visible)',
+  measures.some((m) => m === 'premio/mundo-1/visible') && measures.some((m) => m === 'premio/mundo-4/visible'),
+  measures.filter((m) => m.startsWith('premio/')).join(' ') || 'nenhum',
+);
+check(
+  'a fase 100 abre o cartao com o video de dobrar e o bau',
+  !!fim100 && fim100.screen === 'win' && !!cartao100 && cartao100.dobrar === true && cartao100.premio === true && cartao100.alem === 101,
+  JSON.stringify({ fim100, cartao100 }),
+);
+check(
+  '"proxima" da 100 leva a 101, no tema do mundo 21',
+  !!em101 && em101.screen === 'game' && em101.level === 101 && em101.tema === 'ice',
+  JSON.stringify(em101),
+);
+check(
+  'a 101 segue para a 102 sem cartao',
+  !!depois101 && depois101.screen === 'game' && depois101.level === 102,
+  JSON.stringify(depois101),
+);
+check('a home oferece a fase depois da 101', typeof botaoHome === 'string' && botaoHome.includes('102'), String(botaoHome));
+{
+  const i100 = measures.indexOf('level/100/complete');
+  const i101 = measures.indexOf('level/101/start');
+  check('a 101 comeca depois de a 100 terminar', i100 >= 0 && i101 > i100, `${i100} ${i101}`);
+}
 // Interaction events: ate a versao 1.0.1 a aba da Poki estava vazia, e toda
 // pergunta sobre POR QUE o jogador saiu era palpite.
 const botoes = measures.filter((m) => m.startsWith('botao/'));

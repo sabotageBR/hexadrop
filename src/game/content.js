@@ -10,14 +10,17 @@
 /**
  * @typedef {object} Skin
  * @property {string} id
- * @property {string} name
- * @property {number} cost 0 = gratis
- * @property {number} rank patente minima
+ * @property {string} name rotulo interno (prototipos); o jogo mostra `nameKey`
+ * @property {string} nameKey chave de i18n do nome
+ * @property {number} cost 0 = gratis; para skin da trilha e o preco de adiantar
+ * @property {number} rank patente minima (so nas skins fora da trilha)
  * @property {boolean} [rewarded] desbloqueavel com um video
  * @property {string} [model] id de HEX_MODELS; ausente = 'joia'
  * @property {string} [fill]
  * @property {string} [stroke]
  * @property {string} [core]
+ * @property {boolean} [halo] false = sem o halo borrado do contorno em tema escuro
+ * @property {boolean} [retired] fora da loja; so quem ja tem ve e equipa
  * @property {(ctx:CanvasRenderingContext2D, cx:number, cy:number, r:number, theme:*)=>void} [mark]
  */
 
@@ -25,13 +28,41 @@
 export const SKINS = [
   {
     id: 'classic',
+    nameKey: 'skinClassic',
     name: 'Original',
     cost: 0,
     rank: 0,
     model: 'joia',
   },
+  // A trilha de premios de mundo (1.0.8), na ordem em que sai - os mundos
+  // impares, 1 a 19. Desenhos novos, escolhidos pelo Evandro na vitrine de
+  // candidatos (prototypes/premios.html), todos sem halo. O preco e o de quem
+  // quer adiantar; quando o mundo chega, as moedas voltam.
+  { id: 'sunny', nameKey: 'skinSunny', name: 'Carinha sol', cost: 120, rank: 0, model: 'carinha', fill: '#ffc93c', stroke: '#9a6a00', core: '#fff3cf', halo: false },
+  { id: 'strawberry', nameKey: 'skinStrawberry', name: 'Listras morango', cost: 180, rank: 0, model: 'listras', fill: '#ff4d7a', stroke: '#a01a42', core: '#ffe3ec', halo: false },
+  { id: 'pinwheel', nameKey: 'skinPinwheel', name: 'Catavento turquesa', cost: 240, rank: 0, model: 'catavento', fill: '#19c3d6', stroke: '#0a6f7a', core: '#e2fcff', halo: false },
+  { id: 'bubblegum', nameKey: 'skinBubblegum', name: 'Bolinhas chiclete', cost: 300, rank: 0, model: 'bolinhas', fill: '#ff7ac8', stroke: '#a3307a', core: '#fff0f8', halo: false },
+  { id: 'nightstar', nameKey: 'skinNightstar', name: 'Estrela da noite', cost: 360, rank: 0, model: 'estrela', fill: '#2e3fbf', stroke: '#141f6e', core: '#ffe36a', halo: false },
+  { id: 'pixelleaf', nameKey: 'skinPixelLeaf', name: 'Pixel folha', cost: 420, rank: 0, model: 'pixel', fill: '#3fcf5a', stroke: '#1b6e2a', core: '#e9ffe9', halo: false },
+  { id: 'grape', nameKey: 'skinGrape', name: 'Roseta uva', cost: 480, rank: 0, model: 'roseta', fill: '#8b5cff', stroke: '#4a22b0', core: '#f1e9ff', halo: false },
+  { id: 'graphite', nameKey: 'skinGraphite', name: 'Xadrez grafite', cost: 540, rank: 0, model: 'xadrez', fill: '#30334a', stroke: '#8a8fb0', core: '#5b6080', halo: false },
+  { id: 'pixelember', nameKey: 'skinPixelEmber', name: 'Pixel brasa', cost: 600, rank: 0, model: 'pixel', fill: '#ff4a3d', stroke: '#8a1810', core: '#ffe2dc', halo: false },
+  { id: 'rosy', nameKey: 'skinRosy', name: 'Carinha rosa', cost: 660, rank: 0, model: 'carinha', fill: '#ff8fb8', stroke: '#a3406a', core: '#fff0f6', halo: false },
+  // So de loja. A do video e a oferta de recompensa da loja (moedas OU video,
+  // nunca so o video); as tres caras dao destino a moeda que sobra depois dos
+  // premios - bau, reembolso e premio repetido viram moeda.
+  { id: 'tangerine', nameKey: 'skinTangerine', name: 'Xadrez laranja', cost: 350, rank: 0, rewarded: true, model: 'xadrez', fill: '#ff9a3c', stroke: '#9a4a00', core: '#ffc98f', halo: false },
+  { id: 'sunwheel', nameKey: 'skinSunwheel', name: 'Catavento laranja', cost: 900, rank: 0, model: 'catavento', fill: '#ff8a1e', stroke: '#9a4a00', core: '#fff0d8', halo: false },
+  { id: 'lemondrop', nameKey: 'skinLemondrop', name: 'Bolinhas sol', cost: 1200, rank: 0, model: 'bolinhas', fill: '#ffc21e', stroke: '#9a6a00', core: '#fff7d6', halo: false },
+  { id: 'mintstripe', nameKey: 'skinMintstripe', name: 'Listras menta', cost: 1500, rank: 0, model: 'listras', fill: '#2fd6a0', stroke: '#13805c', core: '#eafff6', halo: false },
+  // Aposentadas na 1.0.8: o Evandro nao gosta delas, e as de miolo aceso
+  // (nucleo, vidro, cristal) tinham a mancha radial que ele ja tinha rejeitado
+  // no hexagono padrao. Saem da loja, mas quem comprou continua podendo
+  // equipar - por isso ficam aqui.
   {
     id: 'ember',
+    retired: true,
+    nameKey: 'skinEmber',
     name: 'Brasa',
     cost: 120,
     rank: 0,
@@ -42,9 +73,11 @@ export const SKINS = [
   },
   {
     id: 'mint',
+    retired: true,
+    nameKey: 'skinMint',
     name: 'Menta',
     cost: 180,
-    rank: 2,
+    rank: 0,
     model: 'vidro',
     fill: 'rgba(90,240,190,0.26)',
     stroke: '#3ee0b0',
@@ -52,9 +85,11 @@ export const SKINS = [
   },
   {
     id: 'violet',
+    retired: true,
+    nameKey: 'skinViolet',
     name: 'Violeta',
     cost: 260,
-    rank: 3,
+    rank: 0,
     model: 'cristal',
     fill: 'rgba(180,120,255,0.3)',
     stroke: '#b57cff',
@@ -62,9 +97,11 @@ export const SKINS = [
   },
   {
     id: 'gold',
+    retired: true,
+    nameKey: 'skinGold',
     name: 'Ouro',
     cost: 420,
-    rank: 5,
+    rank: 0,
     model: 'ouro',
     fill: 'rgba(255,205,70,0.32)',
     stroke: '#ffcd46',
@@ -75,9 +112,11 @@ export const SKINS = [
   },
   {
     id: 'circuit',
+    retired: true,
+    nameKey: 'skinCircuit',
     name: 'Circuito',
-    cost: 0,
-    rank: 8,
+    cost: 300,
+    rank: 0,
     model: 'placa',
     fill: 'rgba(60,220,200,0.24)',
     stroke: '#2ee6c4',
@@ -99,9 +138,11 @@ export const SKINS = [
   },
   {
     id: 'aurora',
+    retired: true,
+    nameKey: 'skinAurora',
     name: 'Aurora',
     cost: 600,
-    rank: 10,
+    rank: 0,
     model: 'gema',
     fill: 'rgba(120,200,255,0.28)',
     stroke: '#7fd8ff',
@@ -122,6 +163,8 @@ export const SKINS = [
   },
   {
     id: 'shadow',
+    retired: true,
+    nameKey: 'skinShadow',
     name: 'Sombra',
     cost: 350,
     rank: 0,
@@ -216,6 +259,99 @@ export const UPGRADES = [
   { id: 'grip', nameKey: 'upgGrip', descKey: 'upgGripDesc', max: 3, costs: [90, 220, 460] },
   { id: 'fortune', nameKey: 'upgFortune', descKey: 'upgFortuneDesc', max: 3, costs: [140, 300, 600] },
 ];
+
+/**
+ * @typedef {{skin:string}|{upgrade:string}|{coins:number}} Prize
+ */
+
+/**
+ * O premio de cada mundo CONCLUIDO (indice = mundo, 0-based).
+ *
+ * A 1.0.7 reprovou no Web Fit Test com 5:54 de tempo na pagina contra ~8:52 de
+ * referencia, e o painel mostrou por que: o jogador saia em ritmo constante,
+ * uns 10% a cada fase, inclusive nas fases 1 a 10, onde nao da para perder -
+ * com nota 4,7 e 93% de avaliacoes positivas. Ele nao saia frustrado, saia sem
+ * motivo para a fase seguinte. A moeda ja existia, mas nao tinha destino
+ * visivel, e quem entra jogando nunca passava pela loja. A Poki pede metas
+ * curtas (a fase) E longas (recompensa desbloqueavel); faltava a longa.
+ *
+ * Cada mundo dura cinco fases, ~90 s. Os impares (1, 3 ... 19) dao um
+ * hexagono novo, equipado na hora - o jogador ve a peca trocar na fase
+ * seguinte. Os pares dao um nivel de melhoria: nove premios, exatamente os
+ * 3x3 niveis de UPGRADES, com a estabilidade primeiro (mundo 2, fase 10), que
+ * e o que firma o hexagono antes do pedestal que balanca estrear na 11.
+ *
+ * Contado pelo mundo concluido, e nao pelo mundo em que se entra, o primeiro
+ * premio cai na fase 5 (metade do funil chega la) e e um hexagono - visivel.
+ *
+ * O primeiro e um hexagono com rosto: e o premio que mais gente ve (a fase 5),
+ * e o que tem que se notar de longe. A skin de video da loja fica fora.
+ * @type {Prize[]}
+ */
+export const WORLD_PRIZES = [
+  { skin: 'sunny' },
+  { upgrade: 'stability' },
+  { skin: 'strawberry' },
+  { upgrade: 'grip' },
+  { skin: 'pinwheel' },
+  { upgrade: 'fortune' },
+  { skin: 'bubblegum' },
+  { upgrade: 'stability' },
+  { skin: 'nightstar' },
+  { upgrade: 'grip' },
+  { skin: 'pixelleaf' },
+  { upgrade: 'fortune' },
+  { skin: 'grape' },
+  { upgrade: 'stability' },
+  { skin: 'graphite' },
+  { upgrade: 'grip' },
+  { skin: 'pixelember' },
+  { upgrade: 'fortune' },
+  { skin: 'rosy' },
+];
+
+/** Bau do fim da campanha (mundo 20, fase 100). */
+export const CHEST_FINAL = 500;
+/** Bau de cada mundo depois do 20 - perto da renda de um mundo inteiro. */
+export const CHEST_COINS = 300;
+
+/**
+ * Premio nominal do mundo `world` (0-based). Ainda nao considera o que o
+ * jogador ja tem: isso e `Progress.resolvePrize`.
+ * @param {number} world
+ * @param {number} worldCount mundos da campanha (WORLD_COUNT)
+ * @returns {Prize}
+ */
+export function worldPrize(world, worldCount) {
+  const w = Math.max(0, world | 0);
+  if (w < WORLD_PRIZES.length) return WORLD_PRIZES[w];
+  if (w === worldCount - 1) return { coins: CHEST_FINAL };
+  return { coins: CHEST_COINS };
+}
+
+/**
+ * Em que mundo (0-based) uma skin e premio, ou -1 se ela so se compra.
+ * @param {string} id
+ * @returns {number}
+ */
+export function prizeWorldOfSkin(id) {
+  return WORLD_PRIZES.findIndex((p) => 'skin' in p && p.skin === id);
+}
+
+/**
+ * Proximo mundo (0-based), a partir de `from`, cujo premio e um nivel desta
+ * melhoria; -1 se nao ha mais nenhum.
+ * @param {string} id
+ * @param {number} from
+ * @returns {number}
+ */
+export function nextUpgradePrizeWorld(id, from) {
+  for (let w = Math.max(0, from); w < WORLD_PRIZES.length; w++) {
+    const p = WORLD_PRIZES[w];
+    if ('upgrade' in p && p.upgrade === id) return w;
+  }
+  return -1;
+}
 
 /**
  * Efeitos numericos de cada aprimoramento.

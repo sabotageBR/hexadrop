@@ -433,6 +433,21 @@ export class AudioEngine {
     });
   }
 
+  /**
+   * Premio de fim de mundo: o arpejo da vitoria esticado por duas oitavas e um
+   * acorde que fica soando - o recado e "fechou um capitulo", nao "fechou uma
+   * fase", e o selo dura meio segundo a mais que o comum.
+   */
+  prize() {
+    const seq = [0, 4, 7, 12, 16, 19, 24];
+    seq.forEach((n, i) => {
+      this.tone({ freq: hz(n), dur: 0.32, gain: 0.14, type: 'triangle', delay: i * 0.075 });
+      this.tone({ freq: hz(n + 12), dur: 0.28, gain: 0.07, type: 'sine', delay: i * 0.075 + 0.02 });
+    });
+    const fim = seq.length * 0.075 + 0.04;
+    for (const n of [12, 16, 19, 24]) this.tone({ freq: hz(n), dur: 0.9, gain: 0.07, type: 'sine', delay: fim });
+  }
+
   lose() {
     const seq = [0, -3, -7, -12];
     seq.forEach((n, i) => {

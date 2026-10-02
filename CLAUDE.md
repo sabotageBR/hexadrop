@@ -40,6 +40,7 @@ SWEEP_LEVELS=42,43 npm run playsweep             # só essas fases
 node tools/playtest.mjs http://127.0.0.1:5173/prototypes/neon.html
 node tools/shot.mjs '[{"name":"home","url":"...","w":430,"h":880,"mobile":true}]'   # PNGs em /tmp/shots
 npm run thumbnail        # thumbnails da Poki em marketing/thumbnail/ (~60 s)
+node tools/savecheck.mjs # saves de exemplo pela migracao; Node puro, sem Chrome
 ```
 
 `npm run thumbnail` é a exceção à regra do servidor no ar: copia o projeto para uma
@@ -153,6 +154,19 @@ funis da Poki guiaram as trocas:
   sem derrota. **O que o teste mede é tempo, não
   fase alcançada**: a mediana de início de cada fase aparece ao expandir a linha dela
   em Progress Events.
+- **1.0.7, Web Fit Test reprovado** (02/10/2026): conversão 71,2% (passa; referência
+  ~66,4%), **tempo na página 5:54 contra ~8:52** de referência, CTR 0,19%. O WFT mede
+  tempo na *página*, em ~10 mil visitantes de verdade, contra a média das categorias do
+  teste — e a régua de puzzle é alta. No painel (2.466 partidas): 67% chegam à fase 2,
+  50% à 5, 31% à 10, 12% à 20, 3% à 50 e 1,6% à 99; a 10 começa aos 185 s e a 25 aos
+  445 s, **~17 s por fase do começo ao fim**. A perda é de ~10% por fase e constante nas
+  fases 1 a 20, **inclusive nas 1 a 10, onde não existe derrota**, e a nota é 4,7 (93%
+  positivos): o jogador não saía frustrado, saía sem motivo para a fase seguinte. A
+  moeda não tinha destino visível e quem entra jogando nunca passava pela loja. E a
+  fase 100 tinha 85 partidas, mais que a 57: quem terminava o jogo ficava rejogando a
+  última. Como fases jogadas ≈ 1/(1−p), a alavanca é a perda por fase, não a duração
+  da fase. Daí a 1.0.8: prêmio a cada mundo, fases depois da 100 e a torre um pouco
+  mais alta nas fases 4 a 47.
 
 **Altura é a alavanca do tempo de fase; pedestal e altura decidem o perdão.** Medido
 com seis colunas, sobre o pedestal largo antigo:
@@ -177,8 +191,18 @@ Borracha contra bloco mede quase igual em 6x14: quem tira o perdão é altura e 
 **A torre para em 18 linhas**, e não nas ~35 da fase 27 do jogo de referência. Uma
 torre de 35 fica de pé sozinha, mas o jogador competente do solucionador não vence
 nenhuma de 24 ou 32 linhas, e cada partida simulada ali custa de 8 a 13 s. A rampa: 8
-linhas na fase 1, 12 na 10, 14 na 20 e na 27, 17 na 50, 18 da 70 em diante; a fase
-final de cada mundo ganha **uma** linha. Em **cinco** colunas a mesma altura perdoa bem
+linhas na fase 1 (o roteiro, 8, 8 e 9), 13 na 10, 15 na 15, 15 a 16 na faixa 20 a 40,
+16 na 47, 17 na 50 e 18 da 70 em diante; a fase final de cada mundo ganha **uma**
+linha. A 1.0.8 subiu **uma** linha nas fases 4 a 47 e **duas** no mundo 3 (regra em
+`levelConfig`, depois da fórmula): o trecho onde mais gente joga, e onde a linha
+rende toque — pedestal largo nas 4 a 10, piso de perdão ainda segurando no mundo 3.
+Ela encosta sozinha na rampa antiga quando chega a 16 linhas (fase 48), e as fases 1
+a 3 e 48 a 100 ficaram como estavam. Rende pouco, e é para isso que serve saber:
+pelas contas, de 5 a 15 s no tempo médio. A contraprova está no painel da 1.0.7 — a
+fase 25, três linhas mais alta que a 10 sobre pedestal de 1,1x, conclui em 14 s
+contra 17 s: com pedestal estreito a torre desaba em blocos. Medido no gerador, os
+toques da melhor solução foram de 7,1, 8,5, 9,6, 10,7 e 10,3 nos mundos 1 a 5 para
+7,5, 8,8, 10,7, 11,0 e 10,9, com o perdão dos mundos 1 a 3 em 70%, 39% e 25%. Em **cinco** colunas a mesma altura perdoa bem
 menos — 5x13 mediu 0,17 de perdão máximo —, então os quatro primeiros mundos são todos
 em seis colunas (`worldStart(4)`), cinco colunas nunca saem com pedestal que balança
 antes da fase 30 e, a partir da fase 51, a chance de cinco colunas volta a 30%. Elas já
@@ -546,6 +570,52 @@ e ainda vale moeda. `tools/playsweep.mjs` espera a tela sair de `game` antes de 
 resultado — sem isso toda vitória com muitas peças vira "ainda jogando"; é por isso
 que ele desliga o fluxo contínuo (abaixo).
 
+### Prêmios de fim de mundo
+
+**Concluir um mundo dá um prêmio, dentro do fluxo** (`WORLD_PRIZES` em
+`game/content.js`): os mundos ímpares (1, 3 … 19) dão um hexágono novo, **equipado na
+hora** — o jogador vê a peça trocar na própria cena e entra na fase seguinte com ela —,
+e os pares dão um nível de melhoria, nove prêmios que são exatamente os 3×3 níveis de
+`UPGRADES`, com a estabilidade primeiro (fase 10), que firma o hexágono antes do
+pedestal que balança estrear na 11. A fase 100 dá um baú de 500 moedas e cada mundo
+depois dela um de 300. É a meta longa que a 1.0.7 não tinha (ver o funil acima): a
+Poki pede metas curtas e longas, e o jogador saía em ritmo constante sem nada pela
+frente.
+
+O prêmio é do mundo **concluído**, e não do mundo em que se entra: assim o primeiro
+cai na fase 5, que metade do funil alcança, e é um hexágono — visível. Ele é gravado
+pelo próprio `Progress.finishLevel`, na mesma gravação da vitória, e por isso
+`commitPendingWin` (quem sai no meio da celebração) também o leva. Pular a última
+fase com vídeo não dá o prêmio; ele fica pendente até o jogador vencê-la.
+
+**É selo, não cartão.** `flowToNext` troca o selo comum pelo de fim de mundo — "Mundo
+concluído", as moedas, o ícone e o nome do prêmio —, `audio.prize()` no lugar de
+`audio.win()`, a skin troca na cena aos 120 ms com faíscas, e o confete sai em DOM.
+O selo fica 1,5 s em vez de 1 s, e o toque só adianta a partir de 700 ms
+(`PRIZE_SKIP_FLOOR_MS`): antes disso o mesmo toque que apressava a cascata engolia o
+prêmio. A lição medida continua valendo — o cartão de fim de mundo custou 15% na
+passagem da 20 para a 21 —, então nada de botão nem tela cheia. O cartão de estreia
+de material sai quando a fase termina (`onLevelEnd`): quem vencia rápido via a peça
+nova por cima do selo.
+
+**O HUD mostra a fita do mundo** embaixo do nome da fase: um pip por fase, saídos de
+`worldSize` — cinco cravado no HTML seria o erro do dez de antes —, e no fim o ícone
+do prêmio. O kit muda só o formato do pip. Tudo ali é só exibição, fora da exceção de
+`.screen.pass`. A fase 2 ainda mostra o primeiro prêmio no cartão do tutorial ("conclua
+o mundo e ganhe isto"): a meta só puxa se o jogador souber que ela existe.
+
+O save ganhou `prizes` (mundos entregues) **sem trocar `SAVE_VERSION`**. Um save da
+versão 3 sem o campo passa por `migrarPremios()`, uma vez: recebe os prêmios dos
+mundos que já concluiu, sem equipar, com skin já comprada virando as moedas do preço e
+melhoria no máximo passando para a próxima (`resolvePrize`). A loja acende um ponto e a
+home avisa. `tools/savecheck.mjs` cobre esses perfis.
+
+**As skins da trilha são desenhos novos** (ver "O hexágono e seus modelos"), e comprar
+antes é adiantar, nunca perder: a loja diz "Conclua o mundo N" com o preço, e quando o
+mundo chega as moedas voltam. Fora da trilha ficam a skin de vídeo (moedas OU vídeo,
+nunca só o vídeo) e três skins caras, que dão destino à moeda que os baús, os
+reembolsos e os prêmios repetidos produzem.
+
 ### O primeiro carregamento entra jogando
 
 `isNewcomer()` (`game/progress.js`: nenhuma fase liberada além da primeira e nenhuma
@@ -661,12 +731,43 @@ Quatro coisas que esse fluxo precisa respeitar:
   fase terminada sem saída.
 
 `flowLevels = false` é o que mantém o `playsweep` medindo uma fase por vez — ele desliga
-também a derrota sem parada, e cada derrota volta a abrir o cartão. Quem cobre o
-caminho do fluxo é o `sdkcheck`: ele joga a fase 1 (a 2 tem que entrar sozinha), força
-cinco derrotas seguidas na 2 (as quatro primeiras recomeçam sozinhas com `fail` →
-`start`, a terceira já em outro layout, e a quinta abre o cartão), confere que a fase 10
-ainda volta jogada e a 11 não, joga a 20 e a 30 (fronteiras de mundo, que também não
-param), e confere que só a fase 100 para o fluxo.
+também a derrota sem parada, e cada derrota volta a abrir o cartão. Ele também marca
+todos os prêmios de mundo como entregues antes de varrer: uma melhoria ganha no meio
+mudaria a medição das fases seguintes. Quem cobre o caminho do fluxo é o `sdkcheck`:
+ele joga a fase 1 (a 2 tem que entrar sozinha), força cinco derrotas seguidas na 2 (as
+quatro primeiras recomeçam sozinhas com `fail` → `start`, a terceira já em outro
+layout, e a quinta abre o cartão), confere que a fase 10 ainda volta jogada e a 11 não,
+vence pela força a 20 e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
+selo) e a 5 (o hexágono novo equipado na 6), confere que só a 100 para o fluxo, e
+segue do cartão da 100 para a 101 e a 102. A vitória forçada grava as estrelas em
+`world.starsCrossed` — `Session.stars` é só um getter — e dispara o `onFirstTap`, senão
+a partida nunca teria `gameplayStart`.
+
+### Além da fase 100
+
+**Da 101 em diante o jogo continua, sem gerar fase nenhuma** (`game/alem.js`): cada
+fase reusa uma fase já validada da segunda metade (51 a 100), com a mesma seed e o
+mesmo degrau. Os mundos depois do 20 seguem o ciclo de `worldTheme()` sem emenda — a
+101 é gelo —, a origem de cada um é o mundo da segunda metade com o mesmo tema, e cada
+volta pelo mesmo tema usa a variante seguinte. **Tudo vem da fase de origem**, layout,
+pele, música e kit, porque o tema faz parte do layout (`THEME_MATERIALS`).
+
+**`LEVEL_COUNT` continua 100 e não pode mudar por causa disto**, com a mesma ênfase de
+`WORLD_SIZES`: ele entra nas curvas do gerador, e mudá-lo troca o layout das cem fases.
+Quem fala de fase em cartaz usa `this.origem` (`faseDeOrigem`), nunca
+`levelConfig(this.level - 1)` nem `worldOf(this.level - 1)`: com o clamp, a 137 viraria
+"fase 100" — tema clássico, todo fim de fase seria fim de mundo.
+
+O save ganhou `alem` (a próxima fase depois da 100), também sem trocar a versão; quem
+já tinha vencido a 100 começa na 101. Depois da 100 não há estrela gravada (o total de
+300 e os portões medem a campanha), `unlocked` continua com teto de 100 e a parcela de
+moeda que cresce com a fase para na 100. A home ganha uma posição no carrossel e o mapa
+uma faixa acima do mundo 20, as duas só com `alem > 100` e com regra própria de "aberto"
+— senão cairiam no último portão, de 275 estrelas. O cartão da 100 continua, como fim
+da campanha e único lugar do vídeo de dobrar prêmio, e "próxima" leva à 101.
+
+O motivo é o mesmo funil: a fase 100 tinha mais partidas que a 57, de quem terminava o
+jogo e ficava rejogando a última fase porque a home só oferecia "Jogar 100".
 
 ### Renderização
 
@@ -820,10 +921,23 @@ quadrado arredondado com o azul do tema neon cravado — a skin "Original" apare
 mesmo no mundo puzzle, onde o hexágono é amarelo, nenhuma tinha forma de hexágono, e a
 loja vendia cor.
 
-A distribuição atual: `classic → joia`, `ember → nucleo`, `mint → vidro`,
-`violet → cristal`, `gold → ouro`, `circuit → placa`, `aurora → gema`, `shadow → selo`.
-Sobram `liso`, `neon`, `favo` e `origami` sem skin — cada um é uma entrada nova em
-`SKINS`, nada mais.
+**As skins da 1.0.8 são desenhos novos**, e não recolores: nove modelos chapados —
+`catavento`, `listras`, `roseta`, `estrela`, `duo`, `bolinhas`, `pixel`, `carinha` e
+`xadrez` —, escolhidos pelo Evandro na vitrine `prototypes/premios.html`, que desenha
+cada candidato com o mesmo pintor do jogo sobre cinco temas e nos tamanhos de jogo,
+selo e HUD. A trilha, na ordem dos mundos ímpares: `sunny` (carinha), `strawberry`
+(listras), `pinwheel` (catavento), `bubblegum` (bolinhas), `nightstar` (estrela),
+`pixelleaf` (pixel), `grape` (roseta), `graphite` (xadrez), `pixelember` (pixel) e
+`rosy` (carinha). O primeiro tem rosto de propósito: é o prêmio que mais gente vê.
+
+**As oito skins antigas foram aposentadas** (`retired: true`): o Evandro não gosta
+delas, e as de miolo aceso (`nucleo`, `vidro`, `cristal`) tinham a mancha radial que
+ele já tinha rejeitado no hexágono padrão. Elas saem da loja, mas quem comprou
+continua podendo equipar — por isso continuam em `SKINS`.
+
+**Skin nova é sem halo** (`halo: false`): `brilhoDaSkin()` (`render/sprites.js`) passa
+no máximo 0,4 de brilho ao modelo, o ponto em que `contorno()` não vira halo borrado nem
+a sombra projetada dos temas claros entra.
 
 **O padrão é a joia chapada, e não mais o `liso`.** O `liso` era um degradê radial com o
 `core` quase branco no meio, e o que o jogador via era um disco claro dentro de uma peça
@@ -1070,6 +1184,19 @@ nem `fail`, e a Poki conta as duas como "Left". `dica-auto` é só `visible`: co
 quantas vezes a dica automática acendeu, ou seja, quanta gente travou. `voltar-jogada`
 é o par do vídeo de voltar uma jogada, e o `rewind` das fases de ensino (ação própria,
 aba Other) conta quantas vezes o hexágono caiu onde perder não existe.
+
+**O ouvinte de `bindTelemetriaUi()` é de captura**, e isso importa: ele roda antes do
+`onclick` do botão. Na fase de bolha ele rodava depois, e nos botões de vídeo e no
+"repetir" o handler já tinha chamado `commercialBreak`/`rewardedBreak`, que ligam
+`inBreak` na hora — e `poki.measure` descarta evento dentro de intervalo. A 1.0.7
+inteira mostrou 0% de interação nesses botões por isso. Os botões de compra da loja
+(`comprar-skin`, `equipar-skin`, `comprar-melhoria`, `comprar-impulso`) ganharam o par
+`visible` (`ofertasDaLoja`), sem o qual o painel nem os listava.
+
+O prêmio de mundo sai como `premio / mundo-N / visible` na revelação, `interact` com o
+mesmo nome quando o toque adianta o selo, e `premio / skin-<id>` (ou `melhoria-<id>`,
+`moedas-<motivo>`) com a ação `ganho`, que cai na aba Other. Os três saem síncronos,
+antes do `advanceLevel`: o intervalo comercial vem logo depois do selo.
 
 Os **nomes** do mapa mudam com mais cuidado que os ids: um nome trocado quebra a série
 histórica do relatório. O mesmo nome em telas diferentes é de propósito onde a ação é a

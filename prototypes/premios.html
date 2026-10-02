@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Hexa Drop — candidatos a premio</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #07102c; color: #f4f7ff; font: 16px/1.45 system-ui, sans-serif; }
+  header { padding: 18px 22px 6px; }
+  header h1 { margin: 0; font-size: 26px; letter-spacing: -0.03em; }
+  header p { margin: 4px 0 0; color: rgba(244,247,255,0.62); font-size: 14px; max-width: 900px; }
+  h2 { margin: 22px 22px 8px; font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(244,247,255,0.6); }
+  .linha { display: flex; flex-wrap: wrap; gap: 12px; padding: 0 22px; }
+  .card {
+    border-radius: 16px; overflow: hidden; width: 560px; max-width: 100%;
+    border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03);
+  }
+  .card canvas { display: block; width: 100%; height: auto; }
+  .card .meta { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px 10px; }
+  .card .meta b { font-size: 16px; }
+  .card .meta span { font-size: 12px; color: rgba(244,247,255,0.6); }
+  .card .meta code { margin-left: auto; font-size: 11px; color: rgba(244,247,255,0.5); }
+  .faixa { margin: 0 22px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
+  .faixa canvas { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Candidatos a prêmio de mundo</h1>
+  <p>Cada candidato desenhado pelo mesmo <code>paintHexModel</code> do jogo, sem halo, sobre cinco temas no tamanho de jogo, e nos tamanhos do selo e do HUD. Embaixo, a trilha na ordem dos mundos e as skins atuais com e sem halo.</p>
+</header>
+<h2>Modelos novos</h2>
+<div class="linha" id="novos"></div>
+<h2>Candidatos da primeira rodada</h2>
+<div class="linha" id="candidatos"></div>
+<h2>Trilha na ordem (mundo em que sai, sobre o tema dele)</h2>
+<div class="faixa"><canvas id="trilha"></canvas></div>
+<h2>Skins atuais da trilha: com halo (em cima) e sem halo (embaixo)</h2>
+<div class="faixa"><canvas id="atuais"></canvas></div>
+<script type="module" src="./premios.js"></script>
+</body>
+</html>

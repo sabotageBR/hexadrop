@@ -591,6 +591,53 @@ button:focus-visible { outline: 3px solid var(--accent2); outline-offset: 3px; }
   font: 700 15px/1 var(--font);
   color: var(--ink);
   letter-spacing: 0.01em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.level-title { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Fita do mundo, embaixo do nome da fase: um pip por fase e o premio no fim.
+   O kit muda so o formato do pip, nunca o tamanho: a fita cabe na mesma
+   fileira de 34 px em todos eles. */
+.world-pips { display: flex; align-items: center; gap: 4px; height: 14px; }
+.world-pips:empty { display: none; }
+.world-pips i {
+  width: 10px;
+  height: 9px;
+  background: var(--starOff);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+.world-pips i.on { background: var(--gold); }
+.world-pips i.pop { animation: pipPop 0.36s cubic-bezier(0.2, 1.6, 0.4, 1); }
+.world-pips i.now { background: var(--ink-soft); animation: pipNow 1.2s ease-in-out infinite; }
+@keyframes pipPop { from { transform: scale(1.9); } to { transform: scale(1); } }
+@keyframes pipNow { 50% { opacity: 0.35; } }
+.world-pips canvas { width: 18px; height: 18px; margin-left: 3px; }
+/* Ja entregue (mundo jogado de novo pelo mapa): o premio continua a vista,
+   apagado. */
+.world-pips canvas.claimed { opacity: 0.4; }
+html[data-kit="ficha"] .world-pips i { clip-path: none; border-radius: 50%; width: 9px; }
+@media (max-width: 400px) {
+  .world-pips { gap: 3px; }
+  .world-pips i { width: 8px; height: 7px; }
+  .world-pips canvas { width: 16px; height: 16px; }
+}
+
+/* Premio novo esperando na loja: um ponto no botao, que some ao abrir. */
+#btnShop.news { position: relative; }
+#btnShop.news::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 2px rgba(var(--sheet-rgb), 0.9);
 }
 /* Botao secundario sem preenchimento: sobre a cena, um fundo cheio viraria
    mancha. O contorno basta, e o de video ao lado continua sendo o solido. */
@@ -771,6 +818,52 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
 /* Derrota sem parada: o mesmo selo, com o "Quase!" na tinta do tema. O dourado
    e a cor do premio, e aqui nao ha premio nenhum. */
 .flow.miss .flow-coins { color: var(--ink); }
+
+/* Fim de mundo: o selo ganha o titulo do mundo concluido e a linha do premio.
+   Continua selo - sem botao, sobre a cena -, so que um passo mais alto. */
+.flow-title {
+  font: 900 12px/1 var(--font);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.flow-title:empty { display: none; }
+.flow.premio { padding: 12px 22px 14px; gap: 8px; }
+.flow-prize, .win-prize {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: flowIn 0.32s cubic-bezier(0.2, 1.5, 0.4, 1) 0.08s both;
+}
+.flow-prize[hidden], .win-prize[hidden] { display: none; }
+.flow-prize canvas { width: 44px; height: 44px; }
+.win-prize { justify-content: center; margin: 4px 0 2px; }
+.win-prize canvas { width: 40px; height: 40px; }
+.flow-prize span, .win-prize span { display: flex; flex-direction: column; gap: 3px; text-align: left; }
+.flow-prize b, .win-prize b { font: 900 16px/1.05 var(--font); color: var(--ink); }
+.flow-prize small, .win-prize small {
+  font: 800 11px/1 var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* Confete do fim de mundo: pedacinhos em DOM, por cima de tudo, sem toque. */
+.confete {
+  position: fixed;
+  z-index: 60;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Premio do mundo no mapa, no cabecalho da faixa e no cartaz do mundo
+   fechado. O visto diz que ja foi entregue. */
+.world-head .world-prize { width: 20px; height: 20px; flex: none; }
+.world-teaser { grid-auto-flow: column; gap: 12px; }
+.world-teaser .world-prize { width: 34px; height: 34px; }
+.world-prize.claimed { opacity: 0.45; }
 /* Nao ha animacao de saida: quem tira o selo de cena e o corte por cima. */
 @keyframes flowIn {
   from { transform: scale(0.82); opacity: 0; }
@@ -889,6 +982,12 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   .bonus { margin-top: 4px; padding: 5px 16px; }
   .flow { margin-top: 4px; padding: 6px 18px; gap: 4px; }
   .flow-coins { font-size: clamp(20px, 6vh, 26px); }
+  /* O selo do premio nao pode cobrir o hexagono: sai a linha de bonus e o
+     icone encolhe. */
+  .flow.premio { padding: 6px 16px 8px; gap: 4px; }
+  .flow.premio .flow-what { display: none; }
+  .flow-prize canvas { width: 30px; height: 30px; }
+  .flow-prize b { font-size: 14px; }
   #gameStars i { width: 19px; height: 19px; }
   .trail { height: calc(var(--nos, 10) * 58px); }
   .tut { top: auto; bottom: calc(14px + var(--safe-b)); }

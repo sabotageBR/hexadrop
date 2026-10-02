@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const PORT = 9666;
 const BASE = process.env.SWEEP_URL || 'http://127.0.0.1:4173';
-const LEVELS = (process.env.SWEEP_LEVELS || '1,4,7,10,14,22,27,33,41,50,60,70,80,90,100').split(',').map(Number);
+const LEVELS = (process.env.SWEEP_LEVELS || '1,4,7,10,14,22,27,33,41,50,60,70,80,90,100,101,136').split(',').map(Number);
 
 const chrome = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${PORT}`, '--no-sandbox',
   '--disable-gpu', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
@@ -32,8 +32,13 @@ await send('Page.navigate', { url: BASE + '/index.html' }, sessionId);
 await sleep(4000);
 const js = async (e) => (await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, sessionId)).result?.result?.value;
 
-// libera todas as fases para o teste
-await js('window.__game.progress.data.unlocked = 999; window.__game.progress.flush();');
+// libera todas as fases para o teste, inclusive as depois da 100. Os premios
+// de mundo ja contam como entregues: a lista tem fins de mundo (10, 50, 60...),
+// e uma melhoria ganha no meio da varredura mudaria a medicao das fases
+// seguintes - cada fase tem que ser medida com o hexagono padrao.
+await js(`(() => { const d = window.__game.progress.data; d.unlocked = 999; d.alem = 9999;
+  d.prizes = Array.from({ length: 400 }, (_, w) => w); d.upgrades = {}; d.skin = 'classic';
+  window.__game.progress.flush(); })()`);
 // Desliga o fluxo continuo: com o cartao de fim de fase de volta, a tela para
 // de 'game' para 'win'/'lose' e o sweep mede uma fase por vez, em vez de
 // correr atras do avanco automatico e ler a sessao da fase seguinte.

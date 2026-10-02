@@ -33,6 +33,18 @@ export const HEX_MODELS = [
   { id: 'origami', nome: 'Origami', desc: 'Papel dobrado em duas metades e vincos.' },
   { id: 'ouro', nome: 'Ouro macico', desc: 'Metal polido com varredura de luz.' },
   { id: 'selo', nome: 'Selo runico', desc: 'Pedra com runa gravada e acesa.' },
+  // Os nove abaixo nasceram com os premios de mundo (1.0.8). Todos na gramatica
+  // da joia: tons chapados, contorno fino por dentro, sem halo e sem mancha
+  // radial - o que o Evandro rejeita nos modelos de cima que acendem o miolo.
+  { id: 'catavento', nome: 'Catavento', desc: 'Seis pas em dois tons, girando em volta do miolo.' },
+  { id: 'listras', nome: 'Listras', desc: 'Listras diagonais de bala, sombra embaixo.' },
+  { id: 'roseta', nome: 'Roseta', desc: 'Hexagonos encaixados, cada um girado meio passo.' },
+  { id: 'estrela', nome: 'Estrela', desc: 'Estrela de seis pontas embutida no corpo.' },
+  { id: 'duo', nome: 'Duo', desc: 'Duas metades na diagonal e um filete claro na emenda.' },
+  { id: 'bolinhas', nome: 'Bolinhas', desc: 'Bolinhas chapadas em grade.' },
+  { id: 'pixel', nome: 'Pixel', desc: 'O hexagono em pixel art, luz de cima.' },
+  { id: 'carinha', nome: 'Carinha', desc: 'A joia com olhos e sorriso.' },
+  { id: 'xadrez', nome: 'Xadrez', desc: 'Losangos em dois tons.' },
 ];
 
 export const HEX_MODEL_IDS = HEX_MODELS.map((m) => m.id);
@@ -115,6 +127,58 @@ function vert(cx, cy, r, i, giro = 0) {
 }
 
 // -------------------------------------------------------------- modelos ----
+
+/**
+ * Contorno da gramatica chapada, o mesmo da joia: por dentro da silhueta, a
+ * propria cor um passo adiante - escurece corpo claro, clareia corpo escuro.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} cx @param {number} cy @param {number} r
+ * @param {string} corpo
+ */
+function filete(ctx, cx, cy, r, corpo) {
+  const largura = r * 0.05;
+  ctx.save();
+  hexPath(ctx, cx, cy, r - largura / 2);
+  ctx.strokeStyle = lum(corpo) < 64 ? claro(corpo, 0.34) : escuro(corpo, 0.46);
+  ctx.lineWidth = largura;
+  ctx.lineJoin = 'miter';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Sombra chapada no terco de baixo: o que da volume sem degrade radial.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} cx @param {number} cy @param {number} r
+ */
+function sombraDeBaixo(ctx, cx, cy, r) {
+  ctx.save();
+  hexPath(ctx, cx, cy, r);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  ctx.fillRect(cx - r, cy + r * 0.18, r * 2, r);
+  ctx.restore();
+}
+
+/** @param {CanvasRenderingContext2D} ctx @param {number[][]} pts @param {string} cor */
+function poligono(ctx, pts, cor) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = cor;
+  ctx.fill();
+  // Traco da mesma cor: fecha a fresta de antisserrilhado entre vizinhos.
+  ctx.strokeStyle = cor;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+/** Ponto dentro do hexagono de topo plano com raio r centrado na origem. */
+function dentroDoHex(dx, dy, r) {
+  const ay = Math.abs(dy);
+  return ay <= r * 0.8660254 && Math.abs(dx) + ay / 1.7320508 <= r;
+}
 
 /** @type {Record<string, (ctx:CanvasRenderingContext2D, cx:number, cy:number, r:number, c:Cores, glow:number)=>void>} */
 const PINTORES = {
@@ -594,6 +658,219 @@ const PINTORES = {
     ctx.stroke();
     ctx.restore();
     contorno(ctx, cx, cy, r, c, glow);
+  },
+
+  /** Catavento: seis pas, cada uma em dois tons, girando em volta do miolo. */
+  catavento(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.clip();
+    for (let i = 0; i < 6; i++) {
+      const a = vert(cx, cy, r, i);
+      const b = vert(cx, cy, r, (i + 1) % 6);
+      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      poligono(ctx, [[cx, cy], a, m], claro(corpo, 0.3));
+      poligono(ctx, [[cx, cy], m, b], escuro(corpo, 0.16));
+    }
+    hexPath(ctx, cx, cy, r * 0.2);
+    ctx.fillStyle = c.core;
+    ctx.fill();
+    ctx.restore();
+    filete(ctx, cx, cy, r, corpo);
+  },
+
+  /** Listras diagonais de bala, com a sombra chapada embaixo. */
+  listras(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.clip();
+    ctx.fillStyle = corpo;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = c.core;
+    const w = r * 0.24;
+    for (let x = -r * 2; x < r * 2; x += w * 2) ctx.fillRect(x, -r * 2, w, r * 4);
+    ctx.restore();
+    sombraDeBaixo(ctx, cx, cy, r);
+    filete(ctx, cx, cy, r, corpo);
+  },
+
+  /** Roseta: hexagonos encaixados, cada anel girado meio passo do anterior. */
+  roseta(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.fillStyle = escuro(corpo, 0.12);
+    ctx.fill();
+    const aneis = [
+      [0.8, Math.PI / 6, corpo],
+      [0.62, 0, claro(corpo, 0.22)],
+      [0.44, Math.PI / 6, claro(corpo, 0.42)],
+      [0.24, 0, c.core],
+    ];
+    for (const [k, giro, cor] of aneis) {
+      // Girado 30 graus, o hexagono de raio k*r so cabe no anterior com o
+      // raio reduzido a cos(30) - e o que faz as pontas tocarem as arestas.
+      hexPath(ctx, cx, cy, r * Number(k), Number(giro));
+      ctx.fillStyle = String(cor);
+      ctx.fill();
+    }
+    ctx.restore();
+    filete(ctx, cx, cy, r, corpo);
+  },
+
+  /** Estrela de seis pontas embutida no corpo. */
+  estrela(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.fillStyle = corpo;
+    ctx.fill();
+    ctx.clip();
+    const R = r * 0.72;
+    for (const giro of [Math.PI / 2, -Math.PI / 2]) {
+      const pts = [0, 1, 2].map((k) => {
+        const a = giro + (k * 2 * Math.PI) / 3;
+        return [cx + R * Math.cos(a), cy - R * Math.sin(a)];
+      });
+      poligono(ctx, pts, claro(corpo, 0.42));
+    }
+    hexPath(ctx, cx, cy, r * 0.26, Math.PI / 6);
+    ctx.fillStyle = c.core;
+    ctx.fill();
+    ctx.restore();
+    sombraDeBaixo(ctx, cx, cy, r);
+    filete(ctx, cx, cy, r, corpo);
+  },
+
+  /** Duas metades na diagonal, com um filete claro na emenda. */
+  duo(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.clip();
+    poligono(ctx, [[cx - r * 2, cy - r * 2], [cx + r * 2, cy - r * 2], [cx - r * 2, cy + r * 2]], claro(corpo, 0.2));
+    poligono(ctx, [[cx + r * 2, cy - r * 2], [cx + r * 2, cy + r * 2], [cx - r * 2, cy + r * 2]], escuro(corpo, 0.2));
+    ctx.strokeStyle = c.core;
+    ctx.lineWidth = r * 0.12;
+    ctx.beginPath();
+    ctx.moveTo(cx + r * 1.2, cy - r * 1.2);
+    ctx.lineTo(cx - r * 1.2, cy + r * 1.2);
+    ctx.stroke();
+    ctx.restore();
+    filete(ctx, cx, cy, r, corpo);
+  },
+
+  /** Bolinhas chapadas em grade, sombra embaixo. */
+  bolinhas(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.fillStyle = corpo;
+    ctx.fill();
+    ctx.clip();
+    ctx.fillStyle = c.core;
+    const passo = r * 0.4;
+    for (let j = -3; j <= 3; j++) {
+      for (let i = -3; i <= 3; i++) {
+        const x = cx + i * passo + (j % 2 ? passo / 2 : 0);
+        const y = cy + j * passo * 0.87;
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+    sombraDeBaixo(ctx, cx, cy, r);
+    filete(ctx, cx, cy, r, corpo);
+  },
+
+  /** O hexagono em pixel art: grade de quadrados, luz de cima, borda escura. */
+  pixel(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    const n = 11;
+    const lado = (r * 2) / n;
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.clip();
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const x = cx - r + i * lado;
+        const y = cy - r + j * lado;
+        const dx = x + lado / 2 - cx;
+        const dy = y + lado / 2 - cy;
+        if (!dentroDoHex(dx, dy, r * 1.02)) continue;
+        const borda =
+          !dentroDoHex(dx - lado, dy, r) || !dentroDoHex(dx + lado, dy, r) ||
+          !dentroDoHex(dx, dy - lado, r) || !dentroDoHex(dx, dy + lado, r);
+        let cor = corpo;
+        if (borda) cor = lum(corpo) < 64 ? claro(corpo, 0.3) : escuro(corpo, 0.42);
+        else if (dy < -r * 0.38) cor = claro(corpo, 0.32);
+        else if (dy > r * 0.3) cor = escuro(corpo, 0.18);
+        if (!borda && dx < -r * 0.25 && dy < -r * 0.18 && dy > -r * 0.5) cor = c.core;
+        ctx.fillStyle = cor;
+        ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(lado) + 1, Math.ceil(lado) + 1);
+      }
+    }
+    ctx.restore();
+  },
+
+  /** A joia com olhos e sorriso. */
+  carinha(ctx, cx, cy, r, c) {
+    PINTORES.joia(ctx, cx, cy, r, c);
+    const tinta = '#1d1a2b';
+    ctx.save();
+    ctx.fillStyle = tinta;
+    for (const lado of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + lado * r * 0.22, cy - r * 0.06, r * 0.075, r * 0.11, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#ffffff';
+    for (const lado of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(cx + lado * r * 0.22 + r * 0.025, cy - r * 0.1, r * 0.028, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = tinta;
+    ctx.lineWidth = Math.max(1.2, r * 0.055);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy + r * 0.08, r * 0.15, Math.PI * 0.18, Math.PI * 0.82);
+    ctx.stroke();
+    ctx.fillStyle = alfa('#ff7aa8', 0.55);
+    for (const lado of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + lado * r * 0.38, cy + r * 0.12, r * 0.08, r * 0.05, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  },
+
+  /** Losangos em dois tons, como um xadrez girado. */
+  xadrez(ctx, cx, cy, r, c) {
+    const corpo = c.fill;
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.fillStyle = corpo;
+    ctx.fill();
+    ctx.clip();
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.PI / 4);
+    const passo = r * 0.34;
+    ctx.fillStyle = c.core;
+    for (let j = -5; j <= 5; j++) {
+      for (let i = -5; i <= 5; i++) {
+        if ((i + j) % 2 === 0) continue;
+        ctx.fillRect(i * passo, j * passo, passo, passo);
+      }
+    }
+    ctx.restore();
+    sombraDeBaixo(ctx, cx, cy, r);
+    filete(ctx, cx, cy, r, corpo);
   },
 };
 

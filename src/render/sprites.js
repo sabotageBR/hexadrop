@@ -736,6 +736,21 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed, colorIx = 0
   if (materialId === 'bomb') paintBombMark(ctx, cells, scale, ox, oy);
 }
 
+/**
+ * Brilho que o modelo do hexagono recebe para uma skin.
+ *
+ * Acima de 0,4 o `contorno()` dos modelos vira halo - dois tracos com sombra
+ * borrada da propria cor -, e o Evandro rejeita halo borrado: na tela grande
+ * ele come a quina e a peca perde a forma. Skin com `halo: false` fica no 0,4,
+ * o ponto exato em que nao ha halo nem a sombra projetada dos temas claros.
+ * @param {{halo?:boolean}} skin
+ * @param {number} glow do tema
+ * @returns {number}
+ */
+export function brilhoDaSkin(skin, glow) {
+  return skin && skin.halo === false ? Math.min(glow, 0.4) : glow;
+}
+
 export class SpriteCache {
   /**
    * @param {import('./themes.js').Theme} theme
@@ -832,7 +847,7 @@ export class SpriteCache {
         stroke: skin.stroke || th.hexagon.stroke,
         core: skin.core || th.hexagon.core,
       },
-      th.glow,
+      brilhoDaSkin(skin, th.glow),
     );
 
     // A marca da skin e um carimbo por cima do modelo, nao parte dele: o anel

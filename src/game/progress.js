@@ -9,8 +9,9 @@
  */
 
 import { load, save, isPersistent } from '../core/storage.js';
-import { LEVEL_COUNT, worldOf } from './levelgen.js';
-import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE } from './content.js';
+import { LEVEL_COUNT, WORLD_COUNT, worldOf, worldStart, worldSize } from './levelgen.js';
+import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE, worldPrize, prizeWorldOfSkin, skin as getSkin } from './content.js';
+import { faseDeOrigem } from './alem.js';
 
 /**
  * Progresso salvo de uma versao anterior e descartado quando este numero muda
@@ -25,6 +26,10 @@ import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost,
  * Foi para 3 quando o jogo passou a ter cem fases em mundos de cinco: o save
  * da versao anterior podia trazer `unlocked` ate 150 e estrelas nas fases 101
  * a 150, que inflariam o total e abririam portoes sem merito.
+ *
+ * A 1.0.8 NAO muda o numero: os premios de mundo (`prizes`) e as fases depois
+ * da 100 (`alem`) entram por migracao no construtor. Trocar a versao apagaria
+ * o progresso de todo mundo que ja jogou.
  */
 const SAVE_VERSION = 3;
 
@@ -42,6 +47,19 @@ const SAVE_VERSION = 3;
  * @property {number} mapaAte ultima fase cuja chegada o mapa ja animou
  * @property {number} dailyAt
  * @property {number} plays
+ * @property {number[]} prizes mundos (0-based) cujo premio ja foi entregue
+ * @property {number} alem proxima fase depois da 100 a jogar; 0 = ainda nao venceu a 100
+ * @property {boolean} shopNews ha premio novo para ver na loja
+ */
+
+/**
+ * @typedef {object} PrizeResult
+ * @property {number} world mundo concluido, 0-based
+ * @property {'skin'|'upgrade'|'coins'} kind
+ * @property {string} [id] skin ou melhoria
+ * @property {number} [level] nivel da melhoria depois do premio
+ * @property {number} [coins] moedas, no bau ou no lugar de algo que o jogador ja tinha
+ * @property {'chest'|'owned'|'max'} [why] por que vieram moedas
  */
 
 /** @returns {SaveData} */
@@ -59,14 +77,20 @@ function blank() {
     mapaAte: 0,
     dailyAt: 0,
     plays: 0,
+    prizes: [],
+    alem: 0,
+    shopNews: false,
   };
 }
 
 export class Progress {
   constructor() {
     const stored = load('save', null);
+    const valido = !!stored && stored.v === SAVE_VERSION;
     /** @type {SaveData} */
-    this.data = stored && stored.v === SAVE_VERSION ? { ...blank(), ...stored } : blank();
+    this.data = valido ? { ...blank(), ...stored } : blank();
+    /** Premios entregues pela migracao desta carga; a home avisa uma vez. @type {PrizeResult[]} */
+    this.retroativos = [];
     // Toda skin gratuita e sem patente pertence a todo mundo, inclusive a quem
     // ja jogava antes de ela existir. Sem isto, um save antigo nao consegue
     // equipar a skin inicial nova.
@@ -85,7 +109,94 @@ export class Progress {
     delete this.data.upgrades.heart;
     delete (/** @type {*} */ (this.data)).hearts;
     delete (/** @type {*} */ (this.data)).heartsAt;
+    if (valido && !Array.isArray(stored.prizes)) this.migrarPremios();
+    // Quem ja venceu a 100 antes de existir o depois dela comeca na 101, senao a
+    // home continuaria oferecendo "Jogar 100".
+    if (!this.data.alem && this.starsOf(LEVEL_COUNT) >= 1) this.data.alem = LEVEL_COUNT + 1;
     this.persistent = isPersistent();
+  }
+
+  /**
+   * Save de antes dos premios de mundo: entrega, uma vez, o premio de cada
+   * mundo que o jogador ja concluiu. Sem equipar - ele escolheu a skin que
+   * esta usando -, e skin ja comprada vira as moedas que ela custou. As skins
+   * antigas que ele tinha continuam dele (`retired` so as tira da loja).
+   */
+  migrarPremios() {
+    const d = this.data;
+    d.prizes = [];
+    for (let w = 0; w < WORLD_COUNT; w++) {
+      if (this.starsOf(worldStart(w) + worldSize(w)) < 1) continue;
+      const r = this.claimWorldPrize(w, false, false);
+      if (r) this.retroativos.push(r);
+    }
+    if (this.retroativos.length) d.shopNews = true;
+    this.flush();
+  }
+
+  // ---------------------------------------------------------------- premios
+
+  /** @param {number} world 0-based @returns {boolean} */
+  prizeClaimed(world) {
+    return Array.isArray(this.data.prizes) && this.data.prizes.includes(world);
+  }
+
+  /**
+   * O que o premio do mundo daria AGORA, sem entregar nada: a skin que o
+   * jogador ja tem vira moeda, a melhoria no maximo passa para a proxima.
+   * @param {number} world 0-based
+   * @returns {PrizeResult}
+   */
+  resolvePrize(world) {
+    const p = worldPrize(world, WORLD_COUNT);
+    if ('skin' in p) {
+      if (!this.ownsSkin(p.skin)) return { world, kind: 'skin', id: p.skin };
+      return { world, kind: 'coins', id: p.skin, coins: getSkin(p.skin).cost, why: 'owned' };
+    }
+    if ('upgrade' in p) {
+      const ordem = [p.upgrade, ...UPGRADES.map((u) => u.id).filter((id) => id !== p.upgrade)];
+      for (const id of ordem) {
+        const def = UPGRADES.find((u) => u.id === id);
+        const lvl = this.upgradeLevel(id);
+        if (def && lvl < def.max) return { world, kind: 'upgrade', id, level: lvl + 1 };
+      }
+      const def = UPGRADES.find((u) => u.id === p.upgrade);
+      const custo = def ? def.costs[def.costs.length - 1] : 300;
+      return { world, kind: 'coins', id: p.upgrade, coins: custo, why: 'max' };
+    }
+    return { world, kind: 'coins', coins: p.coins, why: 'chest' };
+  }
+
+  /**
+   * Entrega o premio de um mundo concluido, uma vez so.
+   * @param {number} world 0-based
+   * @param {boolean} [equip] skin nova ja equipada (no jogo corrido, sim)
+   * @param {boolean} [gravar]
+   * @returns {PrizeResult|null} null quando ja foi entregue
+   */
+  claimWorldPrize(world, equip = true, gravar = true) {
+    const d = this.data;
+    if (!Array.isArray(d.prizes)) d.prizes = [];
+    if (d.prizes.includes(world)) return null;
+    const r = this.resolvePrize(world);
+    if (r.kind === 'skin' && r.id) {
+      if (!d.skins.includes(r.id)) d.skins.push(r.id);
+      if (equip) d.skin = r.id;
+    } else if (r.kind === 'upgrade' && r.id) {
+      d.upgrades[r.id] = r.level || this.upgradeLevel(r.id) + 1;
+    } else {
+      d.coins += Math.max(0, Math.round(r.coins || 0));
+    }
+    d.prizes.push(world);
+    if (gravar) this.flush();
+    return r;
+  }
+
+  /** O ponto no botao da loja foi visto. */
+  clearShopNews() {
+    if (!this.data.shopNews) return;
+    this.data.shopNews = false;
+    this.flush();
   }
 
   flush() {
@@ -115,6 +226,7 @@ export class Progress {
 
   /** @param {number} level @returns {boolean} */
   isUnlocked(level) {
+    if (level > LEVEL_COUNT) return level <= (this.data.alem || 0);
     if (level > this.data.unlocked) return false;
     return this.worldOpen(worldOf(level - 1));
   }
@@ -202,25 +314,32 @@ export class Progress {
    * @param {boolean} o.won
    * @param {number} o.taps
    * @param {number} o.par
-   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, best:boolean, rankUp:boolean}}
+   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, best:boolean, rankUp:boolean, prize:PrizeResult|null}}
    */
   finishLevel(o) {
     const d = this.data;
     d.plays++;
-    const before = this.starsOf(o.level);
-    const best = o.stars > before;
+    // Depois da 100 nao ha estrela gravada: o total de 300 e os portoes
+    // continuam medindo a campanha, e `unlocked` continua com teto de 100.
+    const alem = o.level > LEVEL_COUNT;
+    const before = alem ? 0 : this.starsOf(o.level);
+    const best = !alem && o.stars > before;
     if (best) d.stars[String(o.level)] = o.stars;
 
-    if (o.stars >= 1 && o.level >= d.unlocked) {
+    if (!alem && o.stars >= 1 && o.level >= d.unlocked) {
       d.unlocked = Math.min(LEVEL_COUNT, o.level + 1);
     }
+    if (o.stars >= 1 && o.level >= LEVEL_COUNT) d.alem = Math.max(d.alem || 0, o.level + 1);
 
+    // A parcela que cresce com a fase para na 100: sem teto, a economia
+    // inflaria sem fim no depois.
+    const nivel = Math.min(o.level, LEVEL_COUNT);
     let coins = 0;
     let xp = 0;
     if (o.stars > 0) {
-      coins = 6 + o.stars * 4 + Math.floor(o.level / 8);
+      coins = 6 + o.stars * 4 + Math.floor(nivel / 8);
       if (o.won && o.par > 0 && o.taps <= o.par) coins += 6;
-      xp = 8 + o.stars * 5 + Math.floor(o.level / 5);
+      xp = 8 + o.stars * 5 + Math.floor(nivel / 5);
       if (best) coins += 4;
     }
 
@@ -244,8 +363,15 @@ export class Progress {
     d.coins += coins + bonusCoins;
     d.xp += xp + bonusXp;
     const rankUp = this.rank > rankBefore;
+
+    // O premio do mundo vai junto com o resultado, na mesma gravacao: quem
+    // sai no meio do selo, do intervalo ou do corte nao o perde - vale o mesmo
+    // que vale para a vitoria (commitPendingWin).
+    let prize = null;
+    const origem = faseDeOrigem(o.level);
+    if (o.stars > 0 && origem.fimDeMundo) prize = this.claimWorldPrize(origem.mundo, true, false);
     this.flush();
-    return { coins, xp, bonusCoins, bonusXp, bonusPieces, best, rankUp };
+    return { coins, xp, bonusCoins, bonusXp, bonusPieces, best, rankUp, prize };
   }
 
   /**
@@ -372,16 +498,29 @@ export class Progress {
     this.flush();
   }
 
-  /** @returns {*} skins visiveis na loja com o estado de cada uma */
+  /**
+   * Skins da loja com o estado de cada uma, na ordem da trilha: a Original,
+   * depois as de premio pelo mundo em que saem, depois as que so se compram.
+   * @returns {*}
+   */
   skinCatalog() {
     const rank = this.rank;
-    return SKINS.map((s) => ({
-      skin: s,
-      owned: this.ownsSkin(s.id),
-      equipped: this.data.skin === s.id,
-      rankLocked: rank < s.rank,
-      affordable: this.data.coins >= s.cost,
-    }));
+    // Skin aposentada so aparece para quem ja a tem: ela saiu da loja, mas o
+    // que foi comprado continua sendo do jogador.
+    const lista = SKINS.filter((s) => !s.retired || this.ownsSkin(s.id)).map((s) => {
+      const prizeWorld = prizeWorldOfSkin(s.id);
+      return {
+        skin: s,
+        owned: this.ownsSkin(s.id),
+        equipped: this.data.skin === s.id,
+        rankLocked: rank < s.rank,
+        affordable: this.data.coins >= s.cost,
+        prizeWorld,
+        prizeClaimed: prizeWorld >= 0 && this.prizeClaimed(prizeWorld),
+      };
+    });
+    const ordem = (/** @type {*} */ e) => (e.skin.id === 'classic' ? -1 : e.prizeWorld >= 0 ? e.prizeWorld : 1000);
+    return lista.sort((a, b) => ordem(a) - ordem(b));
   }
 
   reset() {

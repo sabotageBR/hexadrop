@@ -81,7 +81,13 @@
     <div class="hud-top bare">
       <button class="iconbtn" id="gameBack" aria-label="Voltar">&#8592;</button>
       <div class="grow"></div>
-      <div class="level-name" id="gameLevel"></div>
+      <!-- Nome da fase e, embaixo, a fita do mundo: um pip por fase e o premio
+           que o mundo da no fim. So exibicao - fica fora da excecao de
+           `.screen.pass`, entao o toque atravessa para o canvas. -->
+      <div class="level-name" id="gameLevel">
+        <span class="level-title" id="gameLevelName"></span>
+        <span class="world-pips" id="gameWorldPips"></span>
+      </div>
       <div class="grow"></div>
       <!-- A bolsa fica a vista DENTRO da fase: e onde as moedas do premio
            pousam, e e o que permite a recompensa existir sem um cartao. -->
@@ -100,8 +106,14 @@
          botao nenhum. Sai sozinho quando a fase seguinte entra. Nao repete as
          estrelas: as do HUD acendem durante a jogada e ja estao logo acima. -->
     <div class="flow" id="flowSeal" hidden>
+      <span class="flow-title" id="flowTitle"></span>
       <b class="flow-coins" id="flowCoins"></b>
       <span class="flow-what" id="flowWhat"></span>
+      <!-- Premio de fim de mundo: entra no mesmo selo, sem botao. -->
+      <div class="flow-prize" id="flowPrize" hidden>
+        <canvas id="flowPrizeIcon" width="88" height="88"></canvas>
+        <span><b id="flowPrizeTitle"></b><small id="flowPrizeName"></small></span>
+      </div>
     </div>
     <div class="grow"></div>
     <div class="shade bottom"></div>
@@ -126,6 +138,10 @@
         <span class="bonus-line-lbl" id="winBonusLbl"></span>
         <span class="bonus-line-what" id="winBonusWhat"></span>
         <b class="bonus-line-val" id="winBonusValue"></b>
+      </div>
+      <div class="win-prize" id="winPrize" hidden>
+        <canvas id="winPrizeIcon" width="80" height="80"></canvas>
+        <span><b id="winPrizeTitle"></b><small id="winPrizeName"></small></span>
       </div>
       <p id="winNote"></p>
       <div class="row">

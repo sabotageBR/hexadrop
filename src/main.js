@@ -10,16 +10,18 @@ import { GameScene } from './game/scene.js';
 import { createSession } from './game/session.js';
 import {
   levelConfig, LEVEL_COUNT, WORLD_COUNT, worldOf, worldStart, worldSize,
-  indexInWorld,
 } from './game/levelgen.js';
 import { LEVELS } from './game/levels.gen.js';
+import { faseDeOrigem } from './game/alem.js';
 import { Progress } from './game/progress.js';
 import {
   UPGRADES, BOOSTS, gateStars, xpForRank, skin as getSkin, BONUS_COINS_PER_PIECE,
+  WORLD_PRIZES, worldPrize,
 } from './game/content.js';
 import { THEMES } from './render/themes.js';
 import { applyUiTheme } from './render/uitheme.js';
-import { paintHexModel } from './render/hexmodels.js';
+import { brilhoDaSkin } from './render/sprites.js';
+import { paintHexModel, hexPath } from './render/hexmodels.js';
 import { material as getMaterial } from './physics/materials.js';
 import { audio } from './core/audio.js';
 import { poki } from './poki.js';
@@ -200,6 +202,20 @@ const EVENTOS_UI = {
  * recompensa entram.
  */
 const FLOW_SEAL_MS = 1000;
+
+/**
+ * Selo de fim de mundo, com o premio: meio segundo a mais que o comum.
+ *
+ * Continua sendo selo, e nao cartao. A licao medida e que o fluxo continuo nao
+ * perde jogador e a parada perde: o cartao de fim de mundo custou 15% na
+ * passagem da fase 20 para a 21. O premio passa sobre a cena, sem botao, e um
+ * toque adianta - mas so depois de PRIZE_SKIP_FLOOR_MS, senao o toque que
+ * apressava a cascata engolia o premio antes de ele ser visto.
+ */
+const FLOW_PRIZE_MS = 1500;
+const PRIZE_SKIP_FLOOR_MS = 700;
+/** Quando o hexagono troca de skin na cena, depois de o selo entrar. */
+const PRIZE_SWAP_MS = 120;
 const WIPE_MS = 200;
 
 /**
@@ -330,7 +346,10 @@ class Game {
     this.scene = new GameScene(this.canvas, { topInset: GAME_INSET_TOP, bottomInset: GAME_INSET_BOTTOM });
     /** @type {string} */
     this.screen = '';
-    this.level = Math.min(LEVEL_COUNT, this.progress.data.unlocked);
+    // Quem ja venceu a 100 volta para o depois dela, e nao para a 100.
+    this.level = this.progress.data.alem > LEVEL_COUNT ? this.progress.data.alem : Math.min(LEVEL_COUNT, this.progress.data.unlocked);
+    /** De onde vem a fase em cartaz: mundo exibido, tema e layout de origem. */
+    this.origem = faseDeOrigem(this.level);
     this.lossStreak = 0;
     this.lastResult = null;
     /** Vitoria esperando o fim da celebracao para ser gravada. */
@@ -340,7 +359,7 @@ class Game {
     this.shopTab = 'skins';
     this.toastTimer = 0;
     this.tutTimer = 0;
-    this.homeWorld = worldOf(this.level - 1);
+    this.homeWorld = this.homeSlotOf(this.level);
     this.homeSwiped = false;
     /** @type {IntersectionObserver|null} Vigia qual mundo esta na tela no mapa. */
     this._mapObs = null;
@@ -401,6 +420,12 @@ class Game {
     poki.gameLoadingFinished();
     if (entraJogando) this.startLevel(1);
     else this.show('home');
+    // Quem ja jogava antes dos premios de mundo recebe, uma vez, os dos mundos
+    // que ja concluiu. O toast diz quantos; o resto esta na loja.
+    if (!entraJogando && this.progress.retroativos.length) {
+      window.setTimeout(() => this.toast(t('prizesRetro', this.progress.retroativos.length)), 600);
+      poki.measure('premio', 'retroativo', 'visible');
+    }
     window.setTimeout(() => $('loader').classList.add('gone'), 260);
 
     onLangChange(() => {
@@ -437,8 +462,9 @@ class Game {
       if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy)) return;
       const dir = dx < 0 ? 1 : -1;
       let w = this.homeWorld + dir;
-      while (w >= 0 && w < WORLD_COUNT && !this.progress.worldOpen(w)) w += dir;
-      if (w >= 0 && w < WORLD_COUNT) this.previewWorld(w);
+      const total = this.homeSlotCount();
+      while (w >= 0 && w < total && !this.homeSlotOpen(w)) w += dir;
+      if (w >= 0 && w < total) this.previewWorld(w);
     });
   }
 
@@ -461,6 +487,8 @@ class Game {
     if (el) el.classList.add('on');
     this.screen = name;
     this._ofertasVistas.clear();
+    // O ponto no botao da loja some quando ela e aberta.
+    if (name === 'shop') this.progress.clearShopNews();
     if (name !== 'game') {
       // A fila de estreias reabriria o cartao por cima da tela seguinte.
       window.clearTimeout(this.tutTimer);
@@ -510,6 +538,10 @@ class Game {
     // O teto sai da contagem de fases: cravado no HTML, ele mentia assim que o
     // jogo ganhou fases novas.
     $('homeStarsMax').textContent = '/' + LEVEL_COUNT * 3;
+    // Premio novo esperando na loja (a migracao de quem ja jogava antes dos
+    // premios de mundo): um ponto no botao, que some ao abrir.
+    const loja = document.getElementById('btnShop');
+    if (loja) loja.classList.toggle('news', !!p.data.shopNews);
     // Barra de patente: quanto falta de XP para a proxima.
     const bar = document.getElementById('homeRankBar');
     if (bar) {
@@ -601,8 +633,13 @@ class Game {
    *
    * Um unico ouvinte no documento em vez de uma linha em cada um dos vinte e
    * poucos `onclick`: quem decide se o botao conta e o mapa `EVENTOS_UI`, e um
-   * botao novo entra la, nao aqui. O evento sai depois do handler do proprio
-   * botao porque ouve na fase de bolha - o que importa e que saia, nao quando.
+   * botao novo entra la, nao aqui.
+   *
+   * O ouvinte e de CAPTURA, e isso importa: ele roda antes do `onclick` do
+   * proprio botao. Na fase de bolha ele rodava depois, e nos botoes de video e
+   * no "repetir" o handler ja tinha chamado `commercialBreak`/`rewardedBreak`,
+   * que ligam `inBreak` na hora - e `poki.measure` descarta evento dentro de
+   * intervalo. A 1.0.7 inteira mostrou 0% de interacao nesses botoes por isso.
    *
    * Antes disto a aba de interacao do painel da Poki estava literalmente
    * vazia: fora de "fase N comecou" e "fase N terminou" nao havia dado nenhum
@@ -619,7 +656,7 @@ class Game {
       const nome = btn.dataset.ev || EVENTOS_UI[btn.id];
       if (!nome) return;
       poki.measure('botao', nome, 'interact');
-    });
+    }, true);
   }
 
   /**
@@ -858,15 +895,19 @@ class Game {
    * @returns {{session:*, theme:string}}
    */
   makeSession(level, variantIndex) {
-    const index = Math.max(0, Math.min(LEVEL_COUNT - 1, level - 1));
+    // Depois da 100 a fase reusa uma fase ja validada da segunda metade
+    // (game/alem.js); ate a 100 a origem e a propria fase.
+    const origem = faseDeOrigem(level);
+    const index = origem.index;
     const record = LEVELS[index] || LEVELS[0];
     // A variante fica gravada. Sem isso, "tentar de novo" sorteava outro layout
     // e ficava indistinguivel de "embaralhar" - que e justamente o que deve
-    // custar um consumivel.
-    const vi =
-      variantIndex === undefined
-        ? Math.floor(this.rng.next() * record.v.length)
-        : ((variantIndex % record.v.length) + record.v.length) % record.v.length;
+    // custar um consumivel. Depois da 100 ela nao e sorteada: cada volta pelo
+    // mesmo tema traz a variante seguinte, para o jogador nao reencontrar o
+    // layout que acabou de jogar na mesma origem.
+    const padrao = origem.alem ? origem.visita : Math.floor(this.rng.next() * record.v.length);
+    const pedida = variantIndex === undefined ? padrao : variantIndex;
+    const vi = ((pedida % record.v.length) + record.v.length) % record.v.length;
     this.variantIndex = vi;
     this.variantCount = record.v.length;
     const variant = record.v[vi];
@@ -891,9 +932,13 @@ class Game {
 
   /** Cena de fundo do menu: uma fase real do mundo em preview. */
   showAmbient() {
-    const w = Math.max(0, Math.min(WORLD_COUNT - 1, this.homeWorld | 0));
-    // Meio do mundo: a torre ja esta cheia o bastante para virar cenario.
-    const level = Math.min(LEVEL_COUNT, worldStart(w) + Math.ceil(worldSize(w) / 2) + 1);
+    const w = this.homeSlotClamp(this.homeWorld);
+    // Meio do mundo: a torre ja esta cheia o bastante para virar cenario. No
+    // depois da 100 e a propria fase em que o jogador esta.
+    const level =
+      w === WORLD_COUNT
+        ? this.progress.data.alem
+        : Math.min(LEVEL_COUNT, worldStart(w) + Math.ceil(worldSize(w) / 2) + 1);
     const { session, theme } = this.makeSession(level);
     session.onEnd = null;
     session.onStar = null;
@@ -918,10 +963,44 @@ class Game {
    * @returns {number}
    */
   homeTarget() {
-    const w = Math.max(0, Math.min(WORLD_COUNT - 1, this.homeWorld | 0));
-    if (w === worldOf(this.level - 1)) return this.level;
+    const w = this.homeSlotClamp(this.homeWorld);
+    if (w === this.homeSlotOf(this.level)) return this.level;
+    if (w === WORLD_COUNT) return this.progress.data.alem;
     const first = worldStart(w) + 1;
     return this.progress.isUnlocked(first) ? first : this.level;
+  }
+
+  /**
+   * Posicao do carrossel da home para uma fase. As vinte primeiras sao os
+   * mundos da campanha; a de indice WORLD_COUNT e o "depois da 100", que so
+   * existe para quem ja venceu a 100.
+   * @param {number} level
+   * @returns {number}
+   */
+  homeSlotOf(level) {
+    return level > LEVEL_COUNT ? WORLD_COUNT : worldOf(level - 1);
+  }
+
+  /** Quantas posicoes o carrossel tem. @returns {number} */
+  homeSlotCount() {
+    return WORLD_COUNT + (this.progress.data.alem > LEVEL_COUNT ? 1 : 0);
+  }
+
+  /** @param {number} w @returns {number} */
+  homeSlotClamp(w) {
+    return Math.max(0, Math.min(this.homeSlotCount() - 1, w | 0));
+  }
+
+  /**
+   * A posicao esta aberta? O depois da 100 nao tem portao de estrelas: ele
+   * abre ao vencer a 100. Sem a regra propria ele cairia em `gateStars(20)`,
+   * que e o ultimo portao, de 275 estrelas.
+   * @param {number} w
+   * @returns {boolean}
+   */
+  homeSlotOpen(w) {
+    if (w === WORLD_COUNT) return this.progress.data.alem > LEVEL_COUNT;
+    return w >= 0 && w < WORLD_COUNT && this.progress.worldOpen(w);
   }
 
   /** Bolinhas do carrossel de mundos na tela inicial. */
@@ -934,12 +1013,15 @@ class Game {
     // anterior enquanto abria a primeira fase do mundo em cartaz.
     if (play) play.textContent = `${t('play')}  ${this.homeTarget()}`;
     if (!host) return;
-    const w = Math.max(0, Math.min(WORLD_COUNT - 1, this.homeWorld | 0));
-    const themeId = levelConfig(worldStart(w)).theme;
-    if (label) label.textContent = `${t('world')} ${w + 1} · ${themeLabel(themeId)}`;
-    if (host.childElementCount !== WORLD_COUNT) {
+    const w = this.homeSlotClamp(this.homeWorld);
+    const vitrine = w === WORLD_COUNT ? faseDeOrigem(this.progress.data.alem) : null;
+    const themeId = vitrine ? vitrine.tema : levelConfig(worldStart(w)).theme;
+    const numero = vitrine ? vitrine.mundo + 1 : w + 1;
+    if (label) label.textContent = `${t('world')} ${numero} · ${themeLabel(themeId)}`;
+    const total = this.homeSlotCount();
+    if (host.childElementCount !== total) {
       host.innerHTML = '';
-      for (let i = 0; i < WORLD_COUNT; i++) {
+      for (let i = 0; i < total; i++) {
         const b = document.createElement('button');
         b.type = 'button';
         b.dataset.world = String(i);
@@ -949,7 +1031,7 @@ class Game {
     let abertos = 0;
     for (let i = 0; i < host.children.length; i++) {
       const b = /** @type {HTMLButtonElement} */ (host.children[i]);
-      const aberto = this.progress.worldOpen(i);
+      const aberto = this.homeSlotOpen(i);
       if (aberto) abertos++;
       b.classList.toggle('on', i === w);
       b.classList.toggle('locked', !aberto);
@@ -962,8 +1044,8 @@ class Game {
 
   /** @param {number} world */
   previewWorld(world) {
-    const w = Math.max(0, Math.min(WORLD_COUNT - 1, world | 0));
-    if (!this.progress.worldOpen(w)) {
+    const w = this.homeSlotClamp(world);
+    if (!this.homeSlotOpen(w)) {
       this.toast(t('gateLocked'));
       return;
     }
@@ -980,8 +1062,11 @@ class Game {
     // gameplayStart repetido sem um gameplayStop entre eles.
     poki.gameplayStop();
     this.cancelFlow();
-    const mudouDeFase = this.level !== Math.max(1, Math.min(LEVEL_COUNT, level));
-    this.level = Math.max(1, Math.min(LEVEL_COUNT, level));
+    // Sem teto: depois da 100 o jogo continua (game/alem.js). Quem barra fase
+    // nao alcancada e o mapa e a home, como sempre foi.
+    const mudouDeFase = this.level !== Math.max(1, level | 0);
+    this.level = Math.max(1, level | 0);
+    this.origem = faseDeOrigem(this.level);
     if (mudouDeFase) this.lossStreak = 0;
     this.paused = false;
     this.pendingWin = null;
@@ -1001,9 +1086,9 @@ class Game {
     audio.setMusic_(MUSIC[theme] || MUSIC.neon);
     audio.releaseMusic();
     this.setStars('gameStars', 0);
-    const themeId = levelConfig(this.level - 1).theme;
-    $('gameLevel').textContent = `${themeLabel(themeId)} · ${this.level}`;
-    this.homeWorld = worldOf(this.level - 1);
+    $('gameLevelName').textContent = `${themeLabel(this.origem.tema)} · ${this.level}`;
+    this.buildWorldPips();
+    this.homeWorld = this.homeSlotOf(this.level);
     // Reiniciar aparece depois de tropecar duas vezes na mesma fase. Ao lado
     // dele morava o video de dica, que saiu na 1.0.6: zero cliques em 135
     // partidas que o viram na 1.0.3 e em 79 na 1.0.4, porque a dica
@@ -1027,14 +1112,24 @@ class Game {
 
   showTutorial() {
     const tut = $('tut');
-    const config = levelConfig(this.level - 1);
+    const config = levelConfig(this.origem.index);
     /** @type {{texto:string, titulo?:string, icone?:HTMLCanvasElement}[]} */
     const msgs = [];
     // A fase 1 diz o objetivo antes do gesto. So "toque nas pecas" deixava o
     // jogador quebrando a torre sem saber para que - e no desktop, onde o
     // pedestal nem aparecia na tela, 18% sairam no meio da fase 1 da 1.0.3.
     if (this.level === 1) msgs.push({ texto: t('tutorialGoal') }, { texto: t('tutorialTap') });
-    else if (this.level === 2) msgs.push({ texto: t('tutorialGoal') });
+    else if (this.level === 2) {
+      msgs.push({ texto: t('tutorialGoal') });
+      // O primeiro premio a vista antes de ele chegar: a meta longa so funciona
+      // se o jogador souber que ela existe, e na fase 5 ele ja e dele.
+      if (!this.progress.prizeClaimed(0)) {
+        const premio = this.progress.resolvePrize(0);
+        const icone = document.createElement('canvas');
+        this.paintPrizeIcon(icone, premio, 40);
+        msgs.push({ titulo: t('prizeTeaser'), texto: this.prizeTexts(premio).nome, icone });
+      }
+    }
     else if (this.level === 3) msgs.push({ texto: t('tutorialStars') });
     else {
       // Da fase 4 a 10 cada fase estreia uma ou duas coisas, e o cartao mostra
@@ -1138,6 +1233,11 @@ class Game {
     poki.gameplayStop();
     const session = this.scene.session;
     if (!session) return;
+    // A fila de estreias sai quando a fase termina: quem vence rapido via o
+    // cartao da peca nova por cima do selo - e no fim de mundo, por cima do
+    // premio.
+    window.clearTimeout(this.tutTimer);
+    $('tut').classList.add('hide');
     const stars = session.stars;
     const completed = state === 'won' || (state === 'stuck' && stars >= 1);
 
@@ -1185,6 +1285,7 @@ class Game {
     this.setStars('gameStars', session.stars);
     session.idle = Math.max(0, session.autoHintAfter - DICA_NO_RECOMECO_S);
     const box = $('flowSeal');
+    this.resetSeal();
     box.classList.add('miss');
     $('flowCoins').textContent = t('retryAutoTitle');
     $('flowWhat').textContent = '';
@@ -1262,6 +1363,7 @@ class Game {
     const trocar = this.lossStreak > RETRIES_MESMO_LAYOUT && (this.variantCount || 1) >= 2;
     const variante = trocar ? this.outraVariante() : this.variantIndex;
     const box = $('flowSeal');
+    this.resetSeal();
     box.classList.add('miss');
     $('flowCoins').textContent = t('retryAutoTitle');
     $('flowWhat').textContent = t(trocar ? 'shuffleUsed' : 'retryAuto');
@@ -1321,17 +1423,22 @@ class Game {
     this.showWin(pend.stars, result, session);
   }
 
-  /** Fase que fecha um mundo: da o titulo de "mundo concluido" ao cartao. */
+  /**
+   * Fase que fecha um mundo: e onde sai o premio de mundo e o titulo de
+   * "mundo concluido". Vem de `this.origem`, que vale tambem depois da 100 -
+   * pelo indice da fase, toda fase acima da 100 cairia no ultimo mundo.
+   */
   atWorldEnd() {
-    const i = this.level - 1;
-    return indexInWorld(i) === worldSize(worldOf(i)) - 1;
+    return this.origem.fimDeMundo;
   }
 
   /**
    * A fase seguinte entra sozinha?
    *
-   * Sempre, ate a ultima fase do jogo - inclusive no fim de cada mundo. O
-   * cartao de vitoria so volta na fase 100 e quando a automacao desliga o fluxo.
+   * Sempre, inclusive no fim de cada mundo e depois da 100. O cartao de
+   * vitoria so volta na fase 100 - o fim da campanha, celebrado uma vez por
+   * vitoria, e o unico lugar do video de dobrar premio - e quando a automacao
+   * desliga o fluxo. Dali "proxima" leva a 101.
    *
    * O fim de mundo ja foi parada, e depois parada so a partir da fase 30. Medido
    * no funil da Poki, a passagem da fase 20 para a 21 - a unica fronteira de
@@ -1350,7 +1457,7 @@ class Game {
    */
   flowContinues() {
     if (!this.flowLevels) return false;
-    return this.level < LEVEL_COUNT;
+    return this.level !== LEVEL_COUNT;
   }
 
   /**
@@ -1367,8 +1474,11 @@ class Game {
    * @param {*} session
    */
   flowToNext(result, session) {
-    audio.win();
+    const premio = result.prize || null;
+    if (premio) audio.prize();
+    else audio.win();
     const box = $('flowSeal');
+    this.resetSeal();
     const moedas = result.coins + (result.bonusCoins || 0);
     $('flowCoins').textContent = moedas > 0 ? `+${moedas}` : '';
     // De onde veio o extra, com o mesmo texto do cartao: peca intacta e combo
@@ -1378,21 +1488,254 @@ class Game {
     if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
     if (session && session.bestCombo > 1) partes.push(`${t('combo')} x${session.bestCombo}`);
     $('flowWhat').textContent = partes.join('  \u00b7  ');
-    box.classList.remove('miss');
     box.hidden = false;
+    this.fillWorldPip();
+    if (premio) this.showPrize(premio);
 
     // As moedas pousam no contador do HUD, nao numa bolsa de cartao: o premio
     // fica onde o jogador vai continuar olhando.
-    const bolsaAntes = this.progress.data.coins - moedas;
+    const moedasDoPremio = premio && premio.kind === 'coins' ? premio.coins || 0 : 0;
+    const bolsaAntes = this.progress.data.coins - moedas - moedasDoPremio;
     this.flyCoins($('flowCoins'), Math.min(12, Math.max(4, Math.round(moedas / 3))), 200, $('gameCoins'));
     this.countUp($('gameCoins'), this.progress.data.coins, 260, false, bolsaAntes);
 
-    if (result.best) this.toast(t('newRecord'));
+    // No fim de mundo o recado e o premio: um "novo recorde" ao mesmo tempo
+    // seria o terceiro texto sobre a cena.
+    if (result.best && !premio) this.toast(t('newRecord'));
     if (result.rankUp) {
       window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), 700);
     }
 
-    this.scheduleFlow(() => this.advanceLevel(), FLOW_SEAL_MS);
+    if (premio) this.scheduleFlow(() => this.advanceLevel(), FLOW_PRIZE_MS, PRIZE_SKIP_FLOOR_MS);
+    else this.scheduleFlow(() => this.advanceLevel(), FLOW_SEAL_MS);
+  }
+
+  /**
+   * Premio de fim de mundo no selo: o titulo do mundo concluido, o icone e o
+   * nome do premio, o hexagono trocando na cena e o confete.
+   * @param {*} premio PrizeResult
+   */
+  showPrize(premio) {
+    const box = $('flowSeal');
+    box.classList.add('premio');
+    $('flowTitle').textContent = t('worldClear');
+    const { titulo, nome } = this.prizeTexts(premio);
+    $('flowPrizeTitle').textContent = titulo;
+    $('flowPrizeName').textContent = nome;
+    this.paintPrizeIcon(/** @type {HTMLCanvasElement} */ ($('flowPrizeIcon')), premio, 44);
+    $('flowPrize').hidden = false;
+    // O icone do fim da fita no HUD "entra" no selo: o premio que estava sendo
+    // prometido e o que acabou de chegar.
+    const hud = document.getElementById('gamePrize');
+    if (hud) hud.classList.add('claimed');
+    this.flowPrizeEv = `mundo-${premio.world + 1}`;
+    this.medirPremio(premio);
+    if (premio.kind === 'skin' && premio.id) {
+      const id = premio.id;
+      window.setTimeout(() => this.swapHexSkin(id), PRIZE_SWAP_MS);
+    }
+    if (premio.kind === 'coins') this.flyCoins($('flowPrizeIcon'), 8, 120, $('gameCoins'));
+    window.setTimeout(() => this.confetti($('flowPrize')), 150);
+  }
+
+  /**
+   * Os dois eventos de um premio entregue. Saem na hora, sincronos: o
+   * `advanceLevel` que vem depois do selo passa pelo intervalo comercial, e
+   * `poki.measure` descarta evento dentro de intervalo.
+   * @param {*} premio
+   */
+  medirPremio(premio) {
+    poki.measure('premio', `mundo-${premio.world + 1}`, 'visible');
+    const oque =
+      premio.kind === 'skin' ? `skin-${premio.id}` : premio.kind === 'upgrade' ? `melhoria-${premio.id}` : `moedas-${premio.why || 'bau'}`;
+    poki.measure('premio', oque, 'ganho');
+  }
+
+  /**
+   * Titulo e nome de um premio, como o selo e a loja dizem.
+   * @param {*} premio PrizeResult
+   * @returns {{titulo:string, nome:string}}
+   */
+  prizeTexts(premio) {
+    if (premio.kind === 'skin') return { titulo: t('prizeSkin'), nome: t(getSkin(premio.id).nameKey) };
+    if (premio.kind === 'upgrade') {
+      const def = UPGRADES.find((u) => u.id === premio.id);
+      return { titulo: t('prizeUpgrade'), nome: `${def ? t(def.nameKey) : ''} \u00b7 ${t('upgLevelN', premio.level)}` };
+    }
+    if (premio.why === 'owned') return { titulo: t('prizeOwned', premio.coins), nome: t(getSkin(premio.id).nameKey) };
+    return { titulo: t('prizeCoins'), nome: `+${premio.coins}` };
+  }
+
+  /**
+   * O hexagono troca de skin na cena, com faiscas da cor nova. Nao passa por
+   * `useSkin`: limpar o cache de sprites travaria um quadro, e a chave do
+   * sprite do hexagono ja leva o id da skin.
+   * @param {string} id
+   */
+  swapHexSkin(id) {
+    const scene = this.scene;
+    if (this.screen !== 'game' || !scene.session) return;
+    const nova = getSkin(id);
+    scene.skin = nova;
+    const mundo = scene.session.world;
+    if (mundo && mundo.hexBody && scene.particles) {
+      const pos = mundo.hexTransform();
+      const cor = nova.stroke || '#ffd84a';
+      scene.particles.spark(pos.x, pos.y, cor, 28, (/** @type {number} */ n) => this.rng.next() * n);
+    }
+    if (scene.camera) scene.camera.addTrauma(0.15);
+  }
+
+  /**
+   * Confete em DOM saindo de um elemento. "Confetti, a happy sound, a few words
+   * of praise at every milestone" e o que a Poki pede; o fim de mundo e o
+   * marco. Nada com movimento reduzido, e metade em qualidade baixa.
+   * @param {HTMLElement|null} de
+   */
+  confetti(de) {
+    if (!de || this.screen !== 'game') return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const r = de.getBoundingClientRect();
+    const cores = ['#ffd84a', '#ff5fa2', '#4fd1ff', '#7dff6a', '#b57cff', '#ff9a3c'];
+    const n = this.scene.quality === 'low' ? 12 : 22;
+    for (let i = 0; i < n; i++) {
+      const el = document.createElement('i');
+      el.className = 'confete';
+      el.style.left = `${r.left + r.width / 2}px`;
+      el.style.top = `${r.top + r.height / 2}px`;
+      el.style.background = cores[i % cores.length];
+      document.body.appendChild(el);
+      const ang = (i / n) * Math.PI * 2 + this.rng.next() * 0.5;
+      const dist = 70 + this.rng.next() * 110;
+      const dx = Math.cos(ang) * dist;
+      const dy = Math.sin(ang) * dist * 0.75 + 60;
+      const giro = (this.rng.next() - 0.5) * 720;
+      el.animate(
+        [
+          { transform: 'translate(-50%, -50%) rotate(0deg)', opacity: 1 },
+          { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${giro}deg)`, opacity: 0 },
+        ],
+        { duration: 1000 + this.rng.next() * 300, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' },
+      ).onfinish = () => el.remove();
+    }
+  }
+
+  /** Devolve o selo ao estado comum: sem premio, sem "Quase!". */
+  resetSeal() {
+    const box = document.getElementById('flowSeal');
+    if (box) box.classList.remove('miss', 'premio');
+    const titulo = document.getElementById('flowTitle');
+    if (titulo) titulo.textContent = '';
+    const linha = document.getElementById('flowPrize');
+    if (linha) linha.hidden = true;
+    this.flowPrizeEv = '';
+  }
+
+  /**
+   * A fita do mundo no HUD: um pip por fase e, no fim, o premio que o mundo da.
+   * O numero de pips sai de `worldSize`, como tudo que fala de fronteira de
+   * mundo - cinco cravado no HTML seria o mesmo erro do dez de antes.
+   */
+  buildWorldPips() {
+    const host = document.getElementById('gameWorldPips');
+    if (!host) return;
+    const o = this.origem;
+    const p = this.progress;
+    host.innerHTML = '';
+    for (let i = 0; i < o.tamanho; i++) {
+      const lvl = o.primeira + i;
+      const pip = document.createElement('i');
+      const feita = lvl <= LEVEL_COUNT ? p.starsOf(lvl) > 0 || p.wasSkipped(lvl) : lvl < (p.data.alem || 0);
+      if (i === o.posNoMundo) pip.className = 'now';
+      else if (feita) pip.className = 'on';
+      host.appendChild(pip);
+    }
+    const cv = document.createElement('canvas');
+    cv.id = 'gamePrize';
+    const ja = p.prizeClaimed(o.mundo);
+    this.paintPrizeIcon(cv, ja ? this.nominalPrize(o.mundo) : p.resolvePrize(o.mundo), 18);
+    if (ja) cv.classList.add('claimed');
+    cv.setAttribute('aria-label', t('prizeNext'));
+    host.appendChild(cv);
+  }
+
+  /** O pip da fase vencida acende. */
+  fillWorldPip() {
+    const host = document.getElementById('gameWorldPips');
+    const pip = host && host.querySelector('i.now');
+    if (pip) pip.className = 'on pop';
+  }
+
+  /**
+   * O premio do mundo como foi anunciado, para desenhar um que ja foi entregue.
+   * @param {number} w
+   * @returns {*}
+   */
+  nominalPrize(w) {
+    const p = worldPrize(w, WORLD_COUNT);
+    if ('skin' in p) return { world: w, kind: 'skin', id: p.skin };
+    if ('upgrade' in p) return { world: w, kind: 'upgrade', id: p.upgrade, level: 1 };
+    return { world: w, kind: 'coins', coins: p.coins, why: 'chest' };
+  }
+
+  /**
+   * Icone de um premio: o hexagono da skin, o glifo da melhoria ou a moeda do
+   * bau. Chapado, como a joia: sem halo e sem mancha radial.
+   * @param {HTMLCanvasElement} cv
+   * @param {*} premio PrizeResult
+   * @param {number} lado em pixels CSS
+   */
+  paintPrizeIcon(cv, premio, lado) {
+    if (premio.kind === 'skin' && premio.id) {
+      this.paintSkinSwatch(cv, getSkin(premio.id), lado, 0.42);
+      return;
+    }
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(lado * dpr);
+    cv.height = Math.round(lado * dpr);
+    cv.style.width = `${lado}px`;
+    cv.style.height = `${lado}px`;
+    const ctx = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, lado, lado);
+    const c = lado / 2;
+    if (premio.kind === 'upgrade') {
+      // Melhoria: um hexagono dourado vazado com uma seta dupla para cima.
+      const r = lado * 0.42;
+      hexPath(ctx, c, c, r);
+      ctx.fillStyle = '#5a3d08';
+      ctx.fill();
+      hexPath(ctx, c, c, r - lado * 0.04);
+      ctx.strokeStyle = '#ffd84a';
+      ctx.lineWidth = Math.max(1.2, lado * 0.08);
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.strokeStyle = '#fff3c4';
+      ctx.lineWidth = Math.max(1.2, lado * 0.085);
+      ctx.lineCap = 'round';
+      for (const dy of [-0.1, 0.12]) {
+        ctx.beginPath();
+        ctx.moveTo(c - lado * 0.17, c + lado * (dy + 0.08));
+        ctx.lineTo(c, c + lado * (dy - 0.08));
+        ctx.lineTo(c + lado * 0.17, c + lado * (dy + 0.08));
+        ctx.stroke();
+      }
+      return;
+    }
+    // Moedas: um disco dourado chapado com o aro mais escuro e a mesma bolinha
+    // que o contador do HUD usa.
+    ctx.beginPath();
+    ctx.arc(c, c, lado * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#d99a00';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c, c, lado * 0.31, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffd84a';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c, c, lado * 0.12, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff3c4';
+    ctx.fill();
   }
 
   /**
@@ -1401,10 +1744,11 @@ class Game {
    * @param {()=>void} passo
    * @param {number} ms
    */
-  scheduleFlow(passo, ms) {
+  scheduleFlow(passo, ms, piso = 300) {
     window.clearTimeout(this.flowTimer);
     this.flowNext = passo;
     this.flowShownAt = performance.now();
+    this.flowFloor = piso;
     this.flowTimer = window.setTimeout(() => {
       this.flowNext = null;
       passo();
@@ -1424,7 +1768,12 @@ class Game {
    */
   skipWait() {
     if (this.screen !== 'game' || !this.flowTimer || this.advancing || !this.flowNext) return;
-    if (performance.now() - this.flowShownAt < 300) return;
+    if (performance.now() - this.flowShownAt < (this.flowFloor || 300)) return;
+    // Quantos adiantam o premio: o par do 'visible' que saiu na revelacao.
+    if (this.flowPrizeEv) {
+      poki.measure('premio', this.flowPrizeEv, 'interact');
+      this.flowPrizeEv = '';
+    }
     const passo = this.flowNext;
     window.clearTimeout(this.flowTimer);
     this.flowTimer = 0;
@@ -1436,6 +1785,7 @@ class Game {
   hideFlowSeal() {
     const box = document.getElementById('flowSeal');
     if (box) box.hidden = true;
+    this.resetSeal();
   }
 
   /** Cancela uma transicao em curso e devolve a tela ao estado normal. */
@@ -1571,14 +1921,27 @@ class Game {
 
   showWin(stars, result, session) {
     audio.win();
-    // No fim de um mundo o cartao fecha um capitulo, e nao uma fase; a ultima
-    // fase do jogo tambem cai aqui, e ali "vitoria" e o que se quer dizer.
+    // No fim de um mundo o cartao fecha um capitulo, e nao uma fase; na 100 ele
+    // fecha a campanha, e a 101 vem logo depois.
     $('winTitle').textContent =
-      this.atWorldEnd() && this.level < LEVEL_COUNT ? t('worldClear') : t('victory');
+      this.level === LEVEL_COUNT ? t('levelsCleared', LEVEL_COUNT) : this.atWorldEnd() ? t('worldClear') : t('victory');
     this.setStars('winStars', 0);
     $('winCoins').textContent = '0';
     $('winXp').textContent = '0';
-    $('winNote').textContent = result.best ? t('newRecord') : '';
+    $('winNote').textContent = result.best && !result.prize ? t('newRecord') : '';
+    // O premio de mundo tambem aparece no cartao: e o caminho da fase 100 e de
+    // toda vitoria quando a automacao desliga o fluxo.
+    const linhaPremio = document.getElementById('winPrize');
+    if (linhaPremio) {
+      linhaPremio.hidden = !result.prize;
+      if (result.prize) {
+        const { titulo, nome } = this.prizeTexts(result.prize);
+        $('winPrizeTitle').textContent = titulo;
+        $('winPrizeName').textContent = nome;
+        this.paintPrizeIcon(/** @type {HTMLCanvasElement} */ ($('winPrizeIcon')), result.prize, 40);
+        this.medirPremio(result.prize);
+      }
+    }
     // Linha de bonus: so aparece quando houve merito a mostrar, e diz de onde
     // veio - senao o jogador ve uma moeda a mais e nao sabe por que.
     const bonusEl = $('winBonus');
@@ -1597,8 +1960,7 @@ class Game {
         bonusEl.hidden = true;
       }
     }
-    const next = this.level >= LEVEL_COUNT ? t('home') : t('next');
-    $('winNext').textContent = next;
+    $('winNext').textContent = t('next');
     $('winRetry').textContent = t('retry');
     // Tentar de novo so vale enquanto ha o que melhorar: com as tres estrelas
     // o botao nao leva a lugar nenhum e ainda divide a fileira com "proxima",
@@ -1710,7 +2072,8 @@ class Game {
     // pular vira botao comum, aberto depois de tres derrotas, para o jogador
     // nao ficar preso numa fase dura sem nenhuma saida.
     skip.classList.toggle('ad', COM_ANUNCIOS);
-    skip.hidden = this.level >= LEVEL_COUNT || (!COM_ANUNCIOS && this.lossStreak < 3);
+    // A 100 fecha a campanha e se vence; depois dela pular volta a existir.
+    skip.hidden = this.level === LEVEL_COUNT || (!COM_ANUNCIOS && this.lossStreak < 3);
     skip.disabled = false;
     skip.textContent = t('skipLevel');
     $('loseSkipNote').textContent = skip.hidden ? '' : t('skipNoStars');
@@ -1751,8 +2114,7 @@ class Game {
   /** Conteudo da tela de pausa: onde o jogador esta e como esta indo. */
   buildPause() {
     const session = this.scene.session;
-    const themeId = levelConfig(this.level - 1).theme;
-    $('pauseWhere').textContent = `${themeLabel(themeId)} \u00b7 ${t('level')} ${this.level}`;
+    $('pauseWhere').textContent = `${themeLabel(this.origem.tema)} \u00b7 ${t('level')} ${this.level}`;
     this.setStars('pauseStars', session ? session.stars : 0);
     const par = session && session.par ? ` \u00b7 ${t('par')} ${session.par}` : '';
     $('pauseTaps').textContent = session ? `${t('taps')} ${session.taps}${par}` : '';
@@ -1802,9 +2164,20 @@ class Game {
     // ANTES de showAmbient(): ele troca a sessao da cena, e a gravacao le os
     // toques e as pecas intactas dela. Fechando aqui, o finishWin que ainda
     // esta agendado nao acha vitoria pendente e nao faz nada.
-    if (this.pendingWin) this.commitPendingWin();
+    let premio = null;
+    if (this.pendingWin) {
+      this.commitPendingWin();
+      premio = this.lastResult ? this.lastResult.prize : null;
+    }
     this.showAmbient();
     this.show('home');
+    // O premio foi gravado, mas o selo nao chegou a entrar: o recado vai no
+    // toast, e a home ja mostra o hexagono novo.
+    if (premio) {
+      const { titulo, nome } = this.prizeTexts(premio);
+      this.toast(`${titulo} ${nome}`);
+      this.medirPremio(premio);
+    }
   }
 
   /**
@@ -1833,11 +2206,6 @@ class Game {
 
   async nextLevel() {
     audio.button();
-    if (this.level + 1 > LEVEL_COUNT) {
-      this.showAmbient();
-      this.show('home');
-      return;
-    }
     await this.advanceLevel();
   }
 
@@ -1912,10 +2280,18 @@ class Game {
     }
     this.lossStreak = 0;
     const p = this.progress;
-    p.markSkipped(this.level);
-    if (this.level >= p.data.unlocked) p.data.unlocked = Math.min(LEVEL_COUNT, this.level + 1);
+    // Pular nao da estrela nem premio de mundo: o video adianta o caminho,
+    // nunca o progresso. O premio de um fim de mundo pulado fica pendente ate
+    // o jogador vencer aquela fase. Depois da 100 nao ha estrela a faltar, e a
+    // lista de puladas cresceria sem fim - so o `alem` anda.
+    if (this.level > LEVEL_COUNT) {
+      p.data.alem = Math.max(p.data.alem || 0, this.level + 1);
+    } else {
+      p.markSkipped(this.level);
+      if (this.level >= p.data.unlocked) p.data.unlocked = Math.min(LEVEL_COUNT, this.level + 1);
+    }
     p.flush();
-    this.level = Math.min(LEVEL_COUNT, this.level + 1);
+    this.level += 1;
     this.startLevel(this.level);
   }
 
@@ -2036,12 +2412,18 @@ class Game {
     const p = this.progress;
     const chave = [
       p.data.unlocked, getLang(), p.totalStars, this.level, (p.data.skipped || []).length,
+      p.data.alem || 0, (p.data.prizes || []).length,
     ].join('|');
     const host = $('mapScroll');
     if (host.dataset.built === chave) return;
     host.dataset.built = chave;
     host.innerHTML = '';
     if (this._mapObs) this._mapObs.disconnect();
+
+    // Depois da 100 o mapa ganha uma faixa acima do mundo 20: o mundo em que o
+    // jogador esta agora. So ele - a fita nao cresce sem fim -, sem portao e
+    // sem estrelas, porque as fases depois da 100 nao gravam estrela.
+    if (p.data.alem > LEVEL_COUNT) host.appendChild(this.buildMapAlem());
 
     // Os mundos sao empilhados do ultimo para o primeiro, entao progredir e
     // subir na pagina - que e o que o passo animado de `playMapStep` mostra.
@@ -2067,7 +2449,7 @@ class Game {
       conta.className = 'world-count';
       const st = this.worldStars(w);
       conta.innerHTML = `<i class="st on"></i>${st.tem} / ${st.total}`;
-      head.append(num, nome, conta);
+      head.append(num, nome, conta, this.worldPrizeIcon(w, 20));
       sec.appendChild(head);
 
       if (!aberto) {
@@ -2082,78 +2464,15 @@ class Game {
         selo.className = 'teaser-seal';
         selo.innerHTML = '&#128274;';
         cartaz.appendChild(selo);
+        // O premio ao lado do cadeado: o mundo fechado diz o que espera la.
+        cartaz.appendChild(this.worldPrizeIcon(w, 34));
         sec.appendChild(cartaz);
         host.appendChild(sec);
         if (w > 0) host.appendChild(this.buildGate(w));
         continue;
       }
 
-      const n = worldSize(w);
-      const trilha = document.createElement('div');
-      trilha.className = 'trail';
-      trilha.style.setProperty('--nos', String(n));
-
-      // Tracado: uma polilinha suave pelos mesmos pontos dos nos.
-      const pontos = [];
-      for (let i = 0; i < n; i++) pontos.push(this.nodeSpot(i, n));
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 100 100');
-      svg.setAttribute('preserveAspectRatio', 'none');
-      svg.setAttribute('class', 'trail-line');
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      let d = `M ${pontos[0].x} ${pontos[0].y}`;
-      for (let i = 1; i < pontos.length; i++) {
-        const a2 = pontos[i - 1];
-        const b2 = pontos[i];
-        const my = (a2.y + b2.y) / 2;
-        d += ` C ${a2.x} ${my}, ${b2.x} ${my}, ${b2.x} ${b2.y}`;
-      }
-      path.setAttribute('d', d);
-      svg.appendChild(path);
-      trilha.appendChild(svg);
-
-      for (let i = 0; i < n; i++) {
-        const level = worldStart(w) + i + 1;
-        const spot = pontos[i];
-        const unlocked = p.isUnlocked(level);
-        const stars = p.starsOf(level);
-        const node = document.createElement('button');
-        // Pulada por video: aberta, porem sem estrela nenhuma.
-        const pulada = p.wasSkipped(level) && stars === 0;
-        node.className =
-          'node' +
-          (unlocked ? '' : ' locked') +
-          (pulada ? ' skipped' : '') +
-          (stars >= 3 ? ' perfect' : '') +
-          (level === this.level ? ' current' : '');
-        node.style.left = `${spot.x}%`;
-        node.style.top = `${spot.y}%`;
-        node.dataset.level = String(level);
-        const rotulo = document.createElement('span');
-        rotulo.className = 'node-num';
-        // Fase ainda nao alcancada mostra o PROPRIO numero, apagado: dez
-        // cadeados iguais em fila nao dizem para onde se esta indo.
-        rotulo.textContent = String(level);
-        node.appendChild(rotulo);
-        const pips = document.createElement('div');
-        pips.className = 'pips';
-        for (let k = 0; k < 3; k++) {
-          const pip = document.createElement('i');
-          if (k < stars) pip.classList.add('on');
-          pips.appendChild(pip);
-        }
-        node.appendChild(pips);
-        if (unlocked) {
-          node.onclick = () => {
-            audio.button();
-            this.startLevel(level);
-          };
-        } else {
-          node.setAttribute('aria-disabled', 'true');
-        }
-        trilha.appendChild(node);
-      }
-      sec.appendChild(trilha);
+      sec.appendChild(this.buildTrail(worldStart(w) + 1, worldSize(w), true));
       host.appendChild(sec);
       // O portao entra DEPOIS do mundo que protege. Como a pilha desce do
       // ultimo mundo para o primeiro, isso o coloca exatamente entre a ultima
@@ -2163,6 +2482,127 @@ class Game {
     }
 
     this.watchMapWorlds();
+  }
+
+  /**
+   * Trilha de um mundo no mapa: o tracado e um no por fase.
+   * @param {number} first primeira fase, 1-based
+   * @param {number} n fases no mundo
+   * @param {boolean} comEstrelas pips de estrela embaixo do numero
+   * @returns {HTMLElement}
+   */
+  buildTrail(first, n, comEstrelas) {
+    const p = this.progress;
+    const trilha = document.createElement('div');
+    trilha.className = 'trail';
+    trilha.style.setProperty('--nos', String(n));
+
+    // Tracado: uma polilinha suave pelos mesmos pontos dos nos.
+    const pontos = [];
+    for (let i = 0; i < n; i++) pontos.push(this.nodeSpot(i, n));
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('class', 'trail-line');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    let d = `M ${pontos[0].x} ${pontos[0].y}`;
+    for (let i = 1; i < pontos.length; i++) {
+      const a2 = pontos[i - 1];
+      const b2 = pontos[i];
+      const my = (a2.y + b2.y) / 2;
+      d += ` C ${a2.x} ${my}, ${b2.x} ${my}, ${b2.x} ${b2.y}`;
+    }
+    path.setAttribute('d', d);
+    svg.appendChild(path);
+    trilha.appendChild(svg);
+
+    for (let i = 0; i < n; i++) {
+      const level = first + i;
+      const spot = pontos[i];
+      const unlocked = p.isUnlocked(level);
+      const stars = p.starsOf(level);
+      const node = document.createElement('button');
+      // Pulada por video: aberta, porem sem estrela nenhuma.
+      const pulada = p.wasSkipped(level) && stars === 0;
+      node.className =
+        'node' +
+        (unlocked ? '' : ' locked') +
+        (pulada ? ' skipped' : '') +
+        (stars >= 3 ? ' perfect' : '') +
+        (level === this.level ? ' current' : '');
+      node.style.left = `${spot.x}%`;
+      node.style.top = `${spot.y}%`;
+      node.dataset.level = String(level);
+      const rotulo = document.createElement('span');
+      rotulo.className = 'node-num';
+      // Fase ainda nao alcancada mostra o PROPRIO numero, apagado: dez
+      // cadeados iguais em fila nao dizem para onde se esta indo.
+      rotulo.textContent = String(level);
+      node.appendChild(rotulo);
+      if (comEstrelas) {
+        const pips = document.createElement('div');
+        pips.className = 'pips';
+        for (let k = 0; k < 3; k++) {
+          const pip = document.createElement('i');
+          if (k < stars) pip.classList.add('on');
+          pips.appendChild(pip);
+        }
+        node.appendChild(pips);
+      }
+      if (unlocked) {
+        node.onclick = () => {
+          audio.button();
+          this.startLevel(level);
+        };
+      } else {
+        node.setAttribute('aria-disabled', 'true');
+      }
+      trilha.appendChild(node);
+    }
+    return trilha;
+  }
+
+  /**
+   * Icone do premio de um mundo para o mapa, com o visto quando ja foi
+   * entregue.
+   * @param {number} w
+   * @param {number} lado
+   * @returns {HTMLCanvasElement}
+   */
+  worldPrizeIcon(w, lado) {
+    const p = this.progress;
+    const cv = document.createElement('canvas');
+    cv.className = 'world-prize';
+    const ja = p.prizeClaimed(w);
+    this.paintPrizeIcon(cv, ja ? this.nominalPrize(w) : p.resolvePrize(w), lado);
+    if (ja) cv.classList.add('claimed');
+    return cv;
+  }
+
+  /**
+   * Faixa do mapa para o mundo depois da 100 em que o jogador esta.
+   * @returns {HTMLElement}
+   */
+  buildMapAlem() {
+    const o = faseDeOrigem(this.progress.data.alem);
+    const sec = document.createElement('section');
+    sec.className = 'world alem';
+    sec.dataset.world = String(o.mundo);
+    sec.dataset.nome = `${t('world')} ${o.mundo + 1} · ${themeLabel(o.tema)}`;
+    sec.dataset.tema = o.tema;
+    this.paintWorld(sec, o.tema);
+    const head = document.createElement('div');
+    head.className = 'world-head';
+    const num = document.createElement('b');
+    num.className = 'world-num';
+    num.textContent = String(o.mundo + 1);
+    const nome = document.createElement('span');
+    nome.className = 'world-name';
+    nome.textContent = themeLabel(o.tema);
+    head.append(num, nome, this.worldPrizeIcon(o.mundo, 20));
+    sec.appendChild(head);
+    sec.appendChild(this.buildTrail(o.primeira, o.tamanho, false));
+    return sec;
   }
 
   /**
@@ -2354,27 +2794,35 @@ class Game {
    * @param {HTMLCanvasElement} cv
    * @param {import('./game/content.js').Skin} s
    */
-  paintSkinSwatch(cv, s) {
+  paintSkinSwatch(cv, s, lado = 44, escala = 0.37) {
     const th = this.scene.theme || THEMES.neon;
-    const lado = 44;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = Math.round(lado * dpr);
     cv.height = Math.round(lado * dpr);
+    if (lado !== 44) {
+      cv.style.width = `${lado}px`;
+      cv.style.height = `${lado}px`;
+    }
     const ctx = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, lado, lado);
+    const r = lado * escala;
     paintHexModel(
       ctx,
       lado / 2,
       lado / 2,
-      lado * 0.37,
+      r,
       s.model || 'joia',
       {
         fill: s.fill || th.hexagon.fill,
         stroke: s.stroke || th.hexagon.stroke,
         core: s.core || th.hexagon.core,
       },
-      th.glow,
+      brilhoDaSkin(s, th.glow),
     );
+    // A marca vai por cima, como no sprite do jogo (Sprites.hexagon): sem ela
+    // o Circuito e a Aurora apareciam na vitrine diferentes do que se joga.
+    if (s.mark) s.mark(ctx, lado / 2, lado / 2, r, th);
   }
 
   buildShop() {
@@ -2403,10 +2851,14 @@ class Game {
         const info = document.createElement('div');
         info.className = 'info';
         const name = document.createElement('b');
-        name.textContent = s.name;
+        name.textContent = t(s.nameKey);
         const sub = document.createElement('span');
-        if (entry.equipped) sub.textContent = t('equipped');
-        else if (entry.owned) sub.textContent = t('owned');
+        // Skin da trilha diz em que mundo ela sai de graca. Comprar antes e
+        // adiantar, nunca perder: quando o mundo chegar, as moedas voltam.
+        const daTrilha = entry.prizeWorld >= 0 && !entry.prizeClaimed;
+        if (entry.equipped) sub.textContent = daTrilha ? t('prizeRefundAt', entry.prizeWorld + 1) : t('equipped');
+        else if (entry.owned) sub.textContent = daTrilha ? t('prizeRefundAt', entry.prizeWorld + 1) : t('owned');
+        else if (daTrilha) sub.textContent = t('prizeWorld', entry.prizeWorld + 1);
         else if (entry.rankLocked) sub.textContent = t('unlockAt', s.rank);
         // Sem plataforma a rota do video nao existe: o subtitulo tem que dizer
         // o preco em moedas, que e o unico caminho que sobrou.
@@ -2493,6 +2945,7 @@ class Game {
         item.appendChild(btn);
         host.appendChild(item);
       }
+      this.ofertasDaLoja(host);
       return;
     }
 
@@ -2539,6 +2992,7 @@ class Game {
         item.appendChild(btn);
         host.appendChild(item);
       }
+      this.ofertasDaLoja(host);
       return;
     }
 
@@ -2563,6 +3017,17 @@ class Game {
       name.textContent = t(u.nameKey);
       const sub = document.createElement('span');
       sub.textContent = t(u.descKey);
+      // O proximo nivel gratis, se a trilha ainda tem um: e o que diz ao
+      // jogador que esperar tambem e um caminho.
+      let gratis = -1;
+      for (let w = 0; w < WORLD_PRIZES.length && !maxed; w++) {
+        const pr = WORLD_PRIZES[w];
+        if ('upgrade' in pr && pr.upgrade === u.id && !p.prizeClaimed(w)) {
+          gratis = w;
+          break;
+        }
+      }
+      if (gratis >= 0) sub.textContent = `${t(u.descKey)} ${t('prizeUpgradeNext', gratis + 1)}`;
       const bars = document.createElement('div');
       bars.className = 'bars';
       for (let i = 0; i < u.max; i++) {
@@ -2593,6 +3058,20 @@ class Game {
       };
       item.appendChild(btn);
       host.appendChild(item);
+    }
+    this.ofertasDaLoja(host);
+  }
+
+  /**
+   * O par 'visible' dos botoes de compra da loja. Sem ele o painel da Poki nem
+   * lista o 'interact' que eles mandam (o painel so mostra evento que tem
+   * 'visible'), e as compras nunca apareceram na aba de interacao.
+   * @param {HTMLElement} host
+   */
+  ofertasDaLoja(host) {
+    for (const b of host.querySelectorAll('button[data-ev]')) {
+      const nome = /** @type {HTMLElement} */ (b).dataset.ev;
+      if (nome) this.ofertaVisivel(nome);
     }
   }
 
