@@ -177,7 +177,7 @@ async function ganharEsperando(nivel) {
   let selo = null;
   for (let t = 0; t < 48; t++) {
     const st = await js(`({screen: window.__game.screen, level: window.__game.level, advancing: window.__game.advancing,
-      premio: document.getElementById('flowSeal').classList.contains('premio') && !document.getElementById('flowSeal').hidden})`);
+      premio: !document.getElementById('prizeReveal').hidden})`);
     if (st && st.premio) selo = true;
     if (st && st.screen !== 'game') return { ...st, selo };
     if (st && st.level !== nivel && !st.advancing) return { ...st, selo };
@@ -478,7 +478,7 @@ check(
 );
 check('o HUD mostra um pip por fase do mundo', pipsNoHud === 5, String(pipsNoHud));
 check(
-  'fim de mundo entrega o premio no selo, sem parar (fase 20)',
+  'fim de mundo revela o premio, sem parar (fase 20)',
   premio20 === true && !!fronteiraCedo && fronteiraCedo.selo === true,
   JSON.stringify({ premio20, selo: fronteiraCedo && fronteiraCedo.selo }),
 );

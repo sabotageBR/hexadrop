@@ -819,29 +819,117 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
    e a cor do premio, e aqui nao ha premio nenhum. */
 .flow.miss .flow-coins { color: var(--ink); }
 
-/* Fim de mundo: o selo ganha o titulo do mundo concluido e a linha do premio.
-   Continua selo - sem botao, sobre a cena -, so que um passo mais alto. */
-.flow-title {
-  font: 900 12px/1 var(--font);
-  letter-spacing: 0.2em;
+/* Revelacao do premio de fim de mundo. Ocupa o centro da tela sobre um veu,
+   mas nao tem botao e nao pega toque: o toque cai no canvas, e o jogo o le
+   como "adiantar" (skipWait), igual ao selo. E o momento que o selo comum
+   escondia - quem vinha tocando para avancar o via por 0,7 s. */
+.reveal {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  pointer-events: none;
+  text-align: center;
+}
+.reveal[hidden] { display: none; }
+/* A fita do mundo e o contador continuam por cima do veu: e para la que as
+   moedas voam, e e la que o premio prometido acabou de ser entregue. */
+#s-game .hud-top.bare { z-index: 2; }
+.reveal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 46%, rgba(var(--sheet-rgb), 0.55) 0%, rgba(var(--sheet-rgb), 0.86) 70%);
+  animation: revealVeil 0.22s ease both;
+}
+.reveal > * { position: relative; }
+.reveal-title {
+  font: 900 13px/1 var(--font);
+  letter-spacing: 0.24em;
   text-transform: uppercase;
   color: var(--gold);
+  animation: revealUp 0.32s ease 0.05s both;
 }
-.flow-title:empty { display: none; }
-.flow.premio { padding: 12px 22px 14px; gap: 8px; }
-.flow-prize, .win-prize {
+.reveal-stage {
+  position: relative;
+  width: min(62vw, 300px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+/* Raios atras do premio, como na capa: girando devagar. Ficam no fundo, nunca
+   no hexagono - ele continua chapado e com a forma limpa. */
+.reveal-rays {
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 220, 120, 0.22) 0deg 9deg, rgba(255, 220, 120, 0) 9deg 30deg);
+  -webkit-mask: radial-gradient(circle, #000 18%, transparent 68%);
+  mask: radial-gradient(circle, #000 18%, transparent 68%);
+  animation: revealRays 9s linear infinite, revealVeil 0.4s ease both;
+}
+.reveal-stage canvas {
+  width: 58%;
+  height: 58%;
+  animation: revealPop 0.62s cubic-bezier(0.2, 1.4, 0.35, 1) 0.08s both;
+}
+.reveal-kind {
+  font: 900 clamp(24px, 7vw, 34px)/1.05 var(--font);
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+  animation: revealUp 0.34s ease 0.3s both;
+}
+.reveal-name {
+  font: 800 13px/1 var(--font);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  animation: revealUp 0.34s ease 0.38s both;
+}
+.reveal-coins { font: 900 20px/1 var(--font); color: var(--gold); animation: revealUp 0.34s ease 0.45s both; }
+.reveal-coins:empty { display: none; }
+.reveal-hint {
+  margin-top: 8px;
+  font: 700 11px/1 var(--font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  opacity: 0;
+  animation: revealHint 1.4s ease-in-out 1s infinite;
+}
+@keyframes revealVeil { from { opacity: 0; } to { opacity: 1; } }
+@keyframes revealUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes revealPop {
+  0% { opacity: 0; transform: scale(0.2) rotate(-200deg); }
+  70% { opacity: 1; transform: scale(1.14) rotate(8deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+@keyframes revealRays { to { transform: rotate(360deg); } }
+@keyframes revealHint { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.85; } }
+@media (prefers-reduced-motion: reduce) {
+  .reveal-rays, .reveal-stage canvas, .reveal-hint { animation: none; opacity: 1; }
+}
+
+/* A linha do premio no cartao de vitoria (fase 100 e fluxo desligado). */
+.win-prize {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
+  margin: 4px 0 2px;
   animation: flowIn 0.32s cubic-bezier(0.2, 1.5, 0.4, 1) 0.08s both;
 }
-.flow-prize[hidden], .win-prize[hidden] { display: none; }
-.flow-prize canvas { width: 44px; height: 44px; }
-.win-prize { justify-content: center; margin: 4px 0 2px; }
+.win-prize[hidden] { display: none; }
 .win-prize canvas { width: 40px; height: 40px; }
-.flow-prize span, .win-prize span { display: flex; flex-direction: column; gap: 3px; text-align: left; }
-.flow-prize b, .win-prize b { font: 900 16px/1.05 var(--font); color: var(--ink); }
-.flow-prize small, .win-prize small {
+.win-prize span { display: flex; flex-direction: column; gap: 3px; text-align: left; }
+.win-prize b { font: 900 16px/1.05 var(--font); color: var(--ink); }
+.win-prize small {
   font: 800 11px/1 var(--font);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -982,12 +1070,12 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   .bonus { margin-top: 4px; padding: 5px 16px; }
   .flow { margin-top: 4px; padding: 6px 18px; gap: 4px; }
   .flow-coins { font-size: clamp(20px, 6vh, 26px); }
-  /* O selo do premio nao pode cobrir o hexagono: sai a linha de bonus e o
-     icone encolhe. */
-  .flow.premio { padding: 6px 16px 8px; gap: 4px; }
-  .flow.premio .flow-what { display: none; }
-  .flow-prize canvas { width: 30px; height: 30px; }
-  .flow-prize b { font-size: 14px; }
+  /* Em paisagem baixa a revelacao encolhe para caber na altura, e desce um
+     pouco para o titulo nao encostar na fita do mundo. */
+  .reveal { gap: 4px; padding: 64px 12px 8px; }
+  .reveal-stage { width: min(38vh, 170px); }
+  .reveal-kind { font-size: clamp(18px, 6vh, 24px); }
+  .reveal-hint { margin-top: 2px; }
   #gameStars i { width: 19px; height: 19px; }
   .trail { height: calc(var(--nos, 10) * 58px); }
   .tut { top: auto; bottom: calc(14px + var(--safe-b)); }

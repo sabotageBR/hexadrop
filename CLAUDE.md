@@ -588,15 +588,18 @@ pelo próprio `Progress.finishLevel`, na mesma gravação da vitória, e por iss
 `commitPendingWin` (quem sai no meio da celebração) também o leva. Pular a última
 fase com vídeo não dá o prêmio; ele fica pendente até o jogador vencê-la.
 
-**É selo, não cartão.** `flowToNext` troca o selo comum pelo de fim de mundo — "Mundo
-concluído", as moedas, o ícone e o nome do prêmio —, `audio.prize()` no lugar de
-`audio.win()`, a skin troca na cena aos 120 ms com faíscas, e o confete sai em DOM.
-O selo fica 1,5 s em vez de 1 s, e o toque só adianta a partir de 700 ms
-(`PRIZE_SKIP_FLOOR_MS`): antes disso o mesmo toque que apressava a cascata engolia o
-prêmio. A lição medida continua valendo — o cartão de fim de mundo custou 15% na
-passagem da 20 para a 21 —, então nada de botão nem tela cheia. O cartão de estreia
-de material sai quando a fase termina (`onLevelEnd`): quem vencia rápido via a peça
-nova por cima do selo.
+**É revelação, não cartão.** No fim de mundo, `flowToNext` troca o selo comum por
+uma revelação no centro da tela (`#prizeReveal`, `showPrize`): a cena escurece atrás
+de um véu, o prêmio entra grande e girando sobre raios, com "Mundo concluído", o nome
+e as moedas da fase, `audio.prize()` no lugar de `audio.win()`, a skin trocando na cena
+aos 120 ms e o confete. Ela fica 2,2 s, e o toque só adianta depois de 1 s
+(`PRIZE_SKIP_FLOOR_MS`). Não tem botão e não pega toque — o toque atravessa para o
+canvas e vira o `skipWait` de sempre —, porque a lição medida continua valendo: o
+cartão de fim de mundo custou 15% na passagem da 20 para a 21. A primeira versão era só
+uma linha a mais no selo, e o Evandro não a viu: quem vinha tocando para avançar a via
+por 0,7 s. A fita do mundo e o contador ficam por cima do véu (é para lá que as moedas
+voam), o toast de patente espera a revelação sair, e o cartão de estreia de material
+sai quando a fase termina (`onLevelEnd`).
 
 **O HUD mostra a fita do mundo** embaixo do nome da fase: um pip por fase, saídos de
 `worldSize` — cinco cravado no HTML seria o erro do dez de antes —, e no fim o ícone

@@ -106,14 +106,23 @@
          botao nenhum. Sai sozinho quando a fase seguinte entra. Nao repete as
          estrelas: as do HUD acendem durante a jogada e ja estao logo acima. -->
     <div class="flow" id="flowSeal" hidden>
-      <span class="flow-title" id="flowTitle"></span>
       <b class="flow-coins" id="flowCoins"></b>
       <span class="flow-what" id="flowWhat"></span>
-      <!-- Premio de fim de mundo: entra no mesmo selo, sem botao. -->
-      <div class="flow-prize" id="flowPrize" hidden>
-        <canvas id="flowPrizeIcon" width="88" height="88"></canvas>
-        <span><b id="flowPrizeTitle"></b><small id="flowPrizeName"></small></span>
+    </div>
+    <!-- Revelacao do premio de fim de mundo: a cena escurece e o premio entra
+         grande no centro. Sem botao - o toque atravessa para o canvas e
+         adianta, como no selo -, para nao virar a parada que o cartao de fim
+         de mundo foi. -->
+    <div class="reveal" id="prizeReveal" hidden>
+      <span class="reveal-title" id="revealTitle"></span>
+      <div class="reveal-stage">
+        <i class="reveal-rays"></i>
+        <canvas id="revealIcon" width="280" height="280"></canvas>
       </div>
+      <b class="reveal-kind" id="revealKind"></b>
+      <span class="reveal-name" id="revealName"></span>
+      <b class="reveal-coins" id="revealCoins"></b>
+      <span class="reveal-hint" id="revealHint"></span>
     </div>
     <div class="grow"></div>
     <div class="shade bottom"></div>

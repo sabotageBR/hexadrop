@@ -204,16 +204,17 @@ const EVENTOS_UI = {
 const FLOW_SEAL_MS = 1000;
 
 /**
- * Selo de fim de mundo, com o premio: meio segundo a mais que o comum.
+ * Revelacao do premio de fim de mundo: 2,2 s, e o toque so adianta depois de 1 s.
  *
- * Continua sendo selo, e nao cartao. A licao medida e que o fluxo continuo nao
- * perde jogador e a parada perde: o cartao de fim de mundo custou 15% na
- * passagem da fase 20 para a 21. O premio passa sobre a cena, sem botao, e um
- * toque adianta - mas so depois de PRIZE_SKIP_FLOOR_MS, senao o toque que
- * apressava a cascata engolia o premio antes de ele ser visto.
+ * Ela ocupa o centro da tela, mas nao e cartao: nao tem botao. A licao medida e
+ * que o fluxo continuo nao perde jogador e a parada perde - o cartao de fim de
+ * mundo custou 15% na passagem da fase 20 para a 21. A primeira versao era so
+ * uma linha no selo, e o Evandro nao a viu: quem vinha tocando para avancar a
+ * via por 0,7 s. O piso existe porque o mesmo toque que apressava a cascata
+ * engoliria o premio antes de ele ser visto.
  */
-const FLOW_PRIZE_MS = 1500;
-const PRIZE_SKIP_FLOOR_MS = 700;
+const FLOW_PRIZE_MS = 2200;
+const PRIZE_SKIP_FLOOR_MS = 1000;
 /** Quando o hexagono troca de skin na cena, depois de o selo entrar. */
 const PRIZE_SWAP_MS = 120;
 const WIPE_MS = 200;
@@ -1488,22 +1489,27 @@ class Game {
     if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
     if (session && session.bestCombo > 1) partes.push(`${t('combo')} x${session.bestCombo}`);
     $('flowWhat').textContent = partes.join('  \u00b7  ');
-    box.hidden = false;
     this.fillWorldPip();
-    if (premio) this.showPrize(premio);
+    // No fim de mundo quem fala e a revelacao, com as moedas dentro dela; o
+    // selo comum por cima seriam dois recados ao mesmo tempo.
+    if (premio) this.showPrize(premio, moedas);
+    else box.hidden = false;
 
     // As moedas pousam no contador do HUD, nao numa bolsa de cartao: o premio
     // fica onde o jogador vai continuar olhando.
     const moedasDoPremio = premio && premio.kind === 'coins' ? premio.coins || 0 : 0;
     const bolsaAntes = this.progress.data.coins - moedas - moedasDoPremio;
-    this.flyCoins($('flowCoins'), Math.min(12, Math.max(4, Math.round(moedas / 3))), 200, $('gameCoins'));
+    const deOnde = premio ? $('revealCoins') : $('flowCoins');
+    this.flyCoins(deOnde, Math.min(12, Math.max(4, Math.round(moedas / 3))), premio ? 650 : 200, $('gameCoins'));
     this.countUp($('gameCoins'), this.progress.data.coins, 260, false, bolsaAntes);
 
     // No fim de mundo o recado e o premio: um "novo recorde" ao mesmo tempo
     // seria o terceiro texto sobre a cena.
     if (result.best && !premio) this.toast(t('newRecord'));
+    // Com premio, a patente espera a revelacao sair: os dois juntos disputavam
+    // o centro da tela, e em paisagem baixa o toast caia em cima do nome.
     if (result.rankUp) {
-      window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), 700);
+      window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), premio ? FLOW_PRIZE_MS + 300 : 700);
     }
 
     if (premio) this.scheduleFlow(() => this.advanceLevel(), FLOW_PRIZE_MS, PRIZE_SKIP_FLOOR_MS);
@@ -1511,21 +1517,33 @@ class Game {
   }
 
   /**
-   * Premio de fim de mundo no selo: o titulo do mundo concluido, o icone e o
-   * nome do premio, o hexagono trocando na cena e o confete.
+   * Revelacao do premio de fim de mundo, no centro da tela: o titulo do mundo
+   * concluido, o premio entrando grande e girando, o nome, as moedas da fase,
+   * o hexagono trocando na cena atras do veu e o confete.
    * @param {*} premio PrizeResult
+   * @param {number} moedas moedas da fase (sem as do premio)
    */
-  showPrize(premio) {
-    const box = $('flowSeal');
-    box.classList.add('premio');
-    $('flowTitle').textContent = t('worldClear');
+  showPrize(premio, moedas) {
+    const box = $('prizeReveal');
+    $('revealTitle').textContent = t('worldClear');
     const { titulo, nome } = this.prizeTexts(premio);
-    $('flowPrizeTitle').textContent = titulo;
-    $('flowPrizeName').textContent = nome;
-    this.paintPrizeIcon(/** @type {HTMLCanvasElement} */ ($('flowPrizeIcon')), premio, 44);
-    $('flowPrize').hidden = false;
-    // O icone do fim da fita no HUD "entra" no selo: o premio que estava sendo
-    // prometido e o que acabou de chegar.
+    $('revealKind').textContent = titulo;
+    $('revealName').textContent = nome;
+    $('revealCoins').textContent = moedas > 0 ? `+${moedas}` : '';
+    $('revealHint').textContent = t('prizeTapHint');
+    const icone = /** @type {HTMLCanvasElement} */ ($('revealIcon'));
+    this.paintPrizeIcon(icone, premio, 160);
+    // O tamanho na tela e do CSS (uma fracao do palco, que encolhe em paisagem
+    // baixa); o pintor grava 160 px no estilo, e o estilo venceria a regra.
+    icone.style.width = '';
+    icone.style.height = '';
+    // Reinicia as animacoes de entrada: sem isso, a segunda revelacao da mesma
+    // pagina entraria ja parada no ultimo quadro.
+    box.hidden = true;
+    void box.offsetWidth;
+    box.hidden = false;
+    // O icone do fim da fita no HUD "entra" na revelacao: o premio que estava
+    // sendo prometido e o que acabou de chegar.
     const hud = document.getElementById('gamePrize');
     if (hud) hud.classList.add('claimed');
     this.flowPrizeEv = `mundo-${premio.world + 1}`;
@@ -1534,8 +1552,8 @@ class Game {
       const id = premio.id;
       window.setTimeout(() => this.swapHexSkin(id), PRIZE_SWAP_MS);
     }
-    if (premio.kind === 'coins') this.flyCoins($('flowPrizeIcon'), 8, 120, $('gameCoins'));
-    window.setTimeout(() => this.confetti($('flowPrize')), 150);
+    if (premio.kind === 'coins') this.flyCoins($('revealIcon'), 10, 700, $('gameCoins'));
+    window.setTimeout(() => this.confetti($('revealIcon')), 380);
   }
 
   /**
@@ -1620,14 +1638,12 @@ class Game {
     }
   }
 
-  /** Devolve o selo ao estado comum: sem premio, sem "Quase!". */
+  /** Devolve o selo ao estado comum: sem revelacao, sem "Quase!". */
   resetSeal() {
     const box = document.getElementById('flowSeal');
-    if (box) box.classList.remove('miss', 'premio');
-    const titulo = document.getElementById('flowTitle');
-    if (titulo) titulo.textContent = '';
-    const linha = document.getElementById('flowPrize');
-    if (linha) linha.hidden = true;
+    if (box) box.classList.remove('miss');
+    const revelacao = document.getElementById('prizeReveal');
+    if (revelacao) revelacao.hidden = true;
     this.flowPrizeEv = '';
   }
 
