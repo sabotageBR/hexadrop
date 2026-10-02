@@ -64,6 +64,9 @@ for (const job of jobs) {
   await send('Emulation.setDeviceMetricsOverride', {
     width: job.w, height: job.h, deviceScaleFactor: 2, mobile: !!job.mobile,
   }, sessionId);
+  // `pre` roda antes de qualquer script da pagina: e onde se grava o idioma
+  // ou um save de exemplo no localStorage, para o jogo ja nascer com eles.
+  if (job.pre) await send('Page.addScriptToEvaluateOnNewDocument', { source: job.pre }, sessionId);
   await send('Page.navigate', { url: job.url }, sessionId);
   await sleep(job.wait || 2200);
   if (job.js) await send('Runtime.evaluate', { expression: job.js, awaitPromise: true }, sessionId);

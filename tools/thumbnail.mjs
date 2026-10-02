@@ -248,6 +248,21 @@ const ESTATICAS = [
     pesos: { inclinacao: 1, velocidade: 0.6, particulas: 0.5 },
   },
   {
+    // Quadro aberto: a torre inteira, o pedestal embaixo e o hexagono a meio
+    // caminho. As duas outras sao closes, e a Poki pede que a thumbnail mostre
+    // o jogo ("if you sell plants, put a plant in the window") - aqui o
+    // objetivo esta na imagem.
+    arquivo: 'hexadrop-estatica-3.png',
+    nome: 'estatica-objetivo',
+    candidatas: [[1, 0], [2, 0], [1, 1], [2, 1], [3, 0], [1, 2]],
+    aquecer: 45,
+    zoom: 0.82,
+    duracao: 2.6,
+    toques: [[0.1, 'sob-hex'], [0.7, 'sob-hex'], [1.3, 'sob-hex']],
+    janela: [0.5, 2.6],
+    pesos: { inclinacao: 1, velocidade: 0.8, particulas: 0.6 },
+  },
+  {
     arquivo: 'hexadrop-estatica-2.png',
     nome: 'estatica-explosao',
     // Paletas quentes: contrastam com o verde-agua do fundo da Poki.
@@ -508,6 +523,11 @@ function paginaAjudante(opts) {
   H.abrir = (fase, variante, cfg) => {
     H.cfg = cfg || {};
     g.flowLevels = false;
+    // A thumbnail e sempre o hexagono padrao: os premios de mundo (1.0.8)
+    // trocariam a skin no meio do roteiro, e o video tem que sair igual a cada
+    // execucao.
+    g.progress.data.skin = 'classic';
+    g.progress.data.prizes = Array.from({ length: 400 }, (_, w) => w);
     g.startLevel(fase, variante);
     const sc = cena();
     const s = sessao();
