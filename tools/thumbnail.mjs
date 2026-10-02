@@ -111,10 +111,13 @@ import {
 } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir, tmpdir } from 'node:os';
-import { basename, extname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 
-const RAIZ = resolve(import.meta.dirname, '..');
+// `import.meta.dirname` so existe a partir do Node 20.11, e a maquina de
+// desenvolvimento ainda roda Node 18.
+const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FPS = 60;
 
 // ------------------------------------------------------------------ opcoes

@@ -9,7 +9,7 @@
  */
 
 import { load, save, isPersistent } from '../core/storage.js';
-import { LEVEL_COUNT, WORLD_COUNT, worldOf } from './levelgen.js';
+import { LEVEL_COUNT, worldOf } from './levelgen.js';
 import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE } from './content.js';
 
 /**
@@ -39,7 +39,7 @@ const SAVE_VERSION = 3;
  * @property {string[]} skins
  * @property {Record<string, number>} upgrades
  * @property {Record<string, number>} boosts consumiveis restantes, por id
- * @property {number[]} gatesSeen mundos cuja abertura ja foi encenada
+ * @property {number} mapaAte ultima fase cuja chegada o mapa ja animou
  * @property {number} dailyAt
  * @property {number} plays
  */
@@ -56,7 +56,7 @@ function blank() {
     skins: ['classic'],
     upgrades: {},
     boosts: Object.fromEntries(BOOSTS.map((b) => [b.id, b.inicial])),
-    gatesSeen: [],
+    mapaAte: 0,
     dailyAt: 0,
     plays: 0,
   };
@@ -135,29 +135,23 @@ export class Progress {
   }
 
   /**
-   * Mundos que acabaram de abrir e cuja animacao ainda nao rodou.
+   * O mapa ainda nao mostrou o jogador chegando nesta fase?
    *
-   * Fica no save porque a abertura e encenada uma vez so: reanimar o portao a
-   * cada visita ao mapa transformaria a recompensa em ruido.
+   * A chegada e animada uma vez so, e por isso fica no save: reandar o mesmo
+   * passo a cada visita ao mapa transformaria o avanco em ruido. So conta
+   * avanco - voltar para rejogar uma fase antiga nao e chegar em lugar novo.
    *
-   * @returns {number[]}
+   * @param {number} level 1-based
+   * @returns {boolean}
    */
-  freshlyOpenedWorlds() {
-    /** @type {number[]} */
-    const out = [];
-    // Era `w < 10` cravado enquanto o jogo tinha quinze mundos: do decimo em
-    // diante o portao abria em silencio, sem animacao e sem entrar em
-    // gatesSeen.
-    for (let w = 1; w < WORLD_COUNT; w++) {
-      if (this.worldOpen(w) && !this.data.gatesSeen.includes(w)) out.push(w);
-    }
-    return out;
+  mapStepPending(level) {
+    return level > 1 && level > (this.data.mapaAte || 0);
   }
 
-  /** @param {number} w */
-  markGateSeen(w) {
-    if (!this.data.gatesSeen.includes(w)) {
-      this.data.gatesSeen.push(w);
+  /** @param {number} level 1-based */
+  markMapStep(level) {
+    if (level > (this.data.mapaAte || 0)) {
+      this.data.mapaAte = level;
       this.flush();
     }
   }

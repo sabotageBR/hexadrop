@@ -461,10 +461,14 @@ function paintToon(ctx, cells, fill, scale, ox, oy, traco) {
   ctx.lineTo(ox + scale * 0.18, oy - b.h * scale + scale * 0.42);
   ctx.fill();
   ctx.restore();
-  sil(ctx, cells, scale, ox, oy, r);
-  ctx.strokeStyle = contorno(fill);
-  ctx.lineWidth = Math.max(1.1, scale * 0.046) * traco;
-  ctx.stroke();
+  // `traco` 0 e sem contorno. O teste nao e enfeite: o canvas ignora
+  // `lineWidth = 0` e traca com a largura que estava antes.
+  if (traco > 0) {
+    sil(ctx, cells, scale, ox, oy, r);
+    ctx.strokeStyle = contorno(fill);
+    ctx.lineWidth = Math.max(1.1, scale * 0.046) * traco;
+    ctx.stroke();
+  }
 }
 
 function paintToonHq(ctx, cells, fill, scale, ox, oy, traco) {
@@ -484,6 +488,7 @@ function paintToonHq(ctx, cells, fill, scale, ox, oy, traco) {
   // era so um toon de tinta mais grossa. Aqui os dois vao por dentro do
   // recorte, do mais largo para o mais estreito - um traco de largura 2L cobre
   // L para dentro -, entao sobra mesmo um fio claro logo depois da tinta.
+  if (!(traco > 0)) return;
   const linha = Math.max(1.1, scale * 0.044) * traco;
   const filete = Math.max(0.7, scale * 0.026) * traco;
   ctx.save();
@@ -517,13 +522,15 @@ function paintToonCel(ctx, cells, fill, scale, ox, oy, traco) {
   ctx.fillStyle = '#fff';
   ctx.fillRect(ox + scale * 0.16, oy - h + scale * 0.14, scale * 0.22, scale * 0.1);
   ctx.restore();
-  sil(ctx, cells, scale, ox, oy, r);
-  ctx.strokeStyle = contorno(fill);
-  ctx.lineWidth = Math.max(1, scale * 0.042) * traco;
-  ctx.stroke();
+  if (traco > 0) {
+    sil(ctx, cells, scale, ox, oy, r);
+    ctx.strokeStyle = contorno(fill);
+    ctx.lineWidth = Math.max(1, scale * 0.042) * traco;
+    ctx.stroke();
+  }
 }
 
-function paintGelatina(ctx, cells, fill, scale, ox, oy) {
+function paintGelatina(ctx, cells, fill, scale, ox, oy, traco) {
   const r = scale * 0.28;
   const b = bounds(cells);
   sil(ctx, cells, scale, ox, oy, r);
@@ -559,10 +566,23 @@ function paintGelatina(ctx, cells, fill, scale, ox, oy) {
   );
   ctx.fill();
   ctx.restore();
-  sil(ctx, cells, scale, ox, oy, r);
-  ctx.strokeStyle = darken(fill, 0.25);
-  ctx.lineWidth = Math.max(2, scale * 0.07);
-  ctx.stroke();
+  // A borda e so um filete fino, por dentro do recorte e colado na silhueta,
+  // num tom um pouco mais escuro da propria cor da peca. Um traco de largura 2L
+  // dentro do recorte cobre L para dentro. Ja foi um traco grosso centrado na
+  // silhueta, que entre duas pecas vizinhas somava uma faixa escura dupla, e
+  // depois uma linha escura com um filete claro por dentro; o Evandro ficou com
+  // a linha fina so, e na cor da peca.
+  if (traco > 0) {
+    const filete = Math.max(0.8, scale * 0.03) * traco;
+    ctx.save();
+    sil(ctx, cells, scale, ox, oy, r);
+    ctx.clip('evenodd');
+    sil(ctx, cells, scale, ox, oy, r);
+    ctx.strokeStyle = darken(fill, 0.16);
+    ctx.lineWidth = 2 * filete;
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 /**
@@ -651,7 +671,7 @@ function paintLook(ctx, look, cells, fill, scale, ox, oy, traco) {
   if (look === 'glow') paintGlow(ctx, cells, fill, scale, ox, oy);
   else if (look === 'toon-hq') paintToonHq(ctx, cells, fill, scale, ox, oy, traco);
   else if (look === 'toon-cel') paintToonCel(ctx, cells, fill, scale, ox, oy, traco);
-  else if (look === 'gelatina') paintGelatina(ctx, cells, fill, scale, ox, oy);
+  else if (look === 'gelatina') paintGelatina(ctx, cells, fill, scale, ox, oy, traco);
   else paintToon(ctx, cells, fill, scale, ox, oy, traco);
 }
 
@@ -696,10 +716,12 @@ function paintPiece(ctx, th, materialId, cells, scale, ox, oy, seed, colorIx = 0
   if (materialId === 'tnt') {
     sil(ctx, cells, scale, ox, oy, radius);
     hazardStripes(ctx, style, ox, oy, b.w * scale, b.h * scale, scale);
-    sil(ctx, cells, scale, ox, oy, radius);
-    ctx.strokeStyle = '#5a2208';
-    ctx.lineWidth = Math.max(1.2, scale * 0.04) * traco;
-    ctx.stroke();
+    if (traco > 0) {
+      sil(ctx, cells, scale, ox, oy, radius);
+      ctx.strokeStyle = '#5a2208';
+      ctx.lineWidth = Math.max(1.2, scale * 0.04) * traco;
+      ctx.stroke();
+    }
   }
   if (th.glow > 0.45 && look !== 'glow') {
     ctx.save();

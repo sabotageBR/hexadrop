@@ -21,7 +21,7 @@
  * @property {'puzzle'|'neon'|'plate'|'grain'|'flat'|'gloss'|'frost'|'ember'|'paper'} style
  * @property {number} glow 0 a 1
  * @property {number} corner raio dos cantos, em fracao da celula
- * @property {number} [traco] espessura do contorno das pecas, fracao do padrao (1)
+ * @property {number} [traco] espessura do contorno das pecas, fracao do padrao (1); 0 tira o contorno
  * @property {'glow'|'toon'|'toon-cel'|'toon-hq'|'gelatina'} [pecas] estilo de pintura
  *   unico para todas as pecas do tema, por cima da escolha por material de
  *   `lookFor()` (render/sprites.js). Ausente, vale a escolha por material.

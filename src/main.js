@@ -520,8 +520,11 @@ class Game {
     }
     if (this.screen === 'map') {
       this.buildMap();
-      const novos = this.progress.freshlyOpenedWorlds();
-      if (novos.length) this.playWorldUnlock(novos[0]);
+      // A unica animacao do mapa e o jogador andando da fase anterior ate a
+      // atual. Ja houve tambem a encenacao de "mundo aberto", e com o fluxo
+      // continuo ela ficava para tras: ao abrir "Fases" na fase 51 o mapa
+      // rolava ate o portao do mundo 5, animava la embaixo e so depois subia.
+      if (this.progress.mapStepPending(this.level)) this.playMapStep(this.level);
       else this.scrollMapToCurrent();
     }
     if (this.screen === 'shop') this.buildShop();
@@ -1340,8 +1343,8 @@ class Game {
    * fluxo continuo nao perde jogador, a parada perde.
    *
    * Com mundos de cinco fases o cartao pararia o jogo o dobro de vezes, e a
-   * decisao foi nao parar nunca. O custo e que o video de dobrar premio e a
-   * encenacao do portao, que moram no cartao, saem do jogo corrido. A troca de
+   * decisao foi nao parar nunca. O custo e que o video de dobrar premio, que
+   * mora no cartao, sai do jogo corrido. A troca de
    * tema e de musica continua a cada cinco fases, so que sem tela no meio.
    * @returns {boolean}
    */
@@ -2041,7 +2044,7 @@ class Game {
     if (this._mapObs) this._mapObs.disconnect();
 
     // Os mundos sao empilhados do ultimo para o primeiro, entao progredir e
-    // subir na pagina - que e o que a animacao de troca de mundo encena.
+    // subir na pagina - que e o que o passo animado de `playMapStep` mostra.
     for (let w = WORLD_COUNT - 1; w >= 0; w--) {
       const aberto = p.worldOpen(w);
       const themeId = levelConfig(worldStart(w)).theme;
@@ -2210,26 +2213,20 @@ class Game {
   }
 
   /**
-   * Encena a abertura de um mundo: rola ate o portao, abre e leva o hexagono
-   * subindo pela trilha ate a primeira fase do mundo novo.
+   * Anda com o hexagono da fase anterior ate a atual.
    *
-   * Roda uma vez por mundo - o save guarda quais ja foram encenados.
-   * @param {number} w
+   * O mapa centra na fase atual primeiro: as duas fases sao vizinhas na
+   * trilha, entao o passo inteiro acontece na tela, sem rolagem no meio. Roda
+   * uma vez por fase alcancada - o save guarda ate onde ja andou.
+   * @param {number} level fase atual, 1-based
    */
-  playWorldUnlock(w) {
+  playMapStep(level) {
+    this.progress.markMapStep(level);
+    this.scrollMapToCurrent();
     const host = $('mapScroll');
-    const gate = host.querySelector(`.gate[data-world="${w}"]`);
-    const de = host.querySelector(`.node[data-level="${worldStart(w)}"]`);
-    const para = host.querySelector(`.node[data-level="${worldStart(w) + 1}"]`);
-    this.progress.markGateSeen(w);
-    if (!gate || !de || !para) {
-      this.scrollMapToCurrent();
-      return;
-    }
-
-    gate.scrollIntoView({ block: 'center' });
-    gate.classList.add('just-open');
-    audio.star(1);
+    const de = host.querySelector(`.node[data-level="${level - 1}"]`);
+    const para = host.querySelector(`.node[data-level="${level}"]`);
+    if (!de || !para) return;
 
     const skinAtual = getSkin(this.progress.data.skin);
     const climber = document.createElement('div');
@@ -2249,27 +2246,21 @@ class Game {
       };
     };
     const a0 = ponto(de);
-    const meio = ponto(gate);
     const a1 = ponto(para);
     climber.style.left = `${a0.x}px`;
     climber.style.top = `${a0.y}px`;
 
+    const dx = a1.x - a0.x;
+    const dy = a1.y - a0.y;
     const anim = climber.animate(
       [
         { transform: 'translate(0,0) scale(1)' },
-        { transform: `translate(${meio.x - a0.x}px, ${meio.y - a0.y}px) scale(1.15)`, offset: 0.5 },
-        { transform: `translate(${a1.x - a0.x}px, ${a1.y - a0.y}px) scale(1)` },
+        { transform: `translate(${dx / 2}px, ${dy / 2}px) scale(1.15)`, offset: 0.5 },
+        { transform: `translate(${dx}px, ${dy}px) scale(1)` },
       ],
-      { duration: 1500, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' },
+      { duration: 900, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' },
     );
-    anim.onfinish = () => {
-      audio.win();
-      window.setTimeout(() => {
-        climber.remove();
-        gate.classList.remove('just-open');
-        this.scrollMapToCurrent();
-      }, 420);
-    };
+    anim.onfinish = () => window.setTimeout(() => climber.remove(), 250);
   }
 
   /** Centraliza o mapa na fase atual, sem animar se ja estiver perto. */

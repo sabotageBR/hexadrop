@@ -516,17 +516,7 @@ button:focus-visible { outline: 3px solid var(--accent2); outline-offset: 3px; }
 }
 .gate-jump:hover { border-color: var(--w-accent, #ff43b8); }
 
-/* Abertura do portao: o tracejado vira linha cheia e o selo gira. */
-.gate.just-open { animation: gateOpen 0.9s ease both; }
-@keyframes gateOpen {
-  0% { border-color: var(--edge); transform: scale(1); }
-  35% { border-color: var(--w-accent, #ff43b8); transform: scale(1.03); }
-  100% { border-color: var(--w-accent, #ff43b8); transform: scale(1); }
-}
-.gate.just-open .gate-seal { animation: sealSpin 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
-@keyframes sealSpin { from { transform: rotate(-180deg) scale(0.2); } }
-
-/* O hexagono que percorre a trilha ao abrir um mundo. */
+/* O hexagono que anda da fase anterior ate a atual quando o mapa abre. */
 .climber {
   position: absolute; z-index: 3;
   width: 44px; height: 44px; margin: -22px 0 0 -22px;

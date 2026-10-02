@@ -54,6 +54,13 @@ memória e o `earlyoom` mata o maior processo: a ferramenta sobe o próprio
 de cada cena. Rode de novo depois de mexer em arte, e depois de `npm run levels`, porque o roteiro
 escolhe as fases pelas seeds atuais.
 
+A **capa comercial** (`marketing/thumbnail/hexadrop-capa.png`) não sai da captura: é
+uma composição em `marketing/capa/` que usa os mesmos pintores do jogo (céu do mundo 1,
+peças de gelatina, hexágono da skin padrão) e só acrescenta encenação — o vão com a
+peça estourando, o brilho dourado e os raios atrás do hexágono, os cantos escurecidos.
+Abra `/marketing/capa/` no `npm run dev` e capture com `tools/shot.mjs` a 1080x1080
+(sai 2160 e desce para 1080).
+
 `npm run check` roda `verify-build` (padrão :5173) e `sdkcheck` (padrão :4173): ou
 deixe `dev` e `preview` no ar ao mesmo tempo, ou aponte `VERIFY_URL` para o preview.
 
@@ -620,8 +627,16 @@ juntas — o primeiro cartão em tela cheia do jogo inteiro, o intervalo comerci
 `advanceLevel()` e a troca de tema e de música. Nas outras dezenove transições do mundo
 o desvio ficou abaixo de 2%: o fluxo contínuo não perde jogador, a parada perde. Com
 mundos de cinco fases o cartão pararia o jogo a cada cinco, e a decisão foi não parar
-nunca. O custo é que o vídeo de dobrar prêmio e a encenação do portão saem do jogo
-corrido — o vídeo rende 5%, contra os 15% que cada parada custou.
+nunca. O custo é que o vídeo de dobrar prêmio sai do jogo corrido — ele rende 5%,
+contra os 15% que cada parada custou.
+
+**O mapa só anima uma coisa: o jogador andando da fase anterior até a atual**
+(`playMapStep`), uma vez por fase alcançada — o save guarda até onde já andou
+(`mapaAte`), e rejogar uma fase antiga não conta como chegar. Já houve também a
+encenação de "mundo aberto", guardada por mundo em `gatesSeen`, e o fluxo contínuo a
+deixava para trás: o jogador atravessava as fronteiras jogando, e ao abrir "Fases" na
+fase 51 o mapa rolava até o portão do mundo 5, animava lá embaixo e só depois subia —
+um mundo velho a cada visita. Ela saiu.
 
 Quatro coisas que esse fluxo precisa respeitar:
 
@@ -670,6 +685,11 @@ São cinco, e cada um existe porque um material precisava dele:
   chapa polida: metal e obsidiana.
 - `gelatina` — corpo quase transparente com miolo claro e um reflexo oval: gelo,
   vidro, cristal, cera, espuma e borracha — e **todas as peças do mundo 1**.
+  A borda é **só um filete fino**, por dentro da silhueta e colado nela, num tom um
+  pouco mais escuro da própria cor da peça (`darken(fill, 0,16)`). Já foi um traço
+  escuro grosso centrado na silhueta (entre duas peças vizinhas as bordas somavam uma
+  faixa escura dupla) e depois uma linha escura com um filete claro por dentro; o
+  Evandro ficou com a linha fina, na cor da peça.
 - `glow` — o tubo de neon do **mundo neon**, copiado do jogo de referência medindo a
   foto pixel a pixel.
 
@@ -698,10 +718,12 @@ metade da largura: o contorno o cobria inteiro, e o estilo da chapa polida era s
 `toon` de tinta mais grossa.
 
 O peso é do **tema**, não do estilo: `traco` (`themes.js`) multiplica a largura do
-contorno nos três estilos de tinta e na borda da TNT, e vale 1 quando ausente. Hoje
-nenhum tema pede diferente — o campo existe para um cenário que precise de mais ou
-menos linha sem mexer nos outros catorze. `traco` afina só a linha, nunca a silhueta,
-então nada do encaixe muda.
+contorno nos três estilos de tinta, na gelatina e na borda da TNT, e vale 1 quando
+ausente. Hoje nenhum tema pede diferente — o puzzle chegou a pedir zero (gelatina sem
+contorno) e voltou atrás a pedido do Evandro. Zero tira o contorno, e
+cada pintor testa `traco > 0` antes de traçar — o canvas ignora `lineWidth = 0` e
+traçaria com a largura que estava antes. `traco` afina só a linha,
+nunca a silhueta, então nada do encaixe muda.
 
 O `glow` **não é uma borda dupla**, embora pareça: o que se vê na referência é um
 fio vivo, uma faixa escura fina logo por dentro dele, um brilho que decai para o
