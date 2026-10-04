@@ -167,6 +167,35 @@ funis da Poki guiaram as trocas:
   última. Como fases jogadas ≈ 1/(1−p), a alavanca é a perda por fase, não a duração
   da fase. Daí a 1.0.8: prêmio a cada mundo, fases depois da 100 e a torre um pouco
   mais alta nas fases 4 a 47.
+- **1.0.9, dois Player Fit Tests do mesmo build**, os dois com público de Block, Puzzle
+  e Physics (o da 1.0.7 foi de todas as categorias): **3:51 e 4:20**. A diferença é
+  ruído — a maior sessão de cada um durou 87 e 108 min, e uma só soma ~12 s à média de
+  500. Pela lista de durações, com a média aparada em 15 min, a 1.0.7 fez 192 s e a
+  1.0.9 fez 217 e 218 (+13%); passaram de 3 min 37,6% contra 44%, mas de 10 min **6,2%
+  contra 6,2% e 6,8%**: a cauda longa, que é o que pesa na média, não mexeu. E parte do
+  ganho é público. Por usuário novo, em fração de quem começou a fase 1, a 1.0.9 é
+  **igual ao público real do Web Fit Test da 1.0.7 até a fase 11** (fase 10: 35,5%
+  contra 36,5%) e **da 12 em diante cai para o Player Fit Test da 1.0.7** (fase 20: 6,6%
+  contra 6,4%, quando o público real teve 11,7%). Projeção para o Web Fit Test: entre
+  ~6:00 e ~6:40. No público real da 1.0.7 a perda por fase não é constante na **11**:
+  18% de quem a começa não a conclui (23% na 1.0.9), contra ~10% nas fases 2 a 10, e
+  de 43% a 57% a perdem ao menos uma vez — ali chegavam juntas a primeira derrota, a
+  estreia do pedestal que balança, o pedestal caindo de 1,45 para 1,1 e menos barras. E
+  o **desktop** era 32% dos jogadores novos, com o funil ~35% pior que o do celular em
+  toda a extensão e 24% sem concluir a fase 1, contra 9%. Daí a 1.0.10: derrota em
+  rampa e HUD nas laterais no desktop.
+
+**Como ler o painel.** A perda de uma fase é **1 − Completed**, e não *Left*: *Left* só
+conta quem sai com a fase começada e nada depois, e quem sai depois de uma volta de
+jogada, de uma derrota ou da dica fica de fora — na fase 1 da 1.0.9 *Left* deu 3,3% e
+14% não a concluíram. Entre uma fase e a seguinte não se perde ninguém: completes(N) ≈
+starts(N+1). A média do Player Fit Test oscila com uma ou duas sessões de mais de uma
+hora; a lista com a duração de cada partida vem na API que a própria página do teste
+chama (`player_fit_tests`, campo `durations`), e a comparação justa é a média aparada
+em 15 min e as frações acima de 3, 5 e 10 min. E só se compara teste com o mesmo
+público (categorias e aparelhos): o filtro de categoria sozinho muda o começo do funil.
+Para pedir outra revisão, a barra é média aparada de **~290 s** e **10%** das partidas
+passando de 10 min, num Player Fit Test com o público da 1.0.9.
 
 **Altura é a alavanca do tempo de fase; pedestal e altura decidem o perdão.** Medido
 com seis colunas, sobre o pedestal largo antigo:
@@ -648,8 +677,8 @@ entra atrás de um corte de 200 ms (`.wipe`). Ninguém clica em nada.
 `flowContinues()` só para na **fase 100** — nem o fim de mundo abre o cartão de vitória.
 Ele ainda aparece na fase final e quando a automação desliga o fluxo (`flowLevels`).
 
-**Nas fases 1 a 10, perder não existe** (`FASES_SEM_DERROTA` em `main.js`, que é
-`worldStart(2)`: o ensino inteiro, até a última estreia de material). Quando o hexágono cai, `Session.step` chama `rewind()` em vez de
+**Nas fases 1 a 10, perder não existe** (o primeiro trecho de `VOLTAS_POR_FASE` em
+`main.js`, até `worldStart(2)`: o ensino inteiro, até a última estreia de material). Quando o hexágono cai, `Session.step` chama `rewind()` em vez de
 encerrar: a torre volta ao `checkpoint`, o estado de antes do último toque dado **com o
 hexágono parado** (um toque dado com ele já tombando levaria a volta para dentro da
 queda). Nada de `fail` nem `gameplayStop` — sai só `measure('level', N, 'rewind')`, que
@@ -660,6 +689,17 @@ cruzado apagam de novo. Na 1.0.5 eram só as três do roteiro; na 1.0.4 as fases
 ainda perdiam de 20% a 36% das tentativas, e a 7 (bomba) e a 9 (TNT) levaram 19% e 26%
 dos jogadores — cada uma é a estreia de uma peça. A mão que toca a peça continua só nas
 três do roteiro (`FASES_COM_MAO`).
+
+**Depois do ensino, a derrota chega em rampa** (`VOLTAS_POR_FASE` em `main.js`, montada
+com `worldStart`): no mundo 3 as duas primeiras quedas de cada tentativa ainda voltam
+uma jogada, no mundo 4 a primeira, e só do mundo 5 em diante toda queda perde. Quem
+conta é `Session.rewindLimit` contra `Session.rewinds`, que zera a cada tentativa porque
+cada recomeço monta uma `Session` nova; a volta paga do cartão de derrota entra na mesma
+conta. Até a 1.0.9 a derrota começava inteira na fase 11, e a 11 foi a fase que mais
+perdeu jogador depois da primeira (18% no público real do Web Fit Test da 1.0.7, 23% no
+Player Fit Test da 1.0.9, contra ~10% nas fases 2 a 10) — a *"sudden wall"* que a página
+de engajamento da Poki manda evitar. É coerente com `QUEDAS_ATE_O_COMECO`: cair de novo
+e de novo leva ao começo, só que aqui pelo recomeço de sempre.
 
 **A volta tem saída.** Nada garante que do ponto de volta exista jogada: um cristal ou
 uma cera que já cediam voltam com o mesmo relógio, e uma TNT que ia detonar detona de
@@ -739,8 +779,9 @@ todos os prêmios de mundo como entregues antes de varrer: uma melhoria ganha no
 mudaria a medição das fases seguintes. Quem cobre o caminho do fluxo é o `sdkcheck`:
 ele joga a fase 1 (a 2 tem que entrar sozinha), força cinco derrotas seguidas na 2 (as
 quatro primeiras recomeçam sozinhas com `fail` → `start`, a terceira já em outro
-layout, e a quinta abre o cartão), confere que a fase 10 ainda volta jogada e a 11 não,
-vence pela força a 20 e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
+layout, e a quinta abre o cartão), confere a rampa de derrota (10 sem limite, 11 e 15
+com duas voltas, 16 e 20 com uma, 21 sem volta) e que três quedas de verdade na 11 dão
+volta, volta e derrota, vence pela força a 20 e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
 selo) e a 5 (o hexágono novo equipado na 6), confere que só a 100 para o fluxo, e
 segue do cartão da 100 para a 101 e a 102. A vitória forçada grava as estrelas em
 `world.starsCrossed` — `Session.stars` é só um getter — e dispara o `onFirstTap`, senão
@@ -1246,6 +1287,23 @@ então o pedestal — o objetivo — começava fora da tela, e o texto da fase 1
 "toque nas peças". Na 1.0.3, 18% dos jogadores de desktop saíram no meio da fase 1,
 contra 5,6% no celular. Com 30 px a mesma janela mostra 11 m, e a de 1031x580, 15. A
 fase 1 também passou a dizer o objetivo antes do gesto (`showTutorial`).
+
+**No desktop deitado o HUD vai para as laterais** (`hudLateral` em `core/viewport.js`:
+ponteiro fino e janela pelo menos uma vez e meia mais larga que alta). A torre é de pé
+e ocupa o meio da moldura da Poki; sobravam duas faixas vazias dos lados enquanto a
+fileira do HUD e a sombra dela comiam o topo da cena, e a câmera reservava 72 px em
+cima e 58 embaixo. Agora o nome da fase, a fita do mundo e as estrelas ficam no canto
+esquerdo, moedas e pausa no direito, o cartão de tutorial na faixa da direita e o
+reiniciar no canto de baixo, e a câmera reserva só 14 e 10 px (`HUD_LATERAL_TOP` e
+`HUD_LATERAL_BOTTOM`). Quem aplica é `aplicaHud()` em `main.js`, em `startLevel`, ao
+voltar para a tela de jogo e no `resize`: grava `data-hud="lateral"` no root, que a
+folha lê, e passa `lateral` a `scene.setInsets()`, que pula o ajuste de paisagem baixa
+— senão o piso de 58 px do rodapé, que existe para o cartão de tutorial, voltava. A fase
+1 sai com célula de 37 px e a cena inteira na janela de 836x470 (antes 30 px e a base
+cortada) e com 46 px na de 1031x580 (antes 37,5); torre alta continua em 30 px, com
+umas três linhas e meia a mais na tela. É experimento: no Web Fit Test da 1.0.7 o
+desktop era 32% dos jogadores novos, com o funil ~35% pior que o do celular, e 24% não
+concluíam a fase 1. Celular e tablet, em pé ou deitados, ficam como estavam.
 
 **A dica acende sozinha quando o jogador para** (`Session.autoHintAfter`, desligada por
 padrão para o validador): 2,5 s na fase 1 — com a mão tocando a peça até a fase 3 —, 6 s até a

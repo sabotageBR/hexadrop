@@ -51,6 +51,8 @@ export class GameScene {
     this.bottomInset = opts.bottomInset || 24;
     /** Enquadrar a cena inteira, sem piso de zoom. A home usa; o jogo, nao. */
     this.fitWhole = false;
+    /** HUD nas laterais (`hudLateral`): as margens valem como vieram. */
+    this.lateral = false;
     this.onUpdate = opts.onUpdate || null;
     this.onOverlay = opts.onOverlay || null;
 
@@ -124,12 +126,15 @@ export class GameScene {
    * @param {number} top
    * @param {number} bottom
    * @param {boolean} [fitWhole]
+   * @param {boolean} [lateral] HUD nas laterais: nada de faixa reservada
    */
-  setInsets(top, bottom, fitWhole = false) {
-    if (this.topInset === top && this.bottomInset === bottom && this.fitWhole === fitWhole) return;
+  setInsets(top, bottom, fitWhole = false, lateral = false) {
+    if (this.topInset === top && this.bottomInset === bottom && this.fitWhole === fitWhole &&
+      this.lateral === lateral) return;
     this.topInset = top;
     this.bottomInset = bottom;
     this.fitWhole = fitWhole;
+    this.lateral = lateral;
     this.refit();
   }
 
@@ -137,8 +142,11 @@ export class GameScene {
     if (!this.session) return;
     const world = this.session.world;
     // Em paisagem baixa a HUD come uma fatia bem maior da altura util, entao
-    // as margens reservadas encolhem junto.
-    const short = this.viewport.height < 640 && this.viewport.width > this.viewport.height;
+    // as margens reservadas encolhem junto. Com o HUD nas laterais nao: ele
+    // saiu de cima e de baixo, e o piso de 58 px do rodape - que existe para o
+    // cartao de tutorial, que ali mora na lateral - devolveria a faixa que a
+    // mudanca tirou.
+    const short = !this.lateral && this.viewport.height < 640 && this.viewport.width > this.viewport.height;
     const top = short ? Math.min(this.topInset, 72) : this.topInset;
     const bottom = short ? Math.max(this.bottomInset, 58) : this.bottomInset;
     this.camera.fit({

@@ -144,6 +144,12 @@ export class Session {
     this.checkpoint = null;
     /** Perder volta uma jogada em vez de encerrar. Quem liga e main.js. */
     this.rewindOnLoss = false;
+    /**
+     * Quantas quedas de uma tentativa voltam uma jogada; a seguinte perde.
+     * Sem limite nas fases de ensino; nos mundos 3 e 4 main.js poe 2 e 1 - a
+     * rampa que liga "perder nao existe" a "perder e o normal".
+     */
+    this.rewindLimit = Infinity;
     /** @type {(()=>void)|null} */
     this.onRewind = opts.onRewind || null;
     /** Quantas vezes a fase voltou uma jogada. */
@@ -377,7 +383,7 @@ export class Session {
 
     const verdict = this.world.evaluate();
     const perdeu = verdict === 'lost' || (verdict === 'stuck' && this.world.starsCrossed === 0);
-    if (perdeu && this.rewindOnLoss && this.rewind()) {
+    if (perdeu && this.rewindOnLoss && this.rewinds < this.rewindLimit && this.rewind()) {
       if (this.onRewind) this.onRewind();
       return;
     }

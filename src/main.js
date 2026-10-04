@@ -29,6 +29,7 @@ import { PLATAFORMA, COM_ANUNCIOS } from './core/platform.js';
 import { t, getLang, setLang, LANGS, LANG_NAMES, onLangChange } from './core/i18n.js';
 import { load, save, isPersistent } from './core/storage.js';
 import { Rng } from './core/rng.js';
+import { hudLateral } from './core/viewport.js';
 
 /** Nome e dica, no i18n, das mecanicas que estreiam sem ser material. */
 const HAZARD_TEXT = {
@@ -86,6 +87,15 @@ function hazardIcon(id) {
 /** Margens que a HUD de jogo reserva no enquadramento da cena. */
 const GAME_INSET_TOP = 108;
 const GAME_INSET_BOTTOM = 40;
+
+/**
+ * As mesmas margens com o HUD nas laterais (`hudLateral` em core/viewport.js):
+ * so o respiro da borda. Na moldura de 836x470 da Poki a fase 1 sai com celula
+ * de 37 px e a cena inteira na tela, contra 30 px e a base cortada com a
+ * fileira em cima; na de 1031x580, 46 px contra 37,5.
+ */
+const HUD_LATERAL_TOP = 14;
+const HUD_LATERAL_BOTTOM = 10;
 
 /**
  * Fases vencidas antes do primeiro intervalo comercial.
@@ -255,9 +265,10 @@ const DICA_AUTO_ATE_FASE = 15;
 const DICA_NO_RECOMECO_S = 1.2;
 
 /**
- * Fases em que perder nao existe: o hexagono que cai volta uma jogada
- * (Session.rewind) em vez de encerrar a fase. E o trecho de ensino inteiro, ate
- * a ultima estreia de material (`worldStart(2)`, a fase 10).
+ * Quedas que voltam uma jogada (Session.rewind) em vez de encerrar a fase.
+ *
+ * No trecho de ensino inteiro, ate a ultima estreia de material
+ * (`worldStart(2)`, a fase 10), perder nao existe: toda queda volta.
  *
  * A Poki: "A safe beginner environment. [...] In Subway Surfers, players can't
  * die during onboarding; they just try again until it clicks." Na 1.0.3 a
@@ -270,8 +281,35 @@ const DICA_NO_RECOMECO_S = 1.2;
  * de 20% a 36% das tentativas, e a 7 (bomba e espuma) e a 9 (TNT) levaram 19% e
  * 26% dos jogadores: cada uma estreia uma peca, e e justo na estreia que o
  * jogador ainda nao sabe o que ela faz.
+ *
+ * Depois do ensino a derrota nao chega de uma vez: e uma rampa. Ate a 1.0.9 a
+ * fase 11 juntava quatro mudancas - a primeira derrota possivel, a estreia do
+ * pedestal que balanca, o pedestal caindo de 1,45 para 1,1 e menos barras -, e
+ * foi a fase que mais perdeu jogador depois da primeira: 18% no publico real
+ * do Web Fit Test da 1.0.7 e 23% no Player Fit Test da 1.0.9, contra ~10% nas
+ * fases 2 a 10; de 43% a 57% perdiam a fase ao menos uma vez. E a "sudden
+ * wall" que a Poki manda evitar. Agora o mundo 3 ainda volta uma jogada nas
+ * duas primeiras quedas de cada tentativa, o mundo 4 na primeira, e so do
+ * mundo 5 em diante toda queda perde.
+ *
+ * Cada linha e [ultima fase do trecho, voltas por tentativa].
+ * @type {[number, number][]}
  */
-const FASES_SEM_DERROTA = worldStart(2);
+const VOLTAS_POR_FASE = [
+  [worldStart(2), Infinity],
+  [worldStart(3), 2],
+  [worldStart(4), 1],
+];
+
+/**
+ * Quantas quedas de uma tentativa voltam uma jogada antes de a seguinte perder.
+ * @param {number} level base 1
+ * @returns {number}
+ */
+function voltasNaFase(level) {
+  for (const [ate, voltas] of VOLTAS_POR_FASE) if (level <= ate) return voltas;
+  return 0;
+}
 
 /**
  * Fases em que a dica automatica vem com a mao tocando a peca: as tres do
@@ -438,7 +476,12 @@ class Game {
     // O reenquadramento da home vem depois do refit da cena, senao mede o
     // layout antigo.
     window.addEventListener('resize', () => {
-      window.requestAnimationFrame(() => this.fitHomeScene());
+      window.requestAnimationFrame(() => {
+        this.fitHomeScene();
+        // Virar a janela ou arrastar a borda dela troca o HUD de lugar no meio
+        // da fase.
+        if (this.screen === 'game') this.aplicaHud();
+      });
     });
   }
 
@@ -502,6 +545,9 @@ class Game {
     if (name === 'home') {
       window.requestAnimationFrame(() => this.fitHomeScene());
     }
+    // A janela pode ter mudado de forma enquanto a pausa ou o cartao estavam
+    // na frente; startLevel ja aplicou, e ai isto nao reenquadra nada.
+    if (name === 'game') this.aplicaHud();
     // No mobile, afasta o botao flutuante da Poki da HUD do topo.
     poki.movePill(name === 'game' ? 0 : 0, name === 'game' ? 64 : 24);
   }
@@ -1057,6 +1103,23 @@ class Game {
     this.showAmbient();
   }
 
+  /**
+   * Poe o HUD da fase em cima ou nas laterais e reenquadra a cena para ele.
+   *
+   * Quem decide e `hudLateral`, pelo tamanho da cena; quem desenha e a folha de
+   * estilo, por `data-hud` no root. As duas coisas andam juntas: o HUD que sai
+   * de cima sem a margem encolher deixa uma faixa vazia, e a margem que encolhe
+   * com o HUD ainda em cima poe a fileira sobre a torre.
+   */
+  aplicaHud() {
+    const vp = this.scene.viewport;
+    const lateral = hudLateral(vp.width, vp.height);
+    if (lateral) document.documentElement.dataset.hud = 'lateral';
+    else delete document.documentElement.dataset.hud;
+    if (lateral) this.scene.setInsets(HUD_LATERAL_TOP, HUD_LATERAL_BOTTOM, false, true);
+    else this.scene.setInsets(GAME_INSET_TOP, GAME_INSET_BOTTOM, false);
+  }
+
   /** @param {number} level */
   startLevel(level, variantIndex) {
     // Fecha o gameplay anterior antes de abrir o proximo: a Poki reprova
@@ -1075,13 +1138,15 @@ class Game {
     const { session, theme } = this.makeSession(this.level, variantIndex);
     session.autoHintAfter = this.autoHintFor(this.level, this.hintOnStart);
     session.onAutoHint = () => this.ofertaVisivel('dica-auto');
-    session.rewindOnLoss = this.level <= FASES_SEM_DERROTA;
+    const voltas = voltasNaFase(this.level);
+    session.rewindOnLoss = voltas > 0;
+    session.rewindLimit = voltas;
     session.onRewind = () => this.onRewind();
     // Nas fases de ensino a dica vem com a mao tocando a peca: o gesto que o
     // texto "toque nas pecas" so descrevia.
     this.scene.tapHand = this.level <= FASES_COM_MAO;
     this.hintOnStart = false;
-    this.scene.setInsets(GAME_INSET_TOP, GAME_INSET_BOTTOM, false);
+    this.aplicaHud();
     this.scene.load(session, theme, getSkin(this.progress.data.skin));
     applyUiTheme(this.scene.theme);
     audio.setMusic_(MUSIC[theme] || MUSIC.neon);

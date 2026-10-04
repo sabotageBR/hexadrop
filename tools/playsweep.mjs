@@ -89,9 +89,9 @@ for (const level of LEVELS) {
     if (tela !== 'game') break;
     await sleep(300);
   }
-  // Nas fases sem derrota (main.js, FASES_SEM_DERROTA) a queda volta uma
-  // jogada e a fase segue: sem esta contagem, vencer ali depois de tres voltas
-  // pareceria vencer de primeira.
+  // Nas fases com volta de jogada (main.js, VOLTAS_POR_FASE: o ensino inteiro
+  // e, limitada, os mundos 3 e 4) a queda volta e a fase segue: sem esta
+  // contagem, vencer ali depois de tres voltas pareceria vencer de primeira.
   const res = await js('({screen: window.__game.screen, state: window.__game.scene.session ? window.__game.scene.session.state : "?", stars: window.__game.scene.session ? window.__game.scene.session.stars : 0, voltas: window.__game.scene.session ? window.__game.scene.session.rewinds : 0})');
   const avgFps = fps.length ? Math.round(fps.reduce((a, b) => a + b, 0) / fps.length) : 0;
   if (res.screen === 'win') wins++; else if (res.screen === 'lose') losses++;

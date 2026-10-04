@@ -129,6 +129,24 @@ export function hasFinePointer() {
   }
 }
 
+/**
+ * O HUD da fase vai para as laterais?
+ *
+ * E o desktop deitado: ponteiro fino numa janela pelo menos uma vez e meia mais
+ * larga que alta, que e a moldura da Poki (836x470, 1031x580). Ali a torre, que
+ * e de pe, ocupa o meio e sobram duas faixas vazias dos lados, enquanto a
+ * fileira do HUD e a sombra dela comiam o topo da cena. No Web Fit Test da 1.0.7
+ * o desktop era 32% dos jogadores novos, com o funil uns 35% pior que o do
+ * celular, e 24% nao terminavam a fase 1, contra 9%. Celular e tablet ficam
+ * como estao, em pe ou deitados.
+ * @param {number} width pixels CSS
+ * @param {number} height
+ * @returns {boolean}
+ */
+export function hudLateral(width, height) {
+  return height > 0 && width >= height * 1.5 && hasFinePointer();
+}
+
 export function isTouchDevice() {
   try {
     return (

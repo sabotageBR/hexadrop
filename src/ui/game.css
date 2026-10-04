@@ -1265,3 +1265,47 @@ html[data-kit="queda"] .crown { display: none; }
     gap: 7px;
   }
 }
+
+/* --------------------------------------------- HUD nas laterais (desktop deitado)
+   Na moldura deitada da Poki a torre, que e de pe, ocupa o meio e sobram duas
+   faixas vazias dos lados - enquanto a fileira do HUD e a sombra dela comiam o
+   topo da cena, e a camera reservava 72 px em cima e 58 embaixo. Aqui o HUD vai
+   para os cantos e a camera fica com a altura toda (main.js, `aplicaHud`).
+   Quem liga e `hudLateral` (core/viewport.js): ponteiro fino numa janela pelo
+   menos uma vez e meia mais larga que alta. Fica no fim da folha para vencer
+   as regras de paisagem baixa e as de kit. */
+html[data-hud='lateral'] #s-game .shade { display: none; }
+/* O nome da fase e a fita do mundo saem do meio e encostam no voltar; moedas e
+   pausa continuam no canto direito. */
+html[data-hud='lateral'] #gameBack + .grow { display: none; }
+html[data-hud='lateral'] #s-game .level-name { align-items: flex-start; }
+html[data-hud='lateral'] #s-game .level-title { max-width: 22vw; }
+/* Sem a sombra, o contorno da propria polaridade segura o texto sobre o ceu. */
+html[data-hud='lateral'] #s-game .level-name,
+html[data-hud='lateral'] #s-game .stat { text-shadow: 0 1px 8px rgba(var(--sheet-rgb), 0.9); }
+/* As estrelas descem para o canto em qualquer kit: a ficha as poria embaixo,
+   em cima do pedestal, e o atelier numa coluna que a torre larga alcanca. */
+html[data-hud='lateral'][data-kit] #gameStars {
+  position: fixed;
+  left: calc(14px + var(--safe-l));
+  right: auto;
+  top: calc(66px + var(--safe-t));
+  bottom: auto;
+  flex-direction: row;
+  margin: 0;
+  gap: 7px;
+}
+html[data-hud='lateral'] #gameStars i { width: 22px; height: 22px; }
+/* O feltro do rodape da ficha atravessaria a base da cena. */
+html[data-hud='lateral'] #s-game .hud-bottom.bare { background: transparent; }
+/* O cartao de tutorial mora na faixa da direita: embaixo ele cobria o
+   pedestal, que e justamente o objetivo que a fase 1 ensina. */
+html[data-hud='lateral'] .tut {
+  left: auto;
+  right: calc(14px + var(--safe-r));
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  max-width: min(260px, 26vw);
+  border-radius: 18px;
+}

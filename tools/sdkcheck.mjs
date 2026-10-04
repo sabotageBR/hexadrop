@@ -209,7 +209,7 @@ await sleep(400);
 await js('document.getElementById("pauseResume").click()');
 await sleep(1200);
 
-// Fases de ensino nao se perdem (main.js, FASES_SEM_DERROTA): o hexagono que
+// Fases de ensino nao se perdem (main.js, VOLTAS_POR_FASE): o hexagono que
 // cai de verdade volta uma jogada, sem `fail` e sem sair da fase. Aqui a queda
 // e fisica - o hexagono jogado para fora da cena -, para passar pelo veredito
 // de Session.step, que e onde a volta mora.
@@ -270,15 +270,45 @@ await sleep(400);
 await js('document.getElementById("pauseResume").click()');
 await sleep(1200);
 
-// O ensino sem derrota vai ate a fase 10 (main.js, FASES_SEM_DERROTA), e a mao
-// que toca a peca so ate a 3 (FASES_COM_MAO). A 11, a primeira depois do
-// ensino, ja se perde.
-await js('window.__game.startLevel(10)');
-await sleep(600);
-const ensinoFim = await js('({volta: window.__game.scene.session.rewindOnLoss, mao: window.__game.scene.tapHand})');
+// O ensino sem derrota vai ate a fase 10, e dali a derrota chega em rampa
+// (main.js, VOLTAS_POR_FASE): no mundo 3 as duas primeiras quedas de cada
+// tentativa ainda voltam uma jogada, no mundo 4 a primeira, e do mundo 5 em
+// diante toda queda perde. A mao que toca a peca so vai ate a 3 (FASES_COM_MAO).
+// `Infinity` vira null no JSON, por isso o limite volta como texto.
+/** @type {Record<number, {volta:boolean, limite:string, mao:boolean}>} */
+const rampa = {};
+for (const n of [10, 11, 15, 16, 20, 21]) {
+  await js(`window.__game.startLevel(${n})`);
+  await sleep(500);
+  rampa[n] = await js(`(() => { const s = window.__game.scene.session;
+    return { volta: s.rewindOnLoss, limite: String(s.rewindLimit), mao: window.__game.scene.tapHand }; })()`);
+}
+
+// A rampa na pratica: tres quedas de verdade numa tentativa da fase 11 dao duas
+// voltas e uma derrota, nessa ordem. A queda e a mesma do teste de ensino -
+// hexagono jogado para fora da cena -, depois de um toque, que e o que cria o
+// ponto de volta.
 await js('window.__game.startLevel(11)');
-await sleep(600);
-const posEnsino = await js('({volta: window.__game.scene.session.rewindOnLoss})');
+await sleep(1500);
+const corteRampa = await js('window.__sdkLog.length');
+await tocar();
+await sleep(1500);
+for (let q = 0; q < 3; q++) {
+  await js(`(() => { const w = window.__game.scene.session.world; const h = w.hexTransform();
+    w.hexBody.setTransform({ x: h.x + 40, y: -40 }, 0); w.hexBody.setAwake(true); })()`);
+  await sleep(1500);
+}
+// A derrota recomeca a fase sozinha (flowRetry), passando pelo intervalo. Mudar
+// de fase antes de o recomeco terminar poria um `start` dentro do intervalo.
+for (let t = 0; t < 32; t++) {
+  const st = await js(`({screen: window.__game.screen, level: window.__game.level, avancando: window.__game.advancing,
+    timer: !!window.__game.flowTimer, estado: window.__game.scene.session && window.__game.scene.session.state})`);
+  if (st && st.screen === 'game' && st.level === 11 && !st.avancando && !st.timer && st.estado === 'ready') break;
+  await sleep(250);
+}
+const rampaSeq = await js(`window.__sdkLog.slice(${corteRampa})
+  .filter((e) => e.name === 'measure' && String(e.extra).startsWith('level/11/'))
+  .map((e) => e.extra.slice('level/11/'.length))`);
 
 // Fronteira de mundo: a fase 20 fecha o mundo 4 e nao pode parar o jogador. O
 // fluxo so para na ultima fase do jogo (main.js, `flowContinues`). E a regra
@@ -447,11 +477,25 @@ check(
   const i = seq.indexOf('rewind');
   check('a volta da fase de ensino nao manda fail', i >= 0 && seq.slice(0, i).every((a) => a !== 'fail'), seq.slice(0, i + 1).join(' '));
 }
-check(
-  'fase 10 ainda volta uma jogada, sem a mao; a 11 ja se perde',
-  !!ensinoFim && ensinoFim.volta === true && ensinoFim.mao === false && !!posEnsino && posEnsino.volta === false,
-  JSON.stringify({ ensinoFim, posEnsino }),
-);
+{
+  const r = rampa;
+  const ok = (n, volta, limite) => !!r[n] && r[n].volta === volta && r[n].limite === limite;
+  check(
+    'rampa de derrota: 10 sem limite e sem a mao, 11 e 15 com duas voltas, 16 e 20 com uma, 21 sem volta',
+    ok(10, true, 'Infinity') && r[10].mao === false && ok(11, true, '2') && ok(15, true, '2') &&
+      ok(16, true, '1') && ok(20, true, '1') && !!r[21] && r[21].volta === false,
+    JSON.stringify(r),
+  );
+}
+{
+  // Sem os `start` do recomeco: o que importa e a ordem entre volta e derrota.
+  const seq = (rampaSeq || []).filter((a) => a !== 'start');
+  check(
+    'tres quedas na fase 11 dao volta, volta e derrota',
+    seq.length >= 3 && seq[0] === 'rewind' && seq[1] === 'rewind' && seq[2] === 'fail',
+    (rampaSeq || []).join(' '),
+  );
+}
 check('cartao de derrota oferece voltar uma jogada, como video', voltaNoCartao === true, String(voltaNoCartao));
 check(
   'voltar uma jogada devolve a fase pronta para o toque',
