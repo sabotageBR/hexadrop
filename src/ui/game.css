@@ -1309,3 +1309,89 @@ html[data-hud='lateral'] .tut {
   max-width: min(260px, 26vw);
   border-radius: 18px;
 }
+/* Menos nas fases do roteiro: o objetivo fica em cima da torre, onde o olho ja
+   esta. */
+html[data-hud='lateral'] .tut.perto {
+  left: 50%;
+  right: auto;
+  top: calc(14px + var(--safe-t));
+  transform: translateX(-50%);
+  max-width: min(330px, 40vw);
+}
+
+/* ------------------------------------------------ proximo hexagono pelas moedas
+   Embaixo das moedas, no canto: o icone do hexagono que vem, a barra e
+   moedas/preco. E o destino da moeda que a 1.0.10 nao mostrava (1.0.12). */
+.meta-next {
+  position: absolute;
+  top: calc(52px + var(--safe-t));
+  right: calc(14px + var(--safe-r));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 2;
+  text-shadow: 0 1px 6px rgba(var(--sheet-rgb), 0.9);
+}
+.meta-next[hidden] { display: none; }
+.meta-next canvas { width: 20px; height: 20px; flex: none; }
+.meta-track { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+.meta-bar {
+  display: block;
+  width: 62px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--starOff);
+  overflow: hidden;
+}
+.meta-bar b {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--gold);
+  transition: width 0.6s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.meta-track small { font: 700 10px/1 var(--font); color: var(--ink-soft); letter-spacing: 0.02em; }
+.meta-next.cheia canvas { animation: metaCheia 0.9s ease-in-out infinite; }
+@keyframes metaCheia { 50% { transform: scale(1.18); } }
+
+/* ----------------------------------------------------------- chuva de moedas
+   O painel da contagem vira o placar da chuva, com a barra do tempo embaixo, e
+   a borda da cena ganha um brilho dourado que pulsa enquanto ela dura. */
+.bonus.chuva { padding: 10px 26px 12px; border: 1px solid var(--gold); }
+.bonus.chuva .bonus-label { color: var(--gold); font-weight: 900; letter-spacing: 0.04em; }
+.bonus-timer {
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--gold);
+  transform-origin: left center;
+  animation: chuvaTempo 8s linear forwards;
+}
+.bonus-timer[hidden] { display: none; }
+@keyframes chuvaTempo { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+#s-game.chuva::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 60px 6px rgba(255, 200, 60, 0.55);
+  animation: chuvaBrilho 0.9s ease-in-out infinite alternate;
+}
+@keyframes chuvaBrilho { from { opacity: 0.45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .meta-next.cheia canvas, #s-game.chuva::after { animation: none; }
+}
+/* No desktop deitado o placar da chuva e a contagem da cascata vao para a faixa
+   da direita: no meio eles cobriam o topo da torre, justo onde se toca. */
+html[data-hud='lateral'] #s-game .bonus {
+  position: fixed;
+  right: calc(14px + var(--safe-r));
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
+  max-width: min(260px, 26vw);
+}

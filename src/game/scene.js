@@ -222,6 +222,13 @@ export class GameScene {
   /** @param {{x:number,y:number}} p */
   handleDown(p) {
     if (!this.session) return;
+    // Chuva de moedas: a fase ja acabou, mas o toque volta a estourar peca.
+    if (this.session.chuva) {
+      const [cx, cy] = this.camera.toWorld(p.x, p.y);
+      const r = this.session.chuvaTap(cx, cy, this.touch ? 0.32 : 0);
+      if (r && r.ok) audio.click();
+      return;
+    }
     // Fase terminada: o toque nao quebra nada, mas encurta a espera - aperta a
     // cascata da celebracao e deixa main.js pular o selo (onTapAfterEnd).
     if (this.session.finished) {
@@ -249,6 +256,10 @@ export class GameScene {
     }
     const [wx, wy] = this.camera.toWorld(p.x, p.y);
     this.hovered = this.session.world.pickAt(wx, wy, 0);
+    // A mao do mouse sobre a peca diz que ela se clica: no desktop ninguem ve o
+    // dedo de ninguem tocando.
+    const cursor = this.hovered ? 'pointer' : '';
+    if (this.canvas.style.cursor !== cursor) this.canvas.style.cursor = cursor;
   }
 
   /** @param {number} dt */

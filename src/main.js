@@ -16,7 +16,7 @@ import { faseDeOrigem } from './game/alem.js';
 import { Progress } from './game/progress.js';
 import {
   UPGRADES, BOOSTS, gateStars, xpForRank, skin as getSkin, BONUS_COINS_PER_PIECE,
-  WORLD_PRIZES, worldPrize,
+  CHUVA_COINS_PER_PIECE, WORLD_PRIZES, worldPrize,
 } from './game/content.js';
 import { THEMES } from './render/themes.js';
 import { applyUiTheme } from './render/uitheme.js';
@@ -29,7 +29,7 @@ import { PLATAFORMA, COM_ANUNCIOS } from './core/platform.js';
 import { t, getLang, setLang, LANGS, LANG_NAMES, onLangChange } from './core/i18n.js';
 import { load, save, isPersistent } from './core/storage.js';
 import { Rng } from './core/rng.js';
-import { hudLateral } from './core/viewport.js';
+import { hudLateral, hasFinePointer } from './core/viewport.js';
 
 /** Nome e dica, no i18n, das mecanicas que estreiam sem ser material. */
 const HAZARD_TEXT = {
@@ -224,6 +224,19 @@ const FLOW_SEAL_MS = 1000;
  * engoliria o premio antes de ele ser visto.
  */
 const FLOW_PRIZE_MS = 2200;
+
+/**
+ * Chuva de moedas: segundos que o jogador tem, na ultima fase de cada mundo,
+ * para estourar tocando o que sobrou da torre (`Session.startChuva`).
+ *
+ * A 1.0.10 mostrou o jogador saindo num ritmo constante de ~0,3 por minuto do
+ * minuto 1 ao 7, sem nada que fizesse quem esta jogando ha cinco minutos sair
+ * menos que quem esta ha um. Ate a fase 11 cada fase estreava uma peca; dali
+ * em diante so trocavam o ceu e a dificuldade. A chuva e uma regra diferente a
+ * cada cinco fases, de acao pura - a Poki mede que jogo em que o jogador age o
+ * tempo todo rende mais que jogo de espera -, e vem antes do premio do mundo.
+ */
+const CHUVA_S = 8;
 const PRIZE_SKIP_FLOOR_MS = 1000;
 /** Quando o hexagono troca de skin na cena, depois de o selo entrar. */
 const PRIZE_SWAP_MS = 120;
@@ -260,6 +273,12 @@ const RETRIES_MESMO_LAYOUT = 2;
  * de uma derrota ela vem logo: quem acabou de perder e quem mais precisa dela.
  */
 const DICA_AUTO_FASE1_S = 2.5;
+/**
+ * No desktop a dica das fases do roteiro (com a mao) vem logo. Ali a fase 1
+ * perdia 26% dos jogadores contra 10% no celular, quase todos antes do primeiro
+ * clique: esperar 2,5 s parado era esperar demais por quem so estava olhando.
+ */
+const DICA_ROTEIRO_DESKTOP_S = 0.6;
 const DICA_AUTO_S = 6;
 const DICA_AUTO_ATE_FASE = 15;
 const DICA_NO_RECOMECO_S = 1.2;
@@ -967,10 +986,18 @@ class Game {
       hooks: {
         onStar: (n) => this.onStar(n),
         onEnd: (state) => this.onLevelEnd(state),
-        onFirstTap: () => poki.gameplayStart(),
+        onFirstTap: () => {
+          poki.gameplayStart();
+          // Nas fases do roteiro, separa quem comecou e nunca tocou de quem
+          // tocou e saiu: o funil da Poki so via os dois juntos, e no desktop a
+          // fase 1 perdia 26% contra 10% no celular (1.0.10).
+          if (this.level <= FASES_COM_MAO) poki.measure('level', String(this.level), 'tap1');
+        },
         onCombo: (n, x, y) => this.onCombo(n, x, y),
         onBonusPiece: (done, total, x, y) => this.onBonusPiece(done, total, x, y),
         onBonusDone: () => this.finishWin(),
+        onChuvaPiece: (n, x, y) => this.onChuvaPiece(n, x, y),
+        onChuvaDone: () => this.onChuvaDone(),
       },
     });
     session.par = variant[1];
@@ -1135,6 +1162,7 @@ class Game {
     this.paused = false;
     this.pendingWin = null;
     this.hideBonusCounter();
+    this.hideChuva();
     const { session, theme } = this.makeSession(this.level, variantIndex);
     session.autoHintAfter = this.autoHintFor(this.level, this.hintOnStart);
     session.onAutoHint = () => this.ofertaVisivel('dica-auto');
@@ -1154,6 +1182,7 @@ class Game {
     this.setStars('gameStars', 0);
     $('gameLevelName').textContent = `${themeLabel(this.origem.tema)} · ${this.level}`;
     this.buildWorldPips();
+    this.atualizaMeta();
     this.homeWorld = this.homeSlotOf(this.level);
     // Reiniciar aparece depois de tropecar duas vezes na mesma fase. Ao lado
     // dele morava o video de dica, que saiu na 1.0.6: zero cliques em 135
@@ -1178,6 +1207,9 @@ class Game {
 
   showTutorial() {
     const tut = $('tut');
+    // No roteiro o cartao do objetivo fica junto da torre mesmo com o HUD nas
+    // laterais: la na faixa da direita ele passava sem ser lido.
+    tut.classList.toggle('perto', this.level <= FASES_COM_MAO);
     const config = levelConfig(this.origem.index);
     /** @type {{texto:string, titulo?:string, icone?:HTMLCanvasElement}[]} */
     const msgs = [];
@@ -1314,9 +1346,13 @@ class Game {
       // fazem parte do premio, e a contagem delas acontece no canvas, antes do
       // cartao entrar.
       this.pendingWin = { stars, won: state === 'won' };
-      const sobraram = session.startBonus();
-      if (sobraram > 0) this.showBonusCounter(sobraram);
-      else window.setTimeout(() => this.finishWin(), 700);
+      // Ultima fase do mundo: antes da cascata, a chuva de moedas. Fora do jogo
+      // corrido (playsweep) nao, para a fase continuar medida sozinha.
+      if (this.flowLevels && this.atWorldEnd() && session.startChuva(CHUVA_S)) {
+        this.showChuva();
+        return;
+      }
+      this.startCelebration(session);
     } else {
       this.lossStreak++;
       poki.measure('level', String(this.level), 'fail');
@@ -1332,6 +1368,84 @@ class Game {
         if (this.screen === 'game') this.showLose();
       }, 650);
     }
+  }
+
+  /**
+   * A cascata da celebracao: as pecas que sobraram estouram uma a uma e o
+   * resultado e gravado no fim dela (finishWin).
+   * @param {*} session
+   */
+  startCelebration(session) {
+    const sobraram = session.startBonus();
+    if (sobraram > 0) this.showBonusCounter(sobraram);
+    else window.setTimeout(() => this.finishWin(), 700);
+  }
+
+  /**
+   * Abre a chuva de moedas: o painel da contagem vira o placar da chuva, com a
+   * barra do tempo, e a cena ganha o brilho dourado.
+   */
+  showChuva() {
+    const box = $('bonusBox');
+    if (box) {
+      $('bonusLabel').textContent = t('chuvaTitle');
+      $('bonusCount').textContent = '+0';
+      $('bonusGain').textContent = t('chuvaHint');
+      const barra = $('bonusTimer');
+      barra.style.animationDuration = `${CHUVA_S}s`;
+      barra.hidden = true;
+      void barra.offsetWidth;
+      barra.hidden = false;
+      box.classList.add('chuva');
+      box.hidden = false;
+    }
+    $('s-game').classList.add('chuva');
+    /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = true;
+    /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = true;
+    audio.prize();
+    this.chuvaEv = `mundo-${this.origem.mundo + 1}`;
+    this.chuvaTocou = false;
+    poki.measure('chuva', this.chuvaEv, 'visible');
+  }
+
+  /**
+   * Uma peca caiu durante a chuva.
+   * @param {number} n pecas ate aqui
+   * @param {number} [x] em metros
+   * @param {number} [y]
+   */
+  onChuvaPiece(n, x, y) {
+    if (!this.chuvaTocou) {
+      this.chuvaTocou = true;
+      poki.measure('chuva', this.chuvaEv || 'mundo', 'interact');
+    }
+    audio.coin(n);
+    const count = $('bonusCount');
+    if (count) {
+      count.textContent = `+${n * CHUVA_COINS_PER_PIECE}`;
+      count.classList.remove('pop');
+      void count.offsetWidth;
+      count.classList.add('pop');
+    }
+    this.scene.camera.addTrauma(0.08);
+    if (x !== undefined && y !== undefined) this.floatText(`+${CHUVA_COINS_PER_PIECE}`, x, y, 'coin');
+  }
+
+  /** A chuva acabou: o que sobrou estoura na cascata de sempre. */
+  onChuvaDone() {
+    this.hideChuva();
+    const session = this.scene.session;
+    if (!session || !this.pendingWin || this.screen !== 'game') return;
+    this.startCelebration(session);
+  }
+
+  hideChuva() {
+    const box = document.getElementById('bonusBox');
+    if (box) box.classList.remove('chuva');
+    const barra = document.getElementById('bonusTimer');
+    if (barra) barra.hidden = true;
+    const tela = document.getElementById('s-game');
+    if (tela) tela.classList.remove('chuva');
   }
 
   /**
@@ -1407,6 +1521,7 @@ class Game {
    */
   autoHintFor(level, recomeco) {
     if (recomeco) return DICA_NO_RECOMECO_S;
+    if (level <= FASES_COM_MAO && hasFinePointer()) return DICA_ROTEIRO_DESKTOP_S;
     if (level === 1) return DICA_AUTO_FASE1_S;
     return level <= DICA_AUTO_ATE_FASE ? DICA_AUTO_S : 0;
   }
@@ -1473,7 +1588,14 @@ class Game {
       bonusPieces: session.bonusTotal,
       comboScore: session.comboScore,
       comboPieces: session.comboPieces,
+      chuvaPieces: session.chuvaPieces,
     });
+    // As moedas compram o proximo hexagono assim que chegam ao preco. Com
+    // premio de mundo na mesma vitoria, o desbloqueio espera a seguinte: duas
+    // revelacoes juntas seriam um recado so.
+    if (!result.prize && this.flowContinues()) {
+      /** @type {*} */ (result).unlock = this.progress.unlockNextSkin();
+    }
     this.lastResult = result;
     // Dentro de um mundo o jogo nao para: o premio vira um selo sobre a cena e
     // a fase seguinte entra sozinha. Quem reabilita os botoes do HUD nesse
@@ -1540,7 +1662,8 @@ class Game {
    * @param {*} session
    */
   flowToNext(result, session) {
-    const premio = result.prize || null;
+    const premio = result.prize || result.unlock || null;
+    const gasto = result.unlock ? result.unlock.coins || 0 : 0;
     if (premio) audio.prize();
     else audio.win();
     const box = $('flowSeal');
@@ -1551,6 +1674,7 @@ class Game {
     // sao coisas que o jogador pode repetir de proposito na fase seguinte.
     const sobraram = session && session.bonusTotal ? session.bonusTotal : result.bonusPieces || 0;
     const partes = [];
+    if (result.chuvaPieces > 0) partes.push(`${t('chuvaSeal')} x${result.chuvaPieces}`);
     if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
     if (session && session.bestCombo > 1) partes.push(`${t('combo')} x${session.bestCombo}`);
     $('flowWhat').textContent = partes.join('  \u00b7  ');
@@ -1563,10 +1687,27 @@ class Game {
     // As moedas pousam no contador do HUD, nao numa bolsa de cartao: o premio
     // fica onde o jogador vai continuar olhando.
     const moedasDoPremio = premio && premio.kind === 'coins' ? premio.coins || 0 : 0;
-    const bolsaAntes = this.progress.data.coins - moedas - moedasDoPremio;
+    // O desbloqueio ja gastou o preco: o contador sobe com as moedas da fase,
+    // a barra enche, e so depois a compra desconta.
+    const bolsaAntes = this.progress.data.coins + gasto - moedas - moedasDoPremio;
     const deOnde = premio ? $('revealCoins') : $('flowCoins');
     this.flyCoins(deOnde, Math.min(12, Math.max(4, Math.round(moedas / 3))), premio ? 650 : 200, $('gameCoins'));
-    this.countUp($('gameCoins'), this.progress.data.coins, 260, false, bolsaAntes);
+    this.countUp($('gameCoins'), this.progress.data.coins + gasto, 260, false, bolsaAntes);
+    // Com compra, a barra do hexagono seguinte so aparece depois da revelacao:
+    // antes dela ainda e a do que acabou de ser comprado.
+    if (!gasto) this.atualizaMeta(this.progress.data.coins, 260);
+    else if (result.unlock) {
+      // Durante a revelacao a barra fica cheia: e ela que acabou de pagar.
+      $('gameMetaFill').style.width = '100%';
+      $('gameMetaTxt').textContent = `${gasto}/${gasto}`;
+    }
+    if (gasto) {
+      window.setTimeout(() => {
+        if (this.screen !== 'game') return;
+        $('gameCoins').textContent = String(this.progress.data.coins);
+        this.atualizaMeta();
+      }, FLOW_PRIZE_MS - 300);
+    }
 
     // No fim de mundo o recado e o premio: um "novo recorde" ao mesmo tempo
     // seria o terceiro texto sobre a cena.
@@ -1590,7 +1731,8 @@ class Game {
    */
   showPrize(premio, moedas) {
     const box = $('prizeReveal');
-    $('revealTitle').textContent = t('worldClear');
+    const porMoedas = premio.via === 'moedas';
+    $('revealTitle').textContent = porMoedas ? t('unlockTitle') : t('worldClear');
     const { titulo, nome } = this.prizeTexts(premio);
     $('revealKind').textContent = titulo;
     $('revealName').textContent = nome;
@@ -1610,8 +1752,8 @@ class Game {
     // O icone do fim da fita no HUD "entra" na revelacao: o premio que estava
     // sendo prometido e o que acabou de chegar.
     const hud = document.getElementById('gamePrize');
-    if (hud) hud.classList.add('claimed');
-    this.flowPrizeEv = `mundo-${premio.world + 1}`;
+    if (hud && !porMoedas) hud.classList.add('claimed');
+    this.flowPrizeEv = porMoedas ? 'desbloqueio' : `mundo-${premio.world + 1}`;
     this.medirPremio(premio);
     if (premio.kind === 'skin' && premio.id) {
       const id = premio.id;
@@ -1628,6 +1770,11 @@ class Game {
    * @param {*} premio
    */
   medirPremio(premio) {
+    if (premio.via === 'moedas') {
+      poki.measure('premio', 'desbloqueio', 'visible');
+      poki.measure('premio', `desbloqueio-${premio.id}`, 'ganho');
+      return;
+    }
     poki.measure('premio', `mundo-${premio.world + 1}`, 'visible');
     const oque =
       premio.kind === 'skin' ? `skin-${premio.id}` : premio.kind === 'upgrade' ? `melhoria-${premio.id}` : `moedas-${premio.why || 'bau'}`;
@@ -1710,6 +1857,38 @@ class Game {
     const revelacao = document.getElementById('prizeReveal');
     if (revelacao) revelacao.hidden = true;
     this.flowPrizeEv = '';
+  }
+
+  /**
+   * A barra do proximo hexagono, embaixo das moedas no HUD: o icone dele, a
+   * barra e "moedas/preco". Enche com as moedas de cada fase e, cheia, a
+   * proxima vitoria o compra (`Progress.unlockNextSkin`). Some quando nao ha
+   * mais hexagono para comprar.
+   * @param {number} [moedas] o que mostrar; o saldo, se omitido
+   * @param {number} [atraso] ms ate aplicar, para andar junto com o contador
+   */
+  atualizaMeta(moedas = this.progress.data.coins, atraso = 0) {
+    const box = document.getElementById('gameMeta');
+    if (!box) return;
+    const alvo = this.progress.nextCoinSkin();
+    if (!alvo) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    const cv = /** @type {HTMLCanvasElement} */ ($('gameMetaIcon'));
+    if (cv.dataset.skin !== alvo.id) {
+      this.paintPrizeIcon(cv, { kind: 'skin', id: alvo.id }, 20);
+      cv.dataset.skin = alvo.id;
+    }
+    const frac = Math.max(0, Math.min(1, moedas / alvo.cost));
+    const aplica = () => {
+      $('gameMetaFill').style.width = `${Math.round(frac * 100)}%`;
+      $('gameMetaTxt').textContent = `${Math.min(moedas, alvo.cost)}/${alvo.cost}`;
+      box.classList.toggle('cheia', frac >= 1);
+    };
+    if (atraso) window.setTimeout(aplica, atraso);
+    else aplica();
   }
 
   /**
@@ -2282,6 +2461,7 @@ class Game {
       bonusPieces: session.bonusDone,
       comboScore: session.comboScore,
       comboPieces: session.comboPieces,
+      chuvaPieces: session.chuvaPieces,
     });
   }
 

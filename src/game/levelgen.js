@@ -472,7 +472,11 @@ export function levelConfig(index, soften = 0) {
   // Test da 1.0.7 deu 5:54 de tempo na pagina contra ~8:52 de referencia, com
   // ~17 s por fase do comeco ao fim. Uma linha a mais rende tempo onde o
   // pedestal e largo (fases 4 a 10) e onde o piso de perdao ainda segura a
-  // dificuldade (o mundo 3 leva duas). Contraprova medida no painel: a fase 25,
+  // dificuldade. O mundo 3 chegou a levar duas, e a 1.0.12 devolveu a uma: nos
+  // Player Fit Tests da 1.0.9 e da 1.0.10 as fases 12 e 13 perdiam 22% cada,
+  // o dobro das vizinhas e ~0,65 jogador por minuto jogado contra ~0,35 no
+  // ensino, com a solucao da 12 em 12,8 toques; no publico real da 1.0.7, com
+  // uma linha a menos, a 12 perdia 12%. Contraprova medida no painel: a fase 25,
   // tres linhas mais alta que a 10 sobre pedestal de 1,1x, conclui em 14 s
   // contra 17 s - com pedestal estreito a torre desaba em blocos -, e por isso
   // a rampa encosta sozinha na antiga quando ela chega a 16 linhas (fase 48).
@@ -481,7 +485,6 @@ export function levelConfig(index, soften = 0) {
   // layout e o resto das seeds assadas continua valendo.
   if (i >= PRIMEIRAS_FASES.length) {
     if (i < fimDoTutorial) rows += 1;
-    else if (i < worldStart(3)) rows += 2;
     else if (rows < 16) rows += 1;
   }
   const inWorld = indexInWorld(i);

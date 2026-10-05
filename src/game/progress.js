@@ -10,7 +10,7 @@
 
 import { load, save, isPersistent } from '../core/storage.js';
 import { LEVEL_COUNT, WORLD_COUNT, worldOf, worldStart, worldSize } from './levelgen.js';
-import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE, worldPrize, prizeWorldOfSkin, skin as getSkin } from './content.js';
+import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE, CHUVA_COINS_PER_PIECE, worldPrize, prizeWorldOfSkin, skin as getSkin } from './content.js';
 import { faseDeOrigem } from './alem.js';
 
 /**
@@ -127,7 +127,7 @@ export class Progress {
     d.prizes = [];
     for (let w = 0; w < WORLD_COUNT; w++) {
       if (this.starsOf(worldStart(w) + worldSize(w)) < 1) continue;
-      const r = this.claimWorldPrize(w, false, false);
+      const r = this.claimWorldPrize(w, false, false, false);
       if (r) this.retroativos.push(r);
     }
     if (this.retroativos.length) d.shopNews = true;
@@ -143,14 +143,21 @@ export class Progress {
 
   /**
    * O que o premio do mundo daria AGORA, sem entregar nada: a skin que o
-   * jogador ja tem vira moeda, a melhoria no maximo passa para a proxima.
+   * jogador ja tem passa para o proximo hexagono que ele ainda nao tem - as
+   * moedas compram hexagono no meio do caminho (`unlockNextSkin`), e o premio
+   * de mundo nao pode virar troco justo quando chega -, a melhoria no maximo
+   * passa para a proxima.
    * @param {number} world 0-based
+   * @param {boolean} [alternativa] skin ja comprada vira outra skin; falso na
+   *   migracao de save antigo, onde ela continua virando as moedas do preco
    * @returns {PrizeResult}
    */
-  resolvePrize(world) {
+  resolvePrize(world, alternativa = true) {
     const p = worldPrize(world, WORLD_COUNT);
     if ('skin' in p) {
       if (!this.ownsSkin(p.skin)) return { world, kind: 'skin', id: p.skin };
+      const outra = alternativa ? this.nextCoinSkin() : null;
+      if (outra) return { world, kind: 'skin', id: outra.id };
       return { world, kind: 'coins', id: p.skin, coins: getSkin(p.skin).cost, why: 'owned' };
     }
     if ('upgrade' in p) {
@@ -172,13 +179,14 @@ export class Progress {
    * @param {number} world 0-based
    * @param {boolean} [equip] skin nova ja equipada (no jogo corrido, sim)
    * @param {boolean} [gravar]
+   * @param {boolean} [alternativa] ver `resolvePrize`
    * @returns {PrizeResult|null} null quando ja foi entregue
    */
-  claimWorldPrize(world, equip = true, gravar = true) {
+  claimWorldPrize(world, equip = true, gravar = true, alternativa = true) {
     const d = this.data;
     if (!Array.isArray(d.prizes)) d.prizes = [];
     if (d.prizes.includes(world)) return null;
-    const r = this.resolvePrize(world);
+    const r = this.resolvePrize(world, alternativa);
     if (r.kind === 'skin' && r.id) {
       if (!d.skins.includes(r.id)) d.skins.push(r.id);
       if (equip) d.skin = r.id;
@@ -314,7 +322,7 @@ export class Progress {
    * @param {boolean} o.won
    * @param {number} o.taps
    * @param {number} o.par
-   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, best:boolean, rankUp:boolean, prize:PrizeResult|null}}
+   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, chuvaPieces:number, best:boolean, rankUp:boolean, prize:PrizeResult|null}}
    */
   finishLevel(o) {
     const d = this.data;
@@ -348,11 +356,12 @@ export class Progress {
     const bonusPieces = Math.max(0, o.bonusPieces || 0);
     const comboScore = Math.max(0, o.comboScore || 0);
     const comboPieces = Math.max(0, o.comboPieces || 0);
+    const chuvaPieces = Math.max(0, o.chuvaPieces || 0);
     let bonusCoins = 0;
     let bonusXp = 0;
     if (o.stars > 0) {
-      bonusCoins = bonusPieces * BONUS_COINS_PER_PIECE + comboScore;
-      bonusXp = bonusPieces * BONUS_XP_PER_PIECE + comboPieces;
+      bonusCoins = bonusPieces * BONUS_COINS_PER_PIECE + comboScore + chuvaPieces * CHUVA_COINS_PER_PIECE;
+      bonusXp = bonusPieces * BONUS_XP_PER_PIECE + comboPieces + chuvaPieces;
     }
 
     const mult = upgradeEffects(d.upgrades).coinMultiplier;
@@ -371,7 +380,7 @@ export class Progress {
     const origem = faseDeOrigem(o.level);
     if (o.stars > 0 && origem.fimDeMundo) prize = this.claimWorldPrize(origem.mundo, true, false);
     this.flush();
-    return { coins, xp, bonusCoins, bonusXp, bonusPieces, best, rankUp, prize };
+    return { coins, xp, bonusCoins, bonusXp, bonusPieces, chuvaPieces, best, rankUp, prize };
   }
 
   /**
@@ -457,6 +466,36 @@ export class Progress {
       this.data.skins.push(id);
       this.flush();
     }
+  }
+
+  /**
+   * O proximo hexagono que as moedas compram: o mais barato que o jogador ainda
+   * nao tem, fora as skins aposentadas. E a barra do HUD (1.0.12).
+   * @returns {*|null}
+   */
+  nextCoinSkin() {
+    const faltam = SKINS.filter((s) => !s.retired && s.cost > 0 && s.rank <= this.rank && !this.ownsSkin(s.id));
+    faltam.sort((a, b) => a.cost - b.cost);
+    return faltam[0] || null;
+  }
+
+  /**
+   * Compra e equipa o proximo hexagono quando as moedas chegam ao preco.
+   *
+   * Sem pergunta e sem loja: no Player Fit Test da 1.0.10, de 1.018 jogadores
+   * novos, 6 abriram a loja e 2 compraram - a moeda caia no contador a cada
+   * fase e ninguem sabia para que ela servia. Agora ela enche uma barra a vista
+   * e, cheia, troca o hexagono na hora.
+   * @returns {{kind:'skin', id:string, coins:number, via:'moedas'}|null}
+   */
+  unlockNextSkin() {
+    const s = this.nextCoinSkin();
+    if (!s || this.data.coins < s.cost) return null;
+    this.data.coins -= s.cost;
+    if (!this.ownsSkin(s.id)) this.data.skins.push(s.id);
+    this.data.skin = s.id;
+    this.flush();
+    return { kind: 'skin', id: s.id, coins: s.cost, via: 'moedas' };
   }
 
   /** @param {string} id */

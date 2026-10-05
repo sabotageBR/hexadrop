@@ -187,6 +187,14 @@ export const BONUS_COINS_PER_PIECE = 3;
 export const BONUS_XP_PER_PIECE = 2;
 
 /**
+ * Chuva de moedas (1.0.12): na ultima fase de cada mundo, quando o hexagono
+ * pousa, o jogador tem alguns segundos para estourar o que sobrou tocando, e
+ * cada peca que ele derruba vale o dobro da que sobra intacta para a cascata.
+ * O dobro e de proposito: tocar tem que valer mais que esperar.
+ */
+export const CHUVA_COINS_PER_PIECE = BONUS_COINS_PER_PIECE * 2;
+
+/**
  * Estrelas acumuladas para abrir cada mundo.
  *
  * O teto e 300 (100 fases x 3 estrelas), 15 por mundo. A curva e folgada no

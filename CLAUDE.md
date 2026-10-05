@@ -184,6 +184,20 @@ funis da Poki guiaram as trocas:
   o **desktop** era 32% dos jogadores novos, com o funil ~35% pior que o do celular em
   toda a extensão e 24% sem concluir a fase 1, contra 9%. Daí a 1.0.10: derrota em
   rampa e HUD nas laterais no desktop.
+- **1.0.10, dois Player Fit Tests** (mesmo público): **4:05 e 4:13**, média aparada de
+  212 e 229 s — empate com a 1.0.9. A rampa consertou a fase 11 (perda de 25% para 12%,
+  derrota de 41% para 18%), mas a perda média por fase continuou em 10–12% e o desktop
+  não mudou. Juntando os mil jogadores de cada versão, a saída é **~0,3 jogador por
+  minuto, constante do minuto 1 ao 7**, em todas as versões desde a 1.0.7, e só cai
+  depois disso: quem joga há cinco minutos sai tanto quanto quem joga há um. Nas fases
+  sem derrota, a perda de cada fase acompanha a altura (correlação +0,83) e a duração
+  (+0,65), e por minuto jogado fica em ~0,35 — o jogador sai pelo relógio, não no fim
+  da fase, então **fase mais longa não rende tempo e facilitar não segura ninguém**,
+  fora de uma parede. O mundo 3 (gelo) continuava o ponto quente: 12 e 13 perdendo 22%
+  cada, ~0,65 por minuto jogado. E a moeda não tinha destino: de 1.018 jogadores novos,
+  56 viram a tela inicial, 6 abriram a loja e 2 compraram algo. Daí a 1.0.12: a barra
+  do próximo hexágono, a chuva de moedas no fim de cada mundo e o mundo 3 com uma linha
+  a menos.
 
 **Como ler o painel.** A perda de uma fase é **1 − Completed**, e não *Left*: *Left* só
 conta quem sai com a fase começada e nada depois, e quem sai depois de uma volta de
@@ -222,9 +236,11 @@ torre de 35 fica de pé sozinha, mas o jogador competente do solucionador não v
 nenhuma de 24 ou 32 linhas, e cada partida simulada ali custa de 8 a 13 s. A rampa: 8
 linhas na fase 1 (o roteiro, 8, 8 e 9), 13 na 10, 15 na 15, 15 a 16 na faixa 20 a 40,
 16 na 47, 17 na 50 e 18 da 70 em diante; a fase final de cada mundo ganha **uma**
-linha. A 1.0.8 subiu **uma** linha nas fases 4 a 47 e **duas** no mundo 3 (regra em
-`levelConfig`, depois da fórmula): o trecho onde mais gente joga, e onde a linha
-rende toque — pedestal largo nas 4 a 10, piso de perdão ainda segurando no mundo 3.
+linha. A 1.0.8 subiu **uma** linha nas fases 4 a 47 (regra em `levelConfig`, depois da
+fórmula): o trecho onde mais gente joga, e onde a linha rende toque — pedestal largo
+nas 4 a 10, piso de perdão ainda segurando no mundo 3. O mundo 3 chegou a levar
+**duas**, e a 1.0.12 devolveu a uma: as fases 12 e 13 perdiam 22% cada nos testes da
+1.0.9 e da 1.0.10, o dobro das vizinhas, com a solução da 12 em 12,8 toques.
 Ela encosta sozinha na rampa antiga quando chega a 16 linhas (fase 48), e as fases 1
 a 3 e 48 a 100 ficaram como estavam. Rende pouco, e é para isso que serve saber:
 pelas contas, de 5 a 15 s no tempo médio. A contraprova está no painel da 1.0.7 — a
@@ -599,6 +615,17 @@ e ainda vale moeda. `tools/playsweep.mjs` espera a tela sair de `game` antes de 
 resultado — sem isso toda vitória com muitas peças vira "ainda jogando"; é por isso
 que ele desliga o fluxo contínuo (abaixo).
 
+**Na última fase de cada mundo, antes da cascata, vem a chuva de moedas** (1.0.12,
+`CHUVA_S` em `main.js`, `Session.startChuva`): o hexágono pousou, a fase já está ganha,
+e por 8 s o toque volta a estourar peça — cada uma que cai vale
+`CHUVA_COINS_PER_PIECE` (o dobro da intacta da cascata), inclusive o que uma bomba ou
+TNT leva junto, menos o que só sai da tela. Acaba antes se não sobrar peça, e o que
+sobrou estoura na cascata de sempre. O estado continua congelado (`won`/`stuck`) e
+`evaluate()` não roda: nada do que cai muda o resultado. O toque da chuva não conta em
+`taps`, senão tirava o bônus da meta de toques. É a regra diferente a cada cinco fases,
+de ação pura, para o trecho depois da 11, em que só mudavam céu e dificuldade. Só no
+jogo corrido: o `playsweep` e o `thumbnail` desligam o fluxo e não a veem.
+
 ### Prêmios de fim de mundo
 
 **Concluir um mundo dá um prêmio, dentro do fluxo** (`WORLD_PRIZES` em
@@ -635,6 +662,18 @@ sai quando a fase termina (`onLevelEnd`).
 do prêmio. O kit muda só o formato do pip. Tudo ali é só exibição, fora da exceção de
 `.screen.pass`. A fase 2 ainda mostra o primeiro prêmio no cartão do tutorial ("conclua
 o mundo e ganhe isto"): a meta só puxa se o jogador souber que ela existe.
+
+**A moeda compra o próximo hexágono sozinha** (1.0.12, `Progress.nextCoinSkin` e
+`unlockNextSkin`). Embaixo das moedas do HUD fica a barra do hexágono que vem — o ícone,
+a barra e `moedas/preço` (`#gameMeta`, `atualizaMeta()`) —, e quando ela enche a vitória
+seguinte o compra, equipa e mostra na mesma revelação do prêmio de mundo, com
+"Desbloqueado!" no título. Se a mesma vitória já tem prêmio de mundo, a compra espera a
+próxima. O alvo é a skin mais barata que o jogador ainda não tem, fora as aposentadas:
+com ~50 moedas por fase a primeira (120) cai por volta da fase 3, e daí uma a cada
+poucas fases. Como o prêmio de um mundo ímpar pode chegar com a skin já comprada,
+`resolvePrize` passa para o próximo hexágono que o jogador não tem, em vez de virar
+troco; só a migração de save antigo continua devolvendo as moedas (`alternativa`
+falso). O motivo: no teste da 1.0.10, de 1.018 jogadores novos, 6 abriram a loja.
 
 O save ganhou `prizes` (mundos entregues) **sem trocar `SAVE_VERSION`**. Um save da
 versão 3 sem o campo passa por `migrarPremios()`, uma vez: recebe os prêmios dos
@@ -781,9 +820,11 @@ ele joga a fase 1 (a 2 tem que entrar sozinha), força cinco derrotas seguidas n
 quatro primeiras recomeçam sozinhas com `fail` → `start`, a terceira já em outro
 layout, e a quinta abre o cartão), confere a rampa de derrota (10 sem limite, 11 e 15
 com duas voltas, 16 e 20 com uma, 21 sem volta) e que três quedas de verdade na 11 dão
-volta, volta e derrota, vence pela força a 20 e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
+volta, volta e derrota, vence pela força a 20 (com a chuva de moedas aberta e um toque
+que estoura peça) e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
 selo) e a 5 (o hexágono novo equipado na 6), confere que só a 100 para o fluxo, e
-segue do cartão da 100 para a 101 e a 102. A vitória forçada grava as estrelas em
+segue do cartão da 100 para a 101 e a 102 — a 101 com a bolsa cheia, para ver a moeda
+comprar e equipar um hexágono. A vitória forçada grava as estrelas em
 `world.starsCrossed` — `Session.stars` é só um getter — e dispara o `onFirstTap`, senão
 a partida nunca teria `gameplayStart`.
 
@@ -1240,7 +1281,11 @@ inteira mostrou 0% de interação nesses botões por isso. Os botões de compra 
 O prêmio de mundo sai como `premio / mundo-N / visible` na revelação, `interact` com o
 mesmo nome quando o toque adianta o selo, e `premio / skin-<id>` (ou `melhoria-<id>`,
 `moedas-<motivo>`) com a ação `ganho`, que cai na aba Other. Os três saem síncronos,
-antes do `advanceLevel`: o intervalo comercial vem logo depois do selo.
+antes do `advanceLevel`: o intervalo comercial vem logo depois do selo. O hexágono
+comprado pelas moedas sai como `premio / desbloqueio / visible` e
+`premio / desbloqueio-<id> / ganho`, e a chuva como `chuva / mundo-N / visible` ao
+abrir e `interact` no primeiro toque que derruba peça — a fração que toca é a medida
+de se ela é entendida.
 
 Os **nomes** do mapa mudam com mais cuidado que os ids: um nome trocado quebra a série
 histórica do relatório. O mesmo nome em telas diferentes é de propósito onde a ação é a
@@ -1304,6 +1349,15 @@ cortada) e com 46 px na de 1031x580 (antes 37,5); torre alta continua em 30 px, 
 umas três linhas e meia a mais na tela. É experimento: no Web Fit Test da 1.0.7 o
 desktop era 32% dos jogadores novos, com o funil ~35% pior que o do celular, e 24% não
 concluíam a fase 1. Celular e tablet, em pé ou deitados, ficam como estavam.
+
+**A 1.0.10 não mexeu no desktop** (dois Player Fit Tests: a fase 1 ainda perdia 26%
+contra 10% no celular, e a média aparada empatou com a 1.0.9 em ~220 s): o problema não
+era a área de jogo. A 1.0.11 ataca quem nunca chega a clicar. Nas fases do roteiro a
+dica com a mão vem em 0,6 s no desktop (`DICA_ROTEIRO_DESKTOP_S`), e não depois de
+2,5 s parado. O cartão do objetivo fica em cima da torre (`.tut.perto`), e não na faixa
+da direita. O cursor vira mãozinha sobre peça clicável (`GameScene.handleMove`). O
+primeiro toque das fases 1 a 3 sai como `measure('level', N, 'tap1')`, na aba Other,
+para o funil separar "começou e não tocou" de "tocou e saiu".
 
 **A dica acende sozinha quando o jogador para** (`Session.autoHintAfter`, desligada por
 padrão para o validador): 2,5 s na fase 1 — com a mão tocando a peça até a fase 3 —, 6 s até a
