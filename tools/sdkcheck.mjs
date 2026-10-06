@@ -582,6 +582,14 @@ check(
   !!depois101 && depois101.screen === 'game' && depois101.level === 102,
   JSON.stringify(depois101),
 );
+{
+  // Marcos de tempo de sessao (main.js, MARCOS_MIN): o teste dura alguns
+  // minutos de aba visivel, entao os primeiros saem sozinhos - cada um uma vez
+  // so e na ordem.
+  const marcos = measures.filter((m) => m.startsWith('tempo/')).map((m) => Number(m.split('/')[1].replace('min-', '')));
+  const ordem = marcos.every((v, i) => i === 0 || v > marcos[i - 1]);
+  check('marcos de tempo saem uma vez cada, na ordem, a partir de min-1', marcos[0] === 1 && ordem, marcos.join(' ') || 'nenhum');
+}
 check(
   'fim de mundo abre a chuva de moedas, e o toque estoura peca (fase 20)',
   !!fronteiraCedo && !!fronteiraCedo.chuva && fronteiraCedo.chuva.aberta === true && fronteiraCedo.chuva.pecas >= 1 &&

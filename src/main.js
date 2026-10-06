@@ -237,6 +237,18 @@ const FLOW_PRIZE_MS = 2200;
  * tempo todo rende mais que jogo de espera -, e vem antes do premio do mundo.
  */
 const CHUVA_S = 8;
+
+/**
+ * Marcos de tempo de sessao, em minutos de aba visivel desde o fim do
+ * carregamento: cada um sai uma vez como `tempo / min-N / visible`.
+ *
+ * A lista de duracoes do Player Fit Test nao diz o aparelho, e a mistura muda
+ * de um teste para outro - a 1.0.10 teve 28% de desktop e a 1.0.11, 43% -,
+ * entao a media de duas versoes nao se comparava. Com os marcos, o painel conta
+ * quantas partidas chegam a cada minuto com o filtro de aparelho e de usuario
+ * novo: a curva de sobrevivencia por aparelho, que e o que se compara.
+ */
+const MARCOS_MIN = [1, 2, 3, 5, 7, 10, 15];
 const PRIZE_SKIP_FLOOR_MS = 1000;
 /** Quando o hexagono troca de skin na cena, depois de o selo entrar. */
 const PRIZE_SWAP_MS = 120;
@@ -476,6 +488,7 @@ class Game {
     // `measure('level', 1, 'start')`, e um evento de progresso antes do fim do
     // carregamento inverte a ordem que o sdkcheck cobra.
     poki.gameLoadingFinished();
+    this.ligaMarcosDeTempo();
     if (entraJogando) this.startLevel(1);
     else this.show('home');
     // Quem ja jogava antes dos premios de mundo recebe, uma vez, os dos mundos
@@ -502,6 +515,27 @@ class Game {
         if (this.screen === 'game') this.aplicaHud();
       });
     });
+  }
+
+  /**
+   * Conta o tempo de aba visivel e solta os marcos de `MARCOS_MIN`. O tempo de
+   * um intervalo comercial conta - a Poki mede tempo na pagina -, mas o marco
+   * que cair dentro dele espera o fim: `poki.measure` descarta evento ali.
+   */
+  ligaMarcosDeTempo() {
+    /** Segundos de aba visivel. Publico para a automacao poder adiantar. */
+    this.tempoVisivelS = 0;
+    let proximo = 0;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      this.tempoVisivelS += 1;
+      if (poki.inBreak) return;
+      while (proximo < MARCOS_MIN.length && this.tempoVisivelS >= MARCOS_MIN[proximo] * 60) {
+        poki.measure('tempo', `min-${MARCOS_MIN[proximo]}`, 'visible');
+        proximo++;
+      }
+      if (proximo >= MARCOS_MIN.length) window.clearInterval(timer);
+    }, 1000);
   }
 
   bindHomeSwipe() {

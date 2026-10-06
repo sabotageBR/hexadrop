@@ -198,6 +198,14 @@ funis da Poki guiaram as trocas:
   56 viram a tela inicial, 6 abriram a loja e 2 compraram algo. Daí a 1.0.12: a barra
   do próximo hexágono, a chuva de moedas no fim de cada mundo e o mundo 3 com uma linha
   a menos.
+- **1.0.11, um Player Fit Test** (só desktop: a mão em 0,6 s, o cartão sobre a torre, o
+  cursor e o `tap1`): **4:19**, média aparada de 219 s — empate de novo. O teste teve
+  **43% de desktop**, contra 28% na 1.0.10; com a mesma mistura de aparelhos, o modelo
+  de sobrevivência por fase deu 196 contra 191. O `tap1` explicou a fase 1 do desktop:
+  **15,8% abrem e nunca tocam** (3,6% no celular), e quem toca toca logo — metade em
+  3 s, 90% em 8 s — e conclui a fase 1 como no celular (~92%). Esses 16% não estavam
+  jogando, e mudança de jogo não os alcança. O desktop ainda perde ~14% por fase nas 2 a
+  10, contra ~10% no celular.
 
 **Como ler o painel.** A perda de uma fase é **1 − Completed**, e não *Left*: *Left* só
 conta quem sai com a fase começada e nada depois, e quem sai depois de uma volta de
@@ -210,6 +218,14 @@ em 15 min e as frações acima de 3, 5 e 10 min. E só se compara teste com o me
 público (categorias e aparelhos): o filtro de categoria sozinho muda o começo do funil.
 Para pedir outra revisão, a barra é média aparada de **~290 s** e **10%** das partidas
 passando de 10 min, num Player Fit Test com o público da 1.0.9.
+
+**A mistura de aparelhos muda de um teste para outro** (28% de desktop na 1.0.10, 43%
+na 1.0.11), e o desktop perde mais: a média de dois testes só se compara com a mesma
+mistura. A lista de durações não diz o aparelho; quem diz são os **marcos de tempo**
+(`tempo / min-N / visible`, 1.0.12), contados por partida com o filtro de aparelho e de
+usuário novo — a curva de sobrevivência por aparelho. E um teste só não enxerga
+mudança de ~10%: 500 partidas dão uns ±18 s na média aparada, e o mesmo build da
+1.0.10 variou 17 s entre duas rodadas. **Rode dois testes por versão.**
 
 **Altura é a alavanca do tempo de fase; pedestal e altura decidem o perdão.** Medido
 com seis colunas, sobre o pedestal largo antigo:
@@ -1285,7 +1301,10 @@ antes do `advanceLevel`: o intervalo comercial vem logo depois do selo. O hexág
 comprado pelas moedas sai como `premio / desbloqueio / visible` e
 `premio / desbloqueio-<id> / ganho`, e a chuva como `chuva / mundo-N / visible` ao
 abrir e `interact` no primeiro toque que derruba peça — a fração que toca é a medida
-de se ela é entendida.
+de se ela é entendida. Os marcos de tempo de sessão (`MARCOS_MIN` em `main.js`)
+saem como `tempo / min-N / visible` aos 1, 2, 3, 5, 7, 10 e 15 minutos de aba visível
+desde o fim do carregamento, uma vez cada; o marco que cair num intervalo comercial
+espera o fim dele. O primeiro toque das fases 1 a 3 sai como `level / N / tap1`.
 
 Os **nomes** do mapa mudam com mais cuidado que os ids: um nome trocado quebra a série
 histórica do relatório. O mesmo nome em telas diferentes é de propósito onde a ação é a
