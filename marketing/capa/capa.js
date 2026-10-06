@@ -197,8 +197,8 @@ function desenha() {
   pintaEstilhacos(ctx, hx, vaoY);
 
   // O hexagono do jogo, um pouco inclinado na queda. A skin de sempre, ou a
-  // pedida em `?skin=` - a variante com rosto usa a `sunny`, o primeiro premio
-  // de mundo da 1.0.8, para medir se um personagem puxa mais clique.
+  // pedida em `?skin=` - a variante com rosto usa a `smiley`, o primeiro premio
+  // de mundo, para medir se um personagem puxa mais clique.
   const raio = HEX_RADIUS * 1.15;
   const skinId = new URLSearchParams(window.location.search).get('skin') || 'classic';
   const hex = cache.hexagon(raio, getSkin(skinId));

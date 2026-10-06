@@ -34,27 +34,49 @@ export const SKINS = [
     rank: 0,
     model: 'joia',
   },
-  // A trilha de premios de mundo (1.0.8), na ordem em que sai - os mundos
-  // impares, 1 a 19. Desenhos novos, escolhidos pelo Evandro na vitrine de
-  // candidatos (prototypes/premios.html), todos sem halo. O preco e o de quem
-  // quer adiantar; quando o mundo chega, as moedas voltam.
-  { id: 'sunny', nameKey: 'skinSunny', name: 'Carinha sol', cost: 120, rank: 0, model: 'carinha', fill: '#ffc93c', stroke: '#9a6a00', core: '#fff3cf', halo: false },
-  { id: 'strawberry', nameKey: 'skinStrawberry', name: 'Listras morango', cost: 180, rank: 0, model: 'listras', fill: '#ff4d7a', stroke: '#a01a42', core: '#ffe3ec', halo: false },
-  { id: 'pinwheel', nameKey: 'skinPinwheel', name: 'Catavento turquesa', cost: 240, rank: 0, model: 'catavento', fill: '#19c3d6', stroke: '#0a6f7a', core: '#e2fcff', halo: false },
-  { id: 'bubblegum', nameKey: 'skinBubblegum', name: 'Bolinhas chiclete', cost: 300, rank: 0, model: 'bolinhas', fill: '#ff7ac8', stroke: '#a3307a', core: '#fff0f8', halo: false },
-  { id: 'nightstar', nameKey: 'skinNightstar', name: 'Estrela da noite', cost: 360, rank: 0, model: 'estrela', fill: '#2e3fbf', stroke: '#141f6e', core: '#ffe36a', halo: false },
-  { id: 'pixelleaf', nameKey: 'skinPixelLeaf', name: 'Pixel folha', cost: 420, rank: 0, model: 'pixel', fill: '#3fcf5a', stroke: '#1b6e2a', core: '#e9ffe9', halo: false },
-  { id: 'grape', nameKey: 'skinGrape', name: 'Roseta uva', cost: 480, rank: 0, model: 'roseta', fill: '#8b5cff', stroke: '#4a22b0', core: '#f1e9ff', halo: false },
-  { id: 'graphite', nameKey: 'skinGraphite', name: 'Xadrez grafite', cost: 540, rank: 0, model: 'xadrez', fill: '#30334a', stroke: '#8a8fb0', core: '#5b6080', halo: false },
-  { id: 'pixelember', nameKey: 'skinPixelEmber', name: 'Pixel brasa', cost: 600, rank: 0, model: 'pixel', fill: '#ff4a3d', stroke: '#8a1810', core: '#ffe2dc', halo: false },
-  { id: 'rosy', nameKey: 'skinRosy', name: 'Carinha rosa', cost: 660, rank: 0, model: 'carinha', fill: '#ff8fb8', stroke: '#a3406a', core: '#fff0f6', halo: false },
-  // So de loja. A do video e a oferta de recompensa da loja (moedas OU video,
-  // nunca so o video); as tres caras dao destino a moeda que sobra depois dos
-  // premios - bau, reembolso e premio repetido viram moeda.
-  { id: 'tangerine', nameKey: 'skinTangerine', name: 'Xadrez laranja', cost: 350, rank: 0, rewarded: true, model: 'xadrez', fill: '#ff9a3c', stroke: '#9a4a00', core: '#ffc98f', halo: false },
-  { id: 'sunwheel', nameKey: 'skinSunwheel', name: 'Catavento laranja', cost: 900, rank: 0, model: 'catavento', fill: '#ff8a1e', stroke: '#9a4a00', core: '#fff0d8', halo: false },
-  { id: 'lemondrop', nameKey: 'skinLemondrop', name: 'Bolinhas sol', cost: 1200, rank: 0, model: 'bolinhas', fill: '#ffc21e', stroke: '#9a6a00', core: '#fff7d6', halo: false },
-  { id: 'mintstripe', nameKey: 'skinMintstripe', name: 'Listras menta', cost: 1500, rank: 0, model: 'listras', fill: '#2fd6a0', stroke: '#13805c', core: '#eafff6', halo: false },
+  // Um hexagono por mundo (1.0.12): os quatorze que o Evandro escolheu na
+  // galeria de 92 (prototypes/galeria.html), na ordem em que o jogador os
+  // ganha - os impares sao premio de mundo (WORLD_PRIZES), os quatro de
+  // HEX_DA_BARRA a barra de moedas compra nos mundos pares 2, 4, 6 e 8. A
+  // ordem alterna rosto, comida, bola e objeto, para dois seguidos nunca serem
+  // do mesmo tipo, e abre com o rosto: o primeiro premio e o que mais gente ve.
+  //
+  // Trilha: o preco e o de quem quer adiantar na loja; quando o mundo chega,
+  // as moedas voltam.
+  { id: 'smiley', nameKey: 'skinSmiley', name: 'Feliz', cost: 120, rank: 0, model: 'feliz', fill: '#ffc93c', stroke: '#947523', core: '#fff3cf', halo: false },
+  { id: 'watermelon', nameKey: 'skinWatermelon', name: 'Melancia', cost: 180, rank: 0, model: 'melancia', fill: '#2f9e44', stroke: '#1b6a2a', core: '#ff4d63', halo: false },
+  { id: 'robot', nameKey: 'skinRobot', name: 'Robo', cost: 240, rank: 0, model: 'robo', fill: '#9aa6bf', stroke: '#4d5360', core: '#4fe3ff', halo: false },
+  { id: 'soccer', nameKey: 'skinSoccer', name: 'Bola de futebol', cost: 300, rank: 0, model: 'futebol', fill: '#f6f7fb', stroke: '#7c84a6', core: '#1d1a2b', halo: false },
+  { id: 'cheese', nameKey: 'skinCheese', name: 'Queijo', cost: 360, rank: 0, model: 'queijo', fill: '#ffcf3a', stroke: '#a87410', core: '#e0a31a', halo: false },
+  { id: 'grumpy', nameKey: 'skinGrumpy', name: 'Bravo', cost: 420, rank: 0, model: 'bravo', fill: '#ff4d4d', stroke: '#942d2d', core: '#ffe0e0', halo: false },
+  { id: 'friedegg', nameKey: 'skinFriedEgg', name: 'Ovo frito', cost: 480, rank: 0, model: 'ovo', fill: '#f7f9ff', stroke: '#b6bdd8', core: '#ffb21e', halo: false },
+  { id: 'clock', nameKey: 'skinClock', name: 'Relogio', cost: 540, rank: 0, model: 'relogio', fill: '#4f8bff', stroke: '#22489e', core: '#fbfbff', halo: false },
+  { id: 'tartan', nameKey: 'skinTartan', name: 'Xadrez escoces', cost: 600, rank: 0, model: 'escoces', fill: '#c4242f', stroke: '#6a0f18', core: '#ffd65a', halo: false },
+  { id: 'skully', nameKey: 'skinSkully', name: 'Caveirinha', cost: 660, rank: 0, model: 'caveirinha', fill: '#3a2a55', stroke: '#7c6aa8', core: '#f2f0ea', halo: false },
+  // Barra de moedas: precos para encher dentro do mundo em que ela compra. A
+  // primeira tambem e a oferta de video da loja (moedas OU video, nunca so o
+  // video).
+  { id: 'shades', nameKey: 'skinShades', name: 'Descolado', cost: 220, rank: 0, rewarded: true, model: 'descolado', fill: '#4fb3ff', stroke: '#2e6894', core: '#1d1a2b', halo: false },
+  { id: 'basketball', nameKey: 'skinBasketball', name: 'Bola de basquete', cost: 300, rank: 0, model: 'basquete', fill: '#ff7a1a', stroke: '#803d0d', core: '#1d1a2b', halo: false },
+  { id: 'pizza', nameKey: 'skinPizza', name: 'Pizza', cost: 450, rank: 0, model: 'pizza', fill: '#d98b3a', stroke: '#8a4a12', core: '#ffd24a', halo: false },
+  { id: 'gamepad', nameKey: 'skinGamepad', name: 'Controle', cost: 500, rank: 0, model: 'controle', fill: '#ff5f7a', stroke: '#8c3443', core: '#2c2f45', halo: false },
+  // Aposentadas na 1.0.12: os desenhos da 1.0.8 (trilha e barra), que o
+  // Evandro trocou pelos da galeria. Saem da loja e da trilha, mas quem ja tem
+  // continua podendo equipar.
+  { retired: true, id: 'sunny', nameKey: 'skinSunny', name: 'Carinha sol', cost: 120, rank: 0, model: 'carinha', fill: '#ffc93c', stroke: '#9a6a00', core: '#fff3cf', halo: false },
+  { retired: true, id: 'strawberry', nameKey: 'skinStrawberry', name: 'Listras morango', cost: 180, rank: 0, model: 'listras', fill: '#ff4d7a', stroke: '#a01a42', core: '#ffe3ec', halo: false },
+  { retired: true, id: 'pinwheel', nameKey: 'skinPinwheel', name: 'Catavento turquesa', cost: 240, rank: 0, model: 'catavento', fill: '#19c3d6', stroke: '#0a6f7a', core: '#e2fcff', halo: false },
+  { retired: true, id: 'bubblegum', nameKey: 'skinBubblegum', name: 'Bolinhas chiclete', cost: 300, rank: 0, model: 'bolinhas', fill: '#ff7ac8', stroke: '#a3307a', core: '#fff0f8', halo: false },
+  { retired: true, id: 'nightstar', nameKey: 'skinNightstar', name: 'Estrela da noite', cost: 360, rank: 0, model: 'estrela', fill: '#2e3fbf', stroke: '#141f6e', core: '#ffe36a', halo: false },
+  { retired: true, id: 'pixelleaf', nameKey: 'skinPixelLeaf', name: 'Pixel folha', cost: 420, rank: 0, model: 'pixel', fill: '#3fcf5a', stroke: '#1b6e2a', core: '#e9ffe9', halo: false },
+  { retired: true, id: 'grape', nameKey: 'skinGrape', name: 'Roseta uva', cost: 480, rank: 0, model: 'roseta', fill: '#8b5cff', stroke: '#4a22b0', core: '#f1e9ff', halo: false },
+  { retired: true, id: 'graphite', nameKey: 'skinGraphite', name: 'Xadrez grafite', cost: 540, rank: 0, model: 'xadrez', fill: '#30334a', stroke: '#8a8fb0', core: '#5b6080', halo: false },
+  { retired: true, id: 'pixelember', nameKey: 'skinPixelEmber', name: 'Pixel brasa', cost: 600, rank: 0, model: 'pixel', fill: '#ff4a3d', stroke: '#8a1810', core: '#ffe2dc', halo: false },
+  { retired: true, id: 'rosy', nameKey: 'skinRosy', name: 'Carinha rosa', cost: 660, rank: 0, model: 'carinha', fill: '#ff8fb8', stroke: '#a3406a', core: '#fff0f6', halo: false },
+  { retired: true, id: 'tangerine', nameKey: 'skinTangerine', name: 'Xadrez laranja', cost: 700, rank: 0, rewarded: true, model: 'xadrez', fill: '#ff9a3c', stroke: '#9a4a00', core: '#ffc98f', halo: false },
+  { retired: true, id: 'sunwheel', nameKey: 'skinSunwheel', name: 'Catavento laranja', cost: 400, rank: 0, model: 'catavento', fill: '#ff8a1e', stroke: '#9a4a00', core: '#fff0d8', halo: false },
+  { retired: true, id: 'lemondrop', nameKey: 'skinLemondrop', name: 'Bolinhas sol', cost: 450, rank: 0, model: 'bolinhas', fill: '#ffc21e', stroke: '#9a6a00', core: '#fff7d6', halo: false },
+  { retired: true, id: 'mintstripe', nameKey: 'skinMintstripe', name: 'Listras menta', cost: 500, rank: 0, model: 'listras', fill: '#2fd6a0', stroke: '#13805c', core: '#eafff6', halo: false },
   // Aposentadas na 1.0.8: o Evandro nao gosta delas, e as de miolo aceso
   // (nucleo, vidro, cristal) tinham a mancha radial que ele ja tinha rejeitado
   // no hexagono padrao. Saem da loja, mas quem comprou continua podendo
@@ -187,10 +209,10 @@ export const BONUS_COINS_PER_PIECE = 3;
 export const BONUS_XP_PER_PIECE = 2;
 
 /**
- * Chuva de moedas (1.0.12): na ultima fase de cada mundo, quando o hexagono
- * pousa, o jogador tem alguns segundos para estourar o que sobrou tocando, e
- * cada peca que ele derruba vale o dobro da que sobra intacta para a cascata.
- * O dobro e de proposito: tocar tem que valer mais que esperar.
+ * Chuva de moedas (1.0.12): na ultima fase de cada mundo a cascata da
+ * celebracao vira chuva, e cada peca que sobrou estoura sozinha valendo o
+ * dobro da intacta de uma fase comum. E o premio de chegar ao fim do mundo,
+ * antes do premio do mundo - sem depender de toque nenhum.
  */
 export const CHUVA_COINS_PER_PIECE = BONUS_COINS_PER_PIECE * 2;
 
@@ -297,25 +319,25 @@ export const UPGRADES = [
  * @type {Prize[]}
  */
 export const WORLD_PRIZES = [
-  { skin: 'sunny' },
+  { skin: 'smiley' },
   { upgrade: 'stability' },
-  { skin: 'strawberry' },
+  { skin: 'watermelon' },
   { upgrade: 'grip' },
-  { skin: 'pinwheel' },
+  { skin: 'robot' },
   { upgrade: 'fortune' },
-  { skin: 'bubblegum' },
+  { skin: 'soccer' },
   { upgrade: 'stability' },
-  { skin: 'nightstar' },
+  { skin: 'cheese' },
   { upgrade: 'grip' },
-  { skin: 'pixelleaf' },
+  { skin: 'grumpy' },
   { upgrade: 'fortune' },
-  { skin: 'grape' },
+  { skin: 'friedegg' },
   { upgrade: 'stability' },
-  { skin: 'graphite' },
+  { skin: 'clock' },
   { upgrade: 'grip' },
-  { skin: 'pixelember' },
+  { skin: 'tartan' },
   { upgrade: 'fortune' },
-  { skin: 'rosy' },
+  { skin: 'skully' },
 ];
 
 /** Bau do fim da campanha (mundo 20, fase 100). */
@@ -345,6 +367,23 @@ export function worldPrize(world, worldCount) {
 export function prizeWorldOfSkin(id) {
   return WORLD_PRIZES.findIndex((p) => 'skin' in p && p.skin === id);
 }
+
+/**
+ * Os hexagonos que a barra de moedas compra, na ordem (1.0.12).
+ *
+ * Um hexagono por mundo: os impares dao o da trilha como premio, os pares a
+ * partir do 2 dao o da barra (`BARRA_DESDE_MUNDO`, `Progress.unlockNextSkin`),
+ * no maximo um por mundo. Os precos sao para a barra encher dentro do mundo em
+ * que ela compra: medido com o jogador automatico, uma fase rende ~35 moedas
+ * nas primeiras vinte, entao 220 chega pela fase 8 e 300 pela 17.
+ */
+export const HEX_DA_BARRA = ['shades', 'basketball', 'pizza', 'gamepad'];
+
+/**
+ * Primeiro mundo (0-based) em que a barra pode comprar: o 2. Dali em diante
+ * ela compra nos pares, entre um premio de mundo e o seguinte.
+ */
+export const BARRA_DESDE_MUNDO = 1;
 
 /**
  * Proximo mundo (0-based), a partir de `from`, cujo premio e um nivel desta

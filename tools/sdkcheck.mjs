@@ -172,33 +172,17 @@ async function ganhar() {
  * caminho - e o unico momento em que da para ver se o premio de mundo entrou.
  * @param {number} nivel
  */
-async function ganharEsperando(nivel, tocarNaChuva = false) {
+async function ganharEsperando(nivel, verChuva = false) {
   await ganhar();
   let selo = null;
-  // Fim de mundo: a chuva de moedas (main.js, CHUVA_S) vem antes da cascata e
-  // do premio. Aqui da para conferir que ela abriu e que o toque estoura peca.
+  // Fim de mundo: a cascata da celebracao vira a chuva de moedas (main.js,
+  // startCelebration), sozinha - as pecas estouram sem toque nenhum.
   /** @type {*} */
   let chuva = null;
-  if (tocarNaChuva) {
-    await sleep(600);
-    // A mesma mira de tocar(): o meio de uma celula, e so de peca na tela - o
-    // centro de massa de um L cai no vao, e a camera nao mostra a torre toda.
-    const alvo = await js(`(() => { const g = window.__game.scene; const s = g.session; if (!s || !s.chuva) return null;
-      for (const p of s.world.alivePieces()) {
-        if (!p.body.isDynamic() || p.material === 'obsidian') continue;
-        const cell = p.cells[Math.floor(p.cells.length / 2)];
-        const lx = cell[0] + 0.5 - p.cw / 2, ly = cell[1] + 0.5 - p.ch / 2;
-        const pos = p.body.getPosition(), a = p.body.getAngle();
-        const [x, y] = g.camera.toScreen(pos.x + lx * Math.cos(a) - ly * Math.sin(a), pos.y + lx * Math.sin(a) + ly * Math.cos(a));
-        if (x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) return { x: Math.round(x), y: Math.round(y) };
-      }
-      return null; })()`);
-    if (alvo) {
-      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: alvo.x, y: alvo.y, button: 'left', clickCount: 1 }, sessionId);
-      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: alvo.x, y: alvo.y, button: 'left', clickCount: 1 }, sessionId);
-      await sleep(500);
-    }
-    chuva = await js(`(() => { const s = window.__game.scene.session; return { aberta: !!s && (s.chuva || s.chuvaPieces > 0), pecas: s ? s.chuvaPieces : 0, tocou: ${alvo ? 'true' : 'false'} }; })()`);
+  if (verChuva) {
+    await sleep(500);
+    chuva = await js(`(() => { const b = document.getElementById('bonusBox'); return { aberta: !b.hidden && b.classList.contains('chuva'),
+      brilho: document.getElementById('s-game').classList.contains('chuva'), placar: document.getElementById('bonusCount').textContent }; })()`);
   }
   for (let t = 0; t < 110; t++) {
     const st = await js(`({screen: window.__game.screen, level: window.__game.level, advancing: window.__game.advancing,
@@ -364,11 +348,34 @@ await sleep(1500);
 // equipada, e a fase 6 entra com o hexagono novo (main.js, `showPrize`).
 await js('window.__game.progress.data.prizes = (window.__game.progress.data.prizes || []).filter((w) => w !== 0)');
 await js('window.__game.progress.data.skins = window.__game.progress.data.skins.filter((id) => id === "classic")');
+// As vitorias forcadas de antes (10, 20, 30) podem ter comprado pela barra:
+// zera tambem o mundo da ultima compra, senao a do mundo 2 nao repete.
+await js('window.__game.progress.data.barraMundo = -1');
 await js('window.__game.startLevel(5)');
 await sleep(1200);
 const fimDoMundo1 = await ganharEsperando(5);
 const skinPremio = await js(`(() => { const g = window.__game; return { salva: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id }; })()`);
 await sleep(600);
+
+// A barra de moedas compra o proximo hexagono so nos mundos pares, a partir
+// do 2 (Progress.unlockNextSkin): um hexagono por mundo, os impares sao premio.
+// Com a bolsa cheia, vencer a 7 (mundo 2) compra; a 12 (mundo 3) nao compra
+// nada; a 18 (mundo 4, sem premio de mundo) compra o seguinte - cada compra
+// revelada e equipada na cena.
+await js('window.__game.progress.data.coins = 99999');
+const skinAntesDaCompra = await js('window.__game.progress.data.skin');
+await js('window.__game.startLevel(7)');
+await sleep(1200);
+await ganharEsperando(7);
+const compraNo2 = await js(`(() => { const g = window.__game; return { skin: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id }; })()`);
+await js('window.__game.startLevel(12)');
+await sleep(1200);
+await ganharEsperando(12);
+const semCompraNo3 = await js('window.__game.progress.data.skin');
+await js('window.__game.startLevel(18)');
+await sleep(1200);
+await ganharEsperando(18);
+const compra = await js(`(() => { const g = window.__game; return { skin: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id }; })()`);
 
 // So a fase 100 para o fluxo, e so por uma vez a cada vitoria: e o fim da
 // campanha, com o cartao e o video de dobrar premio. Dali "proxima" leva a
@@ -391,13 +398,7 @@ for (let t = 0; t < 40; t++) {
   await sleep(250);
 }
 await sleep(800);
-// As moedas compram o proximo hexagono assim que chegam ao preco (main.js,
-// finishWin -> Progress.unlockNextSkin): com a bolsa cheia, vencer a 101 - que
-// nao fecha mundo - revela e equipa um hexagono comprado, sem cartao.
-const skinAntesDaCompra = await js('window.__game.progress.data.skin');
-await js('window.__game.progress.data.coins = 99999');
 const depois101 = await ganharEsperando(101);
-const compra = await js(`(() => { const g = window.__game; return { skin: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id }; })()`);
 await sleep(500);
 await js('window.__game.quitLevel()');
 await sleep(900);
@@ -591,15 +592,18 @@ check(
   check('marcos de tempo saem uma vez cada, na ordem, a partir de min-1', marcos[0] === 1 && ordem, marcos.join(' ') || 'nenhum');
 }
 check(
-  'fim de mundo abre a chuva de moedas, e o toque estoura peca (fase 20)',
-  !!fronteiraCedo && !!fronteiraCedo.chuva && fronteiraCedo.chuva.aberta === true && fronteiraCedo.chuva.pecas >= 1 &&
-    measures.includes('chuva/mundo-4/visible') && measures.includes('chuva/mundo-4/interact'),
+  'fim de mundo vira chuva de moedas sozinha, sem toque (fase 20)',
+  !!fronteiraCedo && !!fronteiraCedo.chuva && fronteiraCedo.chuva.aberta === true && fronteiraCedo.chuva.brilho === true &&
+    measures.includes('chuva/mundo-4/visible'),
   JSON.stringify(fronteiraCedo && fronteiraCedo.chuva),
 );
 check(
-  'moedas compram e equipam o proximo hexagono, sem cartao (fase 101)',
-  !!compra && compra.skin !== skinAntesDaCompra && compra.skin === compra.cena && measures.includes('premio/desbloqueio/visible'),
-  JSON.stringify({ skinAntesDaCompra, compra }),
+  'a barra compra no mundo 2, nao no 3, e de novo no 4, equipando sem cartao (fases 7, 12 e 18)',
+  !!compraNo2 && compraNo2.skin !== skinAntesDaCompra && compraNo2.skin === compraNo2.cena &&
+    semCompraNo3 === compraNo2.skin &&
+    !!compra && compra.skin !== compraNo2.skin && compra.skin === compra.cena &&
+    measures.includes('premio/desbloqueio/visible'),
+  JSON.stringify({ skinAntesDaCompra, compraNo2, semCompraNo3, compra }),
 );
 check('a home oferece a fase depois da 101', typeof botaoHome === 'string' && botaoHome.includes('102'), String(botaoHome));
 {

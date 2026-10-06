@@ -45,6 +45,22 @@ export const HEX_MODELS = [
   { id: 'pixel', nome: 'Pixel', desc: 'O hexagono em pixel art, luz de cima.' },
   { id: 'carinha', nome: 'Carinha', desc: 'A joia com olhos e sorriso.' },
   { id: 'xadrez', nome: 'Xadrez', desc: 'Losangos em dois tons.' },
+  // Os quatorze da 1.0.12, escolhidos pelo Evandro na galeria de 92
+  // (prototypes/galeria.html). Recortados pela silhueta; ver `DESENHOS`.
+  { id: 'feliz', nome: 'Feliz', desc: 'Carinha sorrindo, bochechas rosadas.' },
+  { id: 'descolado', nome: 'Descolado', desc: 'Oculos escuros e meio sorriso.' },
+  { id: 'bravo', nome: 'Bravo', desc: 'Sobrancelhas franzidas e boca para baixo.' },
+  { id: 'robo', nome: 'Robo', desc: 'Visor com olhos de LED e rebites.' },
+  { id: 'caveirinha', nome: 'Caveirinha', desc: 'Caveira de olhos rosados sobre o roxo.' },
+  { id: 'melancia', nome: 'Melancia', desc: 'Fatia com casca, miolo e sementes.' },
+  { id: 'pizza', nome: 'Pizza', desc: 'Borda, queijo, calabresa e manjericao.' },
+  { id: 'queijo', nome: 'Queijo', desc: 'Queijo com furos.' },
+  { id: 'ovo', nome: 'Ovo frito', desc: 'Clara e gema.' },
+  { id: 'futebol', nome: 'Bola de futebol', desc: 'Gomos pretos sobre o branco.' },
+  { id: 'basquete', nome: 'Bola de basquete', desc: 'Laranja com as costuras.' },
+  { id: 'relogio', nome: 'Relogio', desc: 'Mostrador com ponteiros.' },
+  { id: 'controle', nome: 'Controle', desc: 'Controle de videogame.' },
+  { id: 'escoces', nome: 'Xadrez escoces', desc: 'Tecido xadrez vermelho.' },
 ];
 
 export const HEX_MODEL_IDS = HEX_MODELS.map((m) => m.id);
@@ -873,6 +889,297 @@ const PINTORES = {
     filete(ctx, cx, cy, r, corpo);
   },
 };
+
+// ------------------------------------------------- os quatorze da galeria ----
+//
+// Os hexagonos da 1.0.12, escolhidos pelo Evandro entre os 92 de
+// `prototypes/galeria.html` (ele nao gostou dos da 1.0.8). O desenho e o da
+// galeria, traco por traco: corpo chapado, faixa de luz em cima e de sombra
+// embaixo, aro grosso por dentro da silhueta e nada de halo nem mancha radial.
+// O corpo principal vem de `fill` da skin; os detalhes (casca, recheio, olhos)
+// sao do proprio desenho. Todos rodam recortados pela silhueta (`DESENHOS`,
+// embrulhados em `paintHexModel`): o que escapasse dela faria a peca parecer
+// maior que o corpo fisico.
+
+const TINTA = '#1d1a2b';
+const VOLTA = Math.PI * 2;
+
+/** Aro por dentro da silhueta, mais grosso que o `filete` da 1.0.8. */
+function aro(ctx, cx, cy, r, cor) {
+  const w = Math.max(1.2, r * 0.075);
+  ctx.save();
+  hexPath(ctx, cx, cy, r - w / 2);
+  ctx.lineWidth = w;
+  ctx.strokeStyle = cor;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+function chapa(ctx, cx, cy, r, cor) {
+  hexPath(ctx, cx, cy, r);
+  ctx.fillStyle = cor;
+  ctx.fill();
+}
+/** Faixa chapada clara no alto e escura no terco de baixo: volume sem degrade. */
+function volume(ctx, cx, cy, r, luz, sombra) {
+  if (luz > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${luz})`;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 0.45);
+  }
+  if (sombra > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${sombra})`;
+    ctx.fillRect(cx - r, cy + r * 0.32, r * 2, r);
+  }
+}
+function bola(ctx, x, y, rr, cor) {
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(0.1, rr), 0, VOLTA);
+  ctx.fillStyle = cor;
+  ctx.fill();
+}
+function oval(ctx, x, y, rx, ry, cor, giro = 0) {
+  ctx.beginPath();
+  ctx.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), giro, 0, VOLTA);
+  ctx.fillStyle = cor;
+  ctx.fill();
+}
+function chapaPts(ctx, pts, cor) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = cor;
+  ctx.fill();
+}
+function risco(ctx, pts, cor, w) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.strokeStyle = cor;
+  ctx.lineWidth = Math.max(0.8, w);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+function curva(ctx, x, y, rr, a0, a1, cor, w) {
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(0.1, rr), a0, a1);
+  ctx.strokeStyle = cor;
+  ctx.lineWidth = Math.max(0.8, w);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+}
+/** Retangulo de cantos redondos, sem depender de `ctx.roundRect`. */
+function caixa(ctx, x, y, w, h, raio, cor) {
+  const k = Math.min(raio, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + k, y);
+  ctx.arcTo(x + w, y, x + w, y + h, k);
+  ctx.arcTo(x + w, y + h, x, y + h, k);
+  ctx.arcTo(x, y + h, x, y, k);
+  ctx.arcTo(x, y, x + w, y, k);
+  ctx.closePath();
+  ctx.fillStyle = cor;
+  ctx.fill();
+}
+/** Olho de bolinha com um ponto de brilho. */
+function pontinho(ctx, x, y, s, cor = TINTA) {
+  bola(ctx, x, y, s, cor);
+  bola(ctx, x + s * 0.35, y - s * 0.35, s * 0.32, '#ffffff');
+}
+function sorriso(ctx, x, y, w, lw) {
+  curva(ctx, x, y - w * 0.55, w, Math.PI * 0.22, Math.PI * 0.78, TINTA, lw);
+}
+function bochechas(ctx, cx, cy, r) {
+  oval(ctx, cx - r * 0.48, cy + r * 0.14, r * 0.13, r * 0.08, 'rgba(255,110,140,0.45)');
+  oval(ctx, cx + r * 0.48, cy + r * 0.14, r * 0.13, r * 0.08, 'rgba(255,110,140,0.45)');
+}
+/** Corpo, luz, sombra, o rosto por cima e o aro: a base das tres carinhas. */
+function rosto(ctx, cx, cy, r, cor, desenho) {
+  chapa(ctx, cx, cy, r, cor);
+  volume(ctx, cx, cy, r, 0.16, 0.1);
+  desenho();
+  aro(ctx, cx, cy, r, escuro(cor, 0.42));
+}
+
+/** @type {Record<string, (ctx:CanvasRenderingContext2D, cx:number, cy:number, r:number, c:Cores)=>void>} */
+const DESENHOS = {
+  feliz(ctx, cx, cy, r, c) {
+    rosto(ctx, cx, cy, r, c.fill, () => {
+      pontinho(ctx, cx - r * 0.28, cy - r * 0.12, r * 0.11);
+      pontinho(ctx, cx + r * 0.28, cy - r * 0.12, r * 0.11);
+      sorriso(ctx, cx, cy + r * 0.2, r * 0.3, r * 0.09);
+      bochechas(ctx, cx, cy, r);
+    });
+  },
+
+  descolado(ctx, cx, cy, r, c) {
+    rosto(ctx, cx, cy, r, c.fill, () => {
+      const y = cy - r * 0.14;
+      caixa(ctx, cx - r * 0.6, y - r * 0.13, r * 0.52, r * 0.28, r * 0.1, TINTA);
+      caixa(ctx, cx + r * 0.08, y - r * 0.13, r * 0.52, r * 0.28, r * 0.1, TINTA);
+      risco(ctx, [[cx - r * 0.1, y - r * 0.05], [cx + r * 0.1, y - r * 0.05]], TINTA, r * 0.07);
+      risco(ctx, [[cx - r * 0.5, y - r * 0.06], [cx - r * 0.36, y - r * 0.06]], 'rgba(255,255,255,0.6)', r * 0.04);
+      risco(ctx, [[cx - r * 0.15, cy + r * 0.3], [cx + r * 0.2, cy + r * 0.22]], TINTA, r * 0.08);
+    });
+  },
+
+  bravo(ctx, cx, cy, r, c) {
+    rosto(ctx, cx, cy, r, c.fill, () => {
+      pontinho(ctx, cx - r * 0.28, cy - r * 0.06, r * 0.1);
+      pontinho(ctx, cx + r * 0.28, cy - r * 0.06, r * 0.1);
+      risco(ctx, [[cx - r * 0.45, cy - r * 0.32], [cx - r * 0.14, cy - r * 0.18]], TINTA, r * 0.09);
+      risco(ctx, [[cx + r * 0.45, cy - r * 0.32], [cx + r * 0.14, cy - r * 0.18]], TINTA, r * 0.09);
+      curva(ctx, cx, cy + r * 0.48, r * 0.24, Math.PI * 1.2, Math.PI * 1.8, TINTA, r * 0.09);
+    });
+  },
+
+  robo(ctx, cx, cy, r, c) {
+    const cor = c.fill;
+    chapa(ctx, cx, cy, r, cor);
+    volume(ctx, cx, cy, r, 0, 0.12);
+    caixa(ctx, cx - r * 0.5, cy - r * 0.34, r, r * 0.56, r * 0.12, '#1b2236');
+    ctx.fillStyle = '#4fe3ff';
+    ctx.fillRect(cx - r * 0.32, cy - r * 0.16, r * 0.18, r * 0.14);
+    ctx.fillRect(cx + r * 0.14, cy - r * 0.16, r * 0.18, r * 0.14);
+    risco(ctx, [[cx - r * 0.16, cy + r * 0.08], [cx + r * 0.16, cy + r * 0.08]], '#4fe3ff', r * 0.05);
+    for (const [x, y] of [[-0.6, -0.5], [0.6, -0.5], [-0.6, 0.5], [0.6, 0.5]]) bola(ctx, cx + r * x, cy + r * y, r * 0.06, escuro(cor, 0.35));
+    risco(ctx, [[cx, cy - r * 0.866 + r * 0.04], [cx, cy - r * 0.42]], escuro(cor, 0.4), r * 0.05);
+    aro(ctx, cx, cy, r, escuro(cor, 0.5));
+  },
+
+  caveirinha(ctx, cx, cy, r, c) {
+    const fundo = c.fill;
+    const osso = '#f2f0ea';
+    chapa(ctx, cx, cy, r, fundo);
+    oval(ctx, cx, cy - r * 0.1, r * 0.52, r * 0.46, osso);
+    ctx.fillStyle = osso;
+    ctx.fillRect(cx - r * 0.28, cy + r * 0.2, r * 0.56, r * 0.28);
+    oval(ctx, cx - r * 0.2, cy - r * 0.1, r * 0.13, r * 0.15, fundo);
+    oval(ctx, cx + r * 0.2, cy - r * 0.1, r * 0.13, r * 0.15, fundo);
+    chapaPts(ctx, [[cx - r * 0.05, cy + r * 0.14], [cx + r * 0.05, cy + r * 0.14], [cx, cy + r * 0.06]], fundo);
+    for (let i = 0; i < 3; i++) risco(ctx, [[cx - r * 0.12 + i * r * 0.12, cy + r * 0.3], [cx - r * 0.12 + i * r * 0.12, cy + r * 0.46]], fundo, r * 0.03);
+    bola(ctx, cx - r * 0.2, cy - r * 0.12, r * 0.05, '#ff5fa2');
+    bola(ctx, cx + r * 0.2, cy - r * 0.12, r * 0.05, '#ff5fa2');
+    aro(ctx, cx, cy, r, c.stroke);
+  },
+
+  melancia(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    chapa(ctx, cx, cy, r * 0.84, '#e9fbd8');
+    chapa(ctx, cx, cy, r * 0.76, '#ff4d63');
+    for (const [x, y] of [[-0.3, -0.24], [0.1, -0.34], [0.36, -0.06], [-0.1, 0.06], [-0.38, 0.22], [0.2, 0.28], [0.0, -0.08]]) oval(ctx, cx + r * x, cy + r * y, r * 0.04, r * 0.065, TINTA, 0.3);
+    aro(ctx, cx, cy, r, c.stroke);
+  },
+
+  pizza(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    chapa(ctx, cx, cy, r * 0.82, '#ffd24a');
+    ctx.save();
+    hexPath(ctx, cx, cy, r * 0.82);
+    ctx.clip();
+    for (const [x, y] of [[-0.34, -0.3], [0.3, -0.36], [0.42, 0.18], [-0.1, 0.06], [-0.4, 0.3], [0.1, 0.42]]) {
+      bola(ctx, cx + r * x, cy + r * y, r * 0.13, '#d63a2f');
+      bola(ctx, cx + r * x - r * 0.04, cy + r * y - r * 0.04, r * 0.03, '#ff7a6a');
+    }
+    for (const [x, y] of [[0.0, -0.42], [-0.5, -0.02], [0.24, -0.06]]) oval(ctx, cx + r * x, cy + r * y, r * 0.07, r * 0.04, '#3fa34d', 0.6);
+    ctx.restore();
+    aro(ctx, cx, cy, r, c.stroke);
+  },
+
+  queijo(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    volume(ctx, cx, cy, r, 0, 0.08);
+    for (const [x, y, s] of [[-0.42, -0.36, 0.16], [0.3, -0.42, 0.11], [0.5, 0.1, 0.18], [-0.06, 0.02, 0.13], [-0.5, 0.32, 0.12], [0.18, 0.5, 0.1], [-0.2, -0.62, 0.08]]) {
+      bola(ctx, cx + r * x, cy + r * y, r * s, '#e0a31a');
+      bola(ctx, cx + r * x + r * s * 0.2, cy + r * y + r * s * 0.2, r * s * 0.7, '#c9890e');
+    }
+    aro(ctx, cx, cy, r, c.stroke);
+  },
+
+  ovo(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    bola(ctx, cx + r * 0.06, cy + r * 0.04, r * 0.36, '#ffb21e');
+    bola(ctx, cx - r * 0.06, cy - r * 0.08, r * 0.09, '#ffe8a8');
+    aro(ctx, cx, cy, r, c.stroke);
+  },
+
+  futebol(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    const gomo = (x, y, s, giro) => {
+      const pts = [];
+      for (let i = 0; i < 5; i++) {
+        const a = giro + (i * VOLTA) / 5 - Math.PI / 2;
+        pts.push([x + Math.cos(a) * s, y + Math.sin(a) * s]);
+      }
+      chapaPts(ctx, pts, TINTA);
+    };
+    gomo(cx, cy, r * 0.24, 0);
+    for (let i = 0; i < 5; i++) {
+      const a = (i * VOLTA) / 5 - Math.PI / 2;
+      risco(ctx, [[cx + Math.cos(a) * r * 0.24, cy + Math.sin(a) * r * 0.24], [cx + Math.cos(a) * r * 0.62, cy + Math.sin(a) * r * 0.62]], TINTA, r * 0.04);
+      gomo(cx + Math.cos(a) * r * 0.86, cy + Math.sin(a) * r * 0.86, r * 0.2, Math.PI);
+    }
+    aro(ctx, cx, cy, r, c.stroke);
+  },
+
+  basquete(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    risco(ctx, [[cx - r, cy], [cx + r, cy]], TINTA, r * 0.06);
+    risco(ctx, [[cx, cy - r], [cx, cy + r]], TINTA, r * 0.06);
+    curva(ctx, cx - r * 1.05, cy, r * 0.7, -Math.PI / 2, Math.PI / 2, TINTA, r * 0.06);
+    curva(ctx, cx + r * 1.05, cy, r * 0.7, Math.PI / 2, Math.PI * 1.5, TINTA, r * 0.06);
+    aro(ctx, cx, cy, r, escuro(c.fill, 0.5));
+  },
+
+  relogio(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    chapa(ctx, cx, cy, r * 0.8, '#fbfbff');
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * VOLTA;
+      const r0 = i % 3 ? r * 0.58 : r * 0.5;
+      risco(ctx, [[cx + Math.cos(a) * r0, cy + Math.sin(a) * r0], [cx + Math.cos(a) * r * 0.64, cy + Math.sin(a) * r * 0.64]], TINTA, r * 0.04);
+    }
+    risco(ctx, [[cx, cy], [cx, cy - r * 0.42]], TINTA, r * 0.07);
+    risco(ctx, [[cx, cy], [cx + r * 0.3, cy + r * 0.1]], '#e8333b', r * 0.05);
+    bola(ctx, cx, cy, r * 0.06, TINTA);
+    aro(ctx, cx, cy, r, c.stroke);
+  },
+
+  controle(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    caixa(ctx, cx - r * 0.66, cy - r * 0.3, r * 1.32, r * 0.6, r * 0.28, '#2c2f45');
+    ctx.fillStyle = '#f2f4fb';
+    ctx.fillRect(cx - r * 0.46, cy - r * 0.04, r * 0.3, r * 0.09);
+    ctx.fillRect(cx - r * 0.355, cy - r * 0.15, r * 0.09, r * 0.3);
+    bola(ctx, cx + r * 0.3, cy - r * 0.08, r * 0.07, '#ffd84a');
+    bola(ctx, cx + r * 0.44, cy + r * 0.06, r * 0.07, '#4fc3ff');
+    aro(ctx, cx, cy, r, escuro(c.fill, 0.45));
+  },
+
+  escoces(ctx, cx, cy, r, c) {
+    chapa(ctx, cx, cy, r, c.fill);
+    for (let i = -3; i <= 3; i++) {
+      ctx.fillStyle = 'rgba(20,24,60,0.42)';
+      ctx.fillRect(cx + i * r * 0.5 - r * 0.12, cy - r, r * 0.24, r * 2);
+      ctx.fillRect(cx - r, cy + i * r * 0.5 - r * 0.12, r * 2, r * 0.24);
+      ctx.fillStyle = 'rgba(255,214,90,0.8)';
+      ctx.fillRect(cx + i * r * 0.5 + r * 0.2, cy - r, r * 0.035, r * 2);
+      ctx.fillRect(cx - r, cy + i * r * 0.5 + r * 0.2, r * 2, r * 0.035);
+    }
+    aro(ctx, cx, cy, r, c.stroke);
+  },
+};
+
+for (const [id, desenho] of Object.entries(DESENHOS)) {
+  PINTORES[id] = (ctx, cx, cy, r, c) => {
+    ctx.save();
+    hexPath(ctx, cx, cy, r);
+    ctx.clip();
+    desenho(ctx, cx, cy, r, c);
+    ctx.restore();
+  };
+}
 
 /**
  * Contorno comum a quase todos os modelos.

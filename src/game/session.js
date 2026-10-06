@@ -66,8 +66,6 @@ export class Session {
    * @param {(n:number, x:number, y:number)=>void} [opts.onCombo]
    * @param {(done:number, total:number, x?:number, y?:number)=>void} [opts.onBonusPiece]
    * @param {(total:number)=>void} [opts.onBonusDone]
-   * @param {(n:number, x?:number, y?:number)=>void} [opts.onChuvaPiece]
-   * @param {(n:number)=>void} [opts.onChuvaDone]
    * @param {number} [opts.autoHintAfter] segundos parado ate a dica acender sozinha; 0 desliga
    * @param {()=>void} [opts.onAutoHint]
    */
@@ -81,8 +79,6 @@ export class Session {
     this.onCombo = opts.onCombo || null;
     this.onBonusPiece = opts.onBonusPiece || null;
     this.onBonusDone = opts.onBonusDone || null;
-    this.onChuvaPiece = opts.onChuvaPiece || null;
-    this.onChuvaDone = opts.onChuvaDone || null;
     /** Hook externo de destruicao, chamado depois da contagem de combo. */
     this._destroyHook = opts.onDestroy || null;
 
@@ -124,13 +120,6 @@ export class Session {
     this.bonusElapsed = 0;
     this.bonusOutro = BONUS_OUTRO;
     this.bonusHurry = false;
-
-    // Chuva de moedas: a fase ja foi vencida, e por alguns segundos o toque
-    // estoura o que sobrou valendo moeda. Vem antes da cascata.
-    this.chuva = false;
-    this.chuvaResta = 0;
-    /** Pecas que cairam durante a chuva, fora as que so sairam da tela. */
-    this.chuvaPieces = 0;
 
     // --- combo -----------------------------------------------------------
     this.comboOpen = false;
@@ -178,16 +167,6 @@ export class Session {
    * @param {string} cause
    */
   _onDestroy(piece, cause) {
-    // Na chuva conta tudo que o toque derrubou - inclusive o que uma bomba ou
-    // uma TNT levou junto -, menos o que so saiu da tela.
-    if (this.chuva && cause !== 'cleanup' && cause !== 'bonus') {
-      this.chuvaPieces++;
-      if (this.onChuvaPiece) {
-        const pos = piece.body ? piece.body.getPosition() : null;
-        if (pos) this.onChuvaPiece(this.chuvaPieces, pos.x, pos.y);
-        else this.onChuvaPiece(this.chuvaPieces);
-      }
-    }
     // 'cleanup' e peca que caiu para fora da tela e 'bonus' e a celebracao:
     // nenhum dos dois e merito do jogador, entao nao entram no combo.
     if (this.comboOpen && cause !== 'cleanup' && cause !== 'bonus') {
@@ -248,51 +227,6 @@ export class Session {
     this.bonusHurry = false;
     this.bonus = vivas.length > 0;
     return this.bonusTotal;
-  }
-
-  /**
-   * Abre a chuva de moedas sobre a fase ja vencida.
-   *
-   * O estado ('won' ou 'stuck') continua congelado, como na cascata: nada que
-   * caia agora muda o resultado. Sem peca para estourar, nao ha chuva.
-   * @param {number} segundos
-   * @returns {boolean} se abriu
-   */
-  startChuva(segundos) {
-    if (this.chuva || this.bonus || !this.finished) return false;
-    const vivas = this.world.alivePieces().filter((p) => getMaterial(p.material).destructible);
-    if (!vivas.length) return false;
-    this.chuva = true;
-    this.chuvaResta = segundos;
-    this.chuvaPieces = 0;
-    return true;
-  }
-
-  /**
-   * Toque durante a chuva: estoura a peca, sem contar como toque da fase - o
-   * bonus de resolver dentro da meta de toques ja foi decidido.
-   * @param {number} worldX
-   * @param {number} worldY
-   * @param {number} [fingerRadius]
-   * @returns {{piece:*, ok:boolean}|null}
-   */
-  chuvaTap(worldX, worldY, fingerRadius = 0) {
-    if (!this.chuva || this.paused) return null;
-    const piece = this.world.pickAt(worldX, worldY, fingerRadius);
-    if (!piece) return null;
-    if (!getMaterial(piece.material).destructible) return { piece, ok: false };
-    this.world.destroyPiece(piece, 'tap');
-    return { piece, ok: true };
-  }
-
-  /** @param {number} dt */
-  _stepChuva(dt) {
-    this.elapsed += dt;
-    this.chuvaResta -= dt;
-    this.world.step(dt);
-    if (this.chuvaResta > 0 && this.world.destructibleCount > 0) return;
-    this.chuva = false;
-    if (this.onChuvaDone) this.onChuvaDone(this.chuvaPieces);
   }
 
   /**
@@ -421,10 +355,6 @@ export class Session {
   /** @param {number} dt */
   step(dt) {
     if (this.paused) return;
-    if (this.chuva) {
-      this._stepChuva(dt);
-      return;
-    }
     if (this.bonus) {
       this._stepBonus(dt);
       return;

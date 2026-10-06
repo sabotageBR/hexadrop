@@ -631,16 +631,17 @@ e ainda vale moeda. `tools/playsweep.mjs` espera a tela sair de `game` antes de 
 resultado — sem isso toda vitória com muitas peças vira "ainda jogando"; é por isso
 que ele desliga o fluxo contínuo (abaixo).
 
-**Na última fase de cada mundo, antes da cascata, vem a chuva de moedas** (1.0.12,
-`CHUVA_S` em `main.js`, `Session.startChuva`): o hexágono pousou, a fase já está ganha,
-e por 8 s o toque volta a estourar peça — cada uma que cai vale
-`CHUVA_COINS_PER_PIECE` (o dobro da intacta da cascata), inclusive o que uma bomba ou
-TNT leva junto, menos o que só sai da tela. Acaba antes se não sobrar peça, e o que
-sobrou estoura na cascata de sempre. O estado continua congelado (`won`/`stuck`) e
-`evaluate()` não roda: nada do que cai muda o resultado. O toque da chuva não conta em
-`taps`, senão tirava o bônus da meta de toques. É a regra diferente a cada cinco fases,
-de ação pura, para o trecho depois da 11, em que só mudavam céu e dificuldade. Só no
-jogo corrido: o `playsweep` e o `thumbnail` desligam o fluxo e não a veem.
+**Na última fase de cada mundo a cascata vira a chuva de moedas** (1.0.12,
+`startCelebration` em `main.js`): a mesma cascata, sozinha, com cada peça que sobrou
+valendo `CHUVA_COINS_PER_PIECE` (o dobro da intacta de uma fase comum), o placar
+dourado ("Chuva de moedas! / Moedas em dobro!"), o brilho pulsando nas bordas da cena e
+uma moeda voando para o contador a cada estouro. **Não depende de toque** — tocar só
+apressa, como em qualquer cascata. A primeira versão era um frenesi de 8 s em que o
+jogador estourava as peças tocando, e o Evandro a trocou por esta: a recompensa de
+chegar ao fim do mundo não pode depender de o jogador entender que tinha que tocar. É
+o momento diferente a cada cinco fases, antes do prêmio do mundo, para o trecho depois
+da 11, em que só mudavam céu e dificuldade. Só no jogo corrido: o `playsweep` e o
+`thumbnail` desligam o fluxo e não a veem.
 
 ### Prêmios de fim de mundo
 
@@ -684,12 +685,22 @@ o mundo e ganhe isto"): a meta só puxa se o jogador souber que ela existe.
 a barra e `moedas/preço` (`#gameMeta`, `atualizaMeta()`) —, e quando ela enche a vitória
 seguinte o compra, equipa e mostra na mesma revelação do prêmio de mundo, com
 "Desbloqueado!" no título. Se a mesma vitória já tem prêmio de mundo, a compra espera a
-próxima. O alvo é a skin mais barata que o jogador ainda não tem, fora as aposentadas:
-com ~50 moedas por fase a primeira (120) cai por volta da fase 3, e daí uma a cada
-poucas fases. Como o prêmio de um mundo ímpar pode chegar com a skin já comprada,
-`resolvePrize` passa para o próximo hexágono que o jogador não tem, em vez de virar
-troco; só a migração de save antigo continua devolvendo as moedas (`alternativa`
-falso). O motivo: no teste da 1.0.10, de 1.018 jogadores novos, 6 abriram a loja.
+próxima. O motivo: no teste da 1.0.10, de 1.018 jogadores novos, 6 abriram a loja.
+
+**Um hexágono por mundo**, pedido do Evandro: os mundos ímpares dão o da trilha como
+prêmio (o Feliz na 5, a Melancia na 15…), e a barra compra nos **pares a partir do 2**
+(`BARRA_DESDE_MUNDO`), no máximo uma vez por mundo (`barraMundo` no save). Ela compra
+`HEX_DA_BARRA`, na ordem, e nunca os da trilha. Os preços são para a barra encher
+dentro do mundo em que compra — 220, 300, 450 e 500: medido com o jogador automático,
+uma fase rende ~35 moedas nas vinte primeiras, então o Descolado sai pela fase 8 e a
+Bola de basquete pela 17. Com a barra cheia fora de um mundo em que pode comprar, a
+compra espera. Assim os nove primeiros mundos dão um hexágono cada (Feliz, Descolado,
+Melancia, Basquete, Robô, Pizza, Futebol, Controle, Queijo) e daí em diante só os
+ímpares, porque são quatorze. Já houve duas versões antes desta: a primeira comprava a
+skin mais barata de qualquer tipo, e o prêmio do mundo 1 virava o do mundo 3 duas fases
+depois; a segunda segurava o primeiro prêmio por dois mundos (a barra só a partir do 4,
+custando 700), e o Evandro a desfez. Prêmio de skin já comprada (só pela loja, agora)
+continua virando as moedas do preço.
 
 O save ganhou `prizes` (mundos entregues) **sem trocar `SAVE_VERSION`**. Um save da
 versão 3 sem o campo passa por `migrarPremios()`, uma vez: recebe os prêmios dos
@@ -697,11 +708,11 @@ mundos que já concluiu, sem equipar, com skin já comprada virando as moedas do
 melhoria no máximo passando para a próxima (`resolvePrize`). A loja acende um ponto e a
 home avisa. `tools/savecheck.mjs` cobre esses perfis.
 
-**As skins da trilha são desenhos novos** (ver "O hexágono e seus modelos"), e comprar
-antes é adiantar, nunca perder: a loja diz "Conclua o mundo N" com o preço, e quando o
-mundo chega as moedas voltam. Fora da trilha ficam a skin de vídeo (moedas OU vídeo,
-nunca só o vídeo) e três skins caras, que dão destino à moeda que os baús, os
-reembolsos e os prêmios repetidos produzem.
+**As skins da trilha são os desenhos da galeria** (ver "O hexágono e seus modelos"), e
+comprar antes é adiantar, nunca perder: a loja diz "Conclua o mundo N" com o preço, e
+quando o mundo chega as moedas voltam. Fora da trilha ficam só as quatro da barra; a
+primeira delas, o Descolado, é também a skin de vídeo da loja (moedas OU vídeo, nunca só
+o vídeo).
 
 ### O primeiro carregamento entra jogando
 
@@ -836,8 +847,8 @@ ele joga a fase 1 (a 2 tem que entrar sozinha), força cinco derrotas seguidas n
 quatro primeiras recomeçam sozinhas com `fail` → `start`, a terceira já em outro
 layout, e a quinta abre o cartão), confere a rampa de derrota (10 sem limite, 11 e 15
 com duas voltas, 16 e 20 com uma, 21 sem volta) e que três quedas de verdade na 11 dão
-volta, volta e derrota, vence pela força a 20 (com a chuva de moedas aberta e um toque
-que estoura peça) e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
+volta, volta e derrota, vence pela força a 20 (a cascata tem que abrir como chuva de
+moedas, sem toque nenhum) e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
 selo) e a 5 (o hexágono novo equipado na 6), confere que só a 100 para o fluxo, e
 segue do cartão da 100 para a 101 e a 102 — a 101 com a bolsa cheia, para ver a moeda
 comprar e equipar um hexágono. A vitória forçada grava as estrelas em
@@ -1022,19 +1033,24 @@ quadrado arredondado com o azul do tema neon cravado — a skin "Original" apare
 mesmo no mundo puzzle, onde o hexágono é amarelo, nenhuma tinha forma de hexágono, e a
 loja vendia cor.
 
-**As skins da 1.0.8 são desenhos novos**, e não recolores: nove modelos chapados —
-`catavento`, `listras`, `roseta`, `estrela`, `duo`, `bolinhas`, `pixel`, `carinha` e
-`xadrez` —, escolhidos pelo Evandro na vitrine `prototypes/premios.html`, que desenha
-cada candidato com o mesmo pintor do jogo sobre cinco temas e nos tamanhos de jogo,
-selo e HUD. A trilha, na ordem dos mundos ímpares: `sunny` (carinha), `strawberry`
-(listras), `pinwheel` (catavento), `bubblegum` (bolinhas), `nightstar` (estrela),
-`pixelleaf` (pixel), `grape` (roseta), `graphite` (xadrez), `pixelember` (pixel) e
-`rosy` (carinha). O primeiro tem rosto de propósito: é o prêmio que mais gente vê.
+**As skins da 1.0.12 são os quatorze da galeria.** O Evandro não gostou dos hexágonos da
+1.0.8 e escolheu estes entre os 92 de `prototypes/galeria.html` — que desenha cada
+candidato num céu escuro e num claro, nos tamanhos grande, de fase e de HUD, e guarda a
+seleção no navegador. Os escolhidos viraram modelos em `DESENHOS` (`hexmodels.js`),
+copiados traço por traço da galeria: corpo chapado, faixa de luz e de sombra, aro grosso
+por dentro e **tudo recortado pela silhueta**, que é o que garante que nenhum detalhe
+(pavio, orelha, bandeirinha) passe do corpo físico. O corpo vem do `fill` da skin; o
+resto é do desenho. Na ordem em que o jogador ganha: `smiley` (feliz), `shades`
+(descolado, barra), `watermelon`, `basketball` (barra), `robot`, `pizza` (barra),
+`soccer`, `gamepad` (barra), `cheese`, `grumpy`, `friedegg`, `clock`, `tartan` e
+`skully` — alternando rosto, comida, bola e objeto, para dois seguidos nunca serem do
+mesmo tipo. O primeiro tem rosto de propósito: é o prêmio que mais gente vê.
 
-**As oito skins antigas foram aposentadas** (`retired: true`): o Evandro não gosta
-delas, e as de miolo aceso (`nucleo`, `vidro`, `cristal`) tinham a mancha radial que
-ele já tinha rejeitado no hexágono padrão. Elas saem da loja, mas quem comprou
-continua podendo equipar — por isso continuam em `SKINS`.
+**As skins da 1.0.8 e as oito de antes foram aposentadas** (`retired: true`): o Evandro
+não gosta delas, e as de miolo aceso (`nucleo`, `vidro`, `cristal`) tinham a mancha
+radial que ele já tinha rejeitado no hexágono padrão. Elas saem da loja e da trilha, mas
+quem as tem continua podendo equipar — por isso continuam em `SKINS`, e os modelos delas
+em `hexmodels.js`.
 
 **Skin nova é sem halo** (`halo: false`): `brilhoDaSkin()` (`render/sprites.js`) passa
 no máximo 0,4 de brilho ao modelo, o ponto em que `contorno()` não vira halo borrado nem
@@ -1300,8 +1316,7 @@ mesmo nome quando o toque adianta o selo, e `premio / skin-<id>` (ou `melhoria-<
 antes do `advanceLevel`: o intervalo comercial vem logo depois do selo. O hexágono
 comprado pelas moedas sai como `premio / desbloqueio / visible` e
 `premio / desbloqueio-<id> / ganho`, e a chuva como `chuva / mundo-N / visible` ao
-abrir e `interact` no primeiro toque que derruba peça — a fração que toca é a medida
-de se ela é entendida. Os marcos de tempo de sessão (`MARCOS_MIN` em `main.js`)
+abrir. Os marcos de tempo de sessão (`MARCOS_MIN` em `main.js`)
 saem como `tempo / min-N / visible` aos 1, 2, 3, 5, 7, 10 e 15 minutos de aba visível
 desde o fim do carregamento, uma vez cada; o marco que cair num intervalo comercial
 espera o fim dele. O primeiro toque das fases 1 a 3 sai como `level / N / tap1`.

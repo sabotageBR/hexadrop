@@ -1357,22 +1357,10 @@ html[data-hud='lateral'] .tut.perto {
 @keyframes metaCheia { 50% { transform: scale(1.18); } }
 
 /* ----------------------------------------------------------- chuva de moedas
-   O painel da contagem vira o placar da chuva, com a barra do tempo embaixo, e
-   a borda da cena ganha um brilho dourado que pulsa enquanto ela dura. */
+   Na ultima fase de cada mundo a cascata vira a chuva: o painel da contagem fica
+   dourado e a borda da cena ganha um brilho que pulsa enquanto ela dura. */
 .bonus.chuva { padding: 10px 26px 12px; border: 1px solid var(--gold); }
 .bonus.chuva .bonus-label { color: var(--gold); font-weight: 900; letter-spacing: 0.04em; }
-.bonus-timer {
-  display: block;
-  width: 100%;
-  height: 4px;
-  margin-top: 6px;
-  border-radius: 2px;
-  background: var(--gold);
-  transform-origin: left center;
-  animation: chuvaTempo 8s linear forwards;
-}
-.bonus-timer[hidden] { display: none; }
-@keyframes chuvaTempo { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 #s-game.chuva::after {
   content: "";
   position: absolute;

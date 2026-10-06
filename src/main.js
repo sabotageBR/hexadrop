@@ -225,18 +225,6 @@ const FLOW_SEAL_MS = 1000;
  */
 const FLOW_PRIZE_MS = 2200;
 
-/**
- * Chuva de moedas: segundos que o jogador tem, na ultima fase de cada mundo,
- * para estourar tocando o que sobrou da torre (`Session.startChuva`).
- *
- * A 1.0.10 mostrou o jogador saindo num ritmo constante de ~0,3 por minuto do
- * minuto 1 ao 7, sem nada que fizesse quem esta jogando ha cinco minutos sair
- * menos que quem esta ha um. Ate a fase 11 cada fase estreava uma peca; dali
- * em diante so trocavam o ceu e a dificuldade. A chuva e uma regra diferente a
- * cada cinco fases, de acao pura - a Poki mede que jogo em que o jogador age o
- * tempo todo rende mais que jogo de espera -, e vem antes do premio do mundo.
- */
-const CHUVA_S = 8;
 
 /**
  * Marcos de tempo de sessao, em minutos de aba visivel desde o fim do
@@ -1030,8 +1018,6 @@ class Game {
         onCombo: (n, x, y) => this.onCombo(n, x, y),
         onBonusPiece: (done, total, x, y) => this.onBonusPiece(done, total, x, y),
         onBonusDone: () => this.finishWin(),
-        onChuvaPiece: (n, x, y) => this.onChuvaPiece(n, x, y),
-        onChuvaDone: () => this.onChuvaDone(),
       },
     });
     session.par = variant[1];
@@ -1380,12 +1366,6 @@ class Game {
       // fazem parte do premio, e a contagem delas acontece no canvas, antes do
       // cartao entrar.
       this.pendingWin = { stars, won: state === 'won' };
-      // Ultima fase do mundo: antes da cascata, a chuva de moedas. Fora do jogo
-      // corrido (playsweep) nao, para a fase continuar medida sozinha.
-      if (this.flowLevels && this.atWorldEnd() && session.startChuva(CHUVA_S)) {
-        this.showChuva();
-        return;
-      }
       this.startCelebration(session);
     } else {
       this.lossStreak++;
@@ -1407,17 +1387,28 @@ class Game {
   /**
    * A cascata da celebracao: as pecas que sobraram estouram uma a uma e o
    * resultado e gravado no fim dela (finishWin).
+   *
+   * Na ultima fase de cada mundo ela e a chuva de moedas: a mesma cascata,
+   * sozinha, com cada peca valendo o dobro (`CHUVA_COINS_PER_PIECE`), o placar
+   * dourado e as moedas voando para o contador. A 1.0.10 mostrou o jogador
+   * saindo num ritmo constante de ~0,3 por minuto do minuto 1 ao 7, e da fase
+   * 11 em diante so trocavam o ceu e a dificuldade: a chuva e um momento
+   * diferente a cada cinco fases, antes do premio do mundo. Ela nao depende de
+   * toque - tocar so apressa, como em qualquer cascata. Fora do jogo corrido
+   * (playsweep) nao ha chuva, para a fase continuar medida sozinha.
    * @param {*} session
    */
   startCelebration(session) {
     const sobraram = session.startBonus();
-    if (sobraram > 0) this.showBonusCounter(sobraram);
+    this.chuvaAtiva = sobraram > 0 && this.flowLevels && this.atWorldEnd();
+    if (this.chuvaAtiva) this.showChuva();
+    else if (sobraram > 0) this.showBonusCounter(sobraram);
     else window.setTimeout(() => this.finishWin(), 700);
   }
 
   /**
-   * Abre a chuva de moedas: o painel da contagem vira o placar da chuva, com a
-   * barra do tempo, e a cena ganha o brilho dourado.
+   * Abre a chuva de moedas: o painel da contagem vira o placar dourado e a cena
+   * ganha o brilho nas bordas.
    */
   showChuva() {
     const box = $('bonusBox');
@@ -1425,11 +1416,6 @@ class Game {
       $('bonusLabel').textContent = t('chuvaTitle');
       $('bonusCount').textContent = '+0';
       $('bonusGain').textContent = t('chuvaHint');
-      const barra = $('bonusTimer');
-      barra.style.animationDuration = `${CHUVA_S}s`;
-      barra.hidden = true;
-      void barra.offsetWidth;
-      barra.hidden = false;
       box.classList.add('chuva');
       box.hidden = false;
     }
@@ -1437,47 +1423,13 @@ class Game {
     /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = true;
     /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = true;
     audio.prize();
-    this.chuvaEv = `mundo-${this.origem.mundo + 1}`;
-    this.chuvaTocou = false;
-    poki.measure('chuva', this.chuvaEv, 'visible');
-  }
-
-  /**
-   * Uma peca caiu durante a chuva.
-   * @param {number} n pecas ate aqui
-   * @param {number} [x] em metros
-   * @param {number} [y]
-   */
-  onChuvaPiece(n, x, y) {
-    if (!this.chuvaTocou) {
-      this.chuvaTocou = true;
-      poki.measure('chuva', this.chuvaEv || 'mundo', 'interact');
-    }
-    audio.coin(n);
-    const count = $('bonusCount');
-    if (count) {
-      count.textContent = `+${n * CHUVA_COINS_PER_PIECE}`;
-      count.classList.remove('pop');
-      void count.offsetWidth;
-      count.classList.add('pop');
-    }
-    this.scene.camera.addTrauma(0.08);
-    if (x !== undefined && y !== undefined) this.floatText(`+${CHUVA_COINS_PER_PIECE}`, x, y, 'coin');
-  }
-
-  /** A chuva acabou: o que sobrou estoura na cascata de sempre. */
-  onChuvaDone() {
-    this.hideChuva();
-    const session = this.scene.session;
-    if (!session || !this.pendingWin || this.screen !== 'game') return;
-    this.startCelebration(session);
+    poki.measure('chuva', `mundo-${this.origem.mundo + 1}`, 'visible');
   }
 
   hideChuva() {
+    this.chuvaAtiva = false;
     const box = document.getElementById('bonusBox');
     if (box) box.classList.remove('chuva');
-    const barra = document.getElementById('bonusTimer');
-    if (barra) barra.hidden = true;
     const tela = document.getElementById('s-game');
     if (tela) tela.classList.remove('chuva');
   }
@@ -1619,16 +1571,17 @@ class Game {
       won: pend.won,
       taps: session.taps,
       par: session.par || 0,
-      bonusPieces: session.bonusTotal,
+      bonusPieces: this.chuvaAtiva ? 0 : session.bonusTotal,
       comboScore: session.comboScore,
       comboPieces: session.comboPieces,
-      chuvaPieces: session.chuvaPieces,
+      chuvaPieces: this.chuvaAtiva ? session.bonusTotal : 0,
     });
+    this.hideChuva();
     // As moedas compram o proximo hexagono assim que chegam ao preco. Com
     // premio de mundo na mesma vitoria, o desbloqueio espera a seguinte: duas
     // revelacoes juntas seriam um recado so.
     if (!result.prize && this.flowContinues()) {
-      /** @type {*} */ (result).unlock = this.progress.unlockNextSkin();
+      /** @type {*} */ (result).unlock = this.progress.unlockNextSkin(this.origem.mundo);
     }
     this.lastResult = result;
     // Dentro de um mundo o jogo nao para: o premio vira um selo sobre a cena e
@@ -1706,7 +1659,7 @@ class Game {
     $('flowCoins').textContent = moedas > 0 ? `+${moedas}` : '';
     // De onde veio o extra, com o mesmo texto do cartao: peca intacta e combo
     // sao coisas que o jogador pode repetir de proposito na fase seguinte.
-    const sobraram = session && session.bonusTotal ? session.bonusTotal : result.bonusPieces || 0;
+    const sobraram = result.chuvaPieces > 0 ? 0 : session && session.bonusTotal ? session.bonusTotal : result.bonusPieces || 0;
     const partes = [];
     if (result.chuvaPieces > 0) partes.push(`${t('chuvaSeal')} x${result.chuvaPieces}`);
     if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
@@ -2159,6 +2112,19 @@ class Game {
    */
   onBonusPiece(done, total, x, y) {
     audio.bonusPop(done, total);
+    if (this.chuvaAtiva) {
+      const count = $('bonusCount');
+      count.textContent = `+${done * CHUVA_COINS_PER_PIECE}`;
+      count.classList.remove('pop');
+      void count.offsetWidth;
+      count.classList.add('pop');
+      audio.coin(done);
+      this.scene.camera.addTrauma(0.1 + (done / Math.max(1, total)) * 0.16);
+      if (x !== undefined && y !== undefined) this.floatText(`+${CHUVA_COINS_PER_PIECE}`, x, y, 'coin');
+      // A chuva: cada estouro solta uma moeda que voa para o contador do HUD.
+      this.flyCoins(count, 1, 0, $('gameCoins'));
+      return;
+    }
     const count = $('bonusCount');
     if (count) {
       count.textContent = String(done);
@@ -2244,7 +2210,9 @@ class Game {
     if (bonusEl) {
       if (ganho > 0) {
         const partes = [];
-        if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
+        // Na fase 100 a cascata e a chuva de moedas: as mesmas pecas, em dobro.
+        if (result.chuvaPieces > 0) partes.push(`${t('chuvaSeal')} x${result.chuvaPieces}`);
+        else if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
         if (session && session.bestCombo > 1) partes.push(`${t('combo')} x${session.bestCombo}`);
         $('winBonusLbl').textContent = t('bonusTitle');
         $('winBonusWhat').textContent = partes.join('  \u00b7  ');
@@ -2492,11 +2460,12 @@ class Game {
       won: pend.won,
       taps: session.taps,
       par: session.par || 0,
-      bonusPieces: session.bonusDone,
+      bonusPieces: this.chuvaAtiva ? 0 : session.bonusDone,
       comboScore: session.comboScore,
       comboPieces: session.comboPieces,
-      chuvaPieces: session.chuvaPieces,
+      chuvaPieces: this.chuvaAtiva ? session.bonusDone : 0,
     });
+    this.hideChuva();
   }
 
   async nextLevel() {
