@@ -35,11 +35,12 @@ export const SKINS = [
     model: 'joia',
   },
   // Um hexagono por mundo (1.0.12): os quatorze que o Evandro escolheu na
-  // galeria de 92 (prototypes/galeria.html), na ordem em que o jogador os
-  // ganha - os impares sao premio de mundo (WORLD_PRIZES), os quatro de
-  // HEX_DA_BARRA a barra de moedas compra nos mundos pares 2, 4, 6 e 8. A
-  // ordem alterna rosto, comida, bola e objeto, para dois seguidos nunca serem
-  // do mesmo tipo, e abre com o rosto: o primeiro premio e o que mais gente ve.
+  // galeria de 92 (prototypes/galeria.html). Os dez daqui sao premio dos
+  // mundos impares; os quatro da barra, logo abaixo, a barra de moedas compra
+  // no fim dos mundos pares 2, 4, 6 e 8 (`barra` em WORLD_PRIZES). Na ordem em
+  // que o jogador os ganha, a sequencia alterna rosto, comida, bola e objeto,
+  // para dois seguidos nunca serem do mesmo tipo, e abre com o rosto: o
+  // primeiro premio e o que mais gente ve.
   //
   // Trilha: o preco e o de quem quer adiantar na loja; quando o mundo chega,
   // as moedas voltam.
@@ -53,13 +54,14 @@ export const SKINS = [
   { id: 'clock', nameKey: 'skinClock', name: 'Relogio', cost: 540, rank: 0, model: 'relogio', fill: '#4f8bff', stroke: '#22489e', core: '#fbfbff', halo: false },
   { id: 'tartan', nameKey: 'skinTartan', name: 'Xadrez escoces', cost: 600, rank: 0, model: 'escoces', fill: '#c4242f', stroke: '#6a0f18', core: '#ffd65a', halo: false },
   { id: 'skully', nameKey: 'skinSkully', name: 'Caveirinha', cost: 660, rank: 0, model: 'caveirinha', fill: '#3a2a55', stroke: '#7c6aa8', core: '#f2f0ea', halo: false },
-  // Barra de moedas: precos para encher dentro do mundo em que ela compra. A
+  // Barra de moedas: o preco e o que um mundo de cinco fases rende, porque a
+  // barra conta so as moedas do proprio mundo (ver `barraDoMundo`). A
   // primeira tambem e a oferta de video da loja (moedas OU video, nunca so o
   // video).
-  { id: 'shades', nameKey: 'skinShades', name: 'Descolado', cost: 220, rank: 0, rewarded: true, model: 'descolado', fill: '#4fb3ff', stroke: '#2e6894', core: '#1d1a2b', halo: false },
-  { id: 'basketball', nameKey: 'skinBasketball', name: 'Bola de basquete', cost: 300, rank: 0, model: 'basquete', fill: '#ff7a1a', stroke: '#803d0d', core: '#1d1a2b', halo: false },
-  { id: 'pizza', nameKey: 'skinPizza', name: 'Pizza', cost: 450, rank: 0, model: 'pizza', fill: '#d98b3a', stroke: '#8a4a12', core: '#ffd24a', halo: false },
-  { id: 'gamepad', nameKey: 'skinGamepad', name: 'Controle', cost: 500, rank: 0, model: 'controle', fill: '#ff5f7a', stroke: '#8c3443', core: '#2c2f45', halo: false },
+  { id: 'shades', nameKey: 'skinShades', name: 'Descolado', cost: 200, rank: 0, rewarded: true, model: 'descolado', fill: '#4fb3ff', stroke: '#2e6894', core: '#1d1a2b', halo: false },
+  { id: 'basketball', nameKey: 'skinBasketball', name: 'Bola de basquete', cost: 200, rank: 0, model: 'basquete', fill: '#ff7a1a', stroke: '#803d0d', core: '#1d1a2b', halo: false },
+  { id: 'pizza', nameKey: 'skinPizza', name: 'Pizza', cost: 220, rank: 0, model: 'pizza', fill: '#d98b3a', stroke: '#8a4a12', core: '#ffd24a', halo: false },
+  { id: 'gamepad', nameKey: 'skinGamepad', name: 'Controle', cost: 260, rank: 0, model: 'controle', fill: '#ff5f7a', stroke: '#8c3443', core: '#2c2f45', halo: false },
   // Aposentadas na 1.0.12: os desenhos da 1.0.8 (trilha e barra), que o
   // Evandro trocou pelos da galeria. Saem da loja e da trilha, mas quem ja tem
   // continua podendo equipar.
@@ -291,7 +293,9 @@ export const UPGRADES = [
 ];
 
 /**
- * @typedef {{skin:string}|{upgrade:string}|{coins:number}} Prize
+ * `barra` so aparece junto de `upgrade`: e o hexagono que a barra de moedas
+ * compra no fim daquele mundo, na mesma revelacao da melhoria.
+ * @typedef {{skin:string}|{upgrade:string, barra?:string}|{coins:number}} Prize
  */
 
 /**
@@ -315,18 +319,26 @@ export const UPGRADES = [
  * premio cai na fase 5 (metade do funil chega la) e e um hexagono - visivel.
  *
  * O primeiro e um hexagono com rosto: e o premio que mais gente ve (a fase 5),
- * e o que tem que se notar de longe. A skin de video da loja fica fora.
+ * e o que tem que se notar de longe.
+ *
+ * Nos pares 2 a 8 o fim do mundo tambem traz o hexagono da barra de moedas
+ * (`barra`), comprado na mesma revelacao da melhoria. E isso que poe um
+ * hexagono novo a cada cinco fases, exatas, ate a 45: Feliz na 5, Descolado na
+ * 10, Melancia na 15, Basquete na 20 - cada um em uso por cinco fases. Na
+ * 1.0.13 a barra media o saldo inteiro e comprava na primeira vitoria do mundo
+ * par: o mundo 1 ja rendia ~223 moedas com a chuva, o Descolado (220) saia na
+ * fase 6 e o Feliz durava uma fase so.
  * @type {Prize[]}
  */
 export const WORLD_PRIZES = [
   { skin: 'smiley' },
-  { upgrade: 'stability' },
+  { upgrade: 'stability', barra: 'shades' },
   { skin: 'watermelon' },
-  { upgrade: 'grip' },
+  { upgrade: 'grip', barra: 'basketball' },
   { skin: 'robot' },
-  { upgrade: 'fortune' },
+  { upgrade: 'fortune', barra: 'pizza' },
   { skin: 'soccer' },
-  { upgrade: 'stability' },
+  { upgrade: 'stability', barra: 'gamepad' },
   { skin: 'cheese' },
   { upgrade: 'grip' },
   { skin: 'grumpy' },
@@ -369,21 +381,15 @@ export function prizeWorldOfSkin(id) {
 }
 
 /**
- * Os hexagonos que a barra de moedas compra, na ordem (1.0.12).
- *
- * Um hexagono por mundo: os impares dao o da trilha como premio, os pares a
- * partir do 2 dao o da barra (`BARRA_DESDE_MUNDO`, `Progress.unlockNextSkin`),
- * no maximo um por mundo. Os precos sao para a barra encher dentro do mundo em
- * que ela compra: medido com o jogador automatico, uma fase rende ~35 moedas
- * nas primeiras vinte, entao 220 chega pela fase 8 e 300 pela 17.
+ * O hexagono que a barra de moedas compra no fim deste mundo (0-based), ou
+ * null. So os mundos pares 2 a 8 tem um (`barra` em WORLD_PRIZES).
+ * @param {number} world
+ * @returns {string|null}
  */
-export const HEX_DA_BARRA = ['shades', 'basketball', 'pizza', 'gamepad'];
-
-/**
- * Primeiro mundo (0-based) em que a barra pode comprar: o 2. Dali em diante
- * ela compra nos pares, entre um premio de mundo e o seguinte.
- */
-export const BARRA_DESDE_MUNDO = 1;
+export function barraDoMundo(world) {
+  const p = WORLD_PRIZES[world | 0];
+  return p && 'barra' in p && p.barra ? p.barra : null;
+}
 
 /**
  * Proximo mundo (0-based), a partir de `from`, cujo premio e um nivel desta

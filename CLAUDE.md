@@ -40,7 +40,8 @@ SWEEP_LEVELS=42,43 npm run playsweep             # só essas fases
 node tools/playtest.mjs http://127.0.0.1:5173/prototypes/neon.html
 node tools/shot.mjs '[{"name":"home","url":"...","w":430,"h":880,"mobile":true}]'   # PNGs em /tmp/shots
 npm run thumbnail        # thumbnails da Poki em marketing/thumbnail/ (~60 s)
-node tools/savecheck.mjs # saves de exemplo pela migracao; Node puro, sem Chrome
+node tools/savecheck.mjs # saves de exemplo pela migracao e a sequencia exata dos hexagonos; Node puro
+node tools/economia.mjs  # renda de cada mundo jogada pelo solucionador e preco da barra (~100 s)
 ```
 
 `npm run thumbnail` é a exceção à regra do servidor no ar: copia o projeto para uma
@@ -680,27 +681,60 @@ do prêmio. O kit muda só o formato do pip. Tudo ali é só exibição, fora da
 `.screen.pass`. A fase 2 ainda mostra o primeiro prêmio no cartão do tutorial ("conclua
 o mundo e ganhe isto"): a meta só puxa se o jogador souber que ela existe.
 
-**A moeda compra o próximo hexágono sozinha** (1.0.12, `Progress.nextCoinSkin` e
-`unlockNextSkin`). Embaixo das moedas do HUD fica a barra do hexágono que vem — o ícone,
-a barra e `moedas/preço` (`#gameMeta`, `atualizaMeta()`) —, e quando ela enche a vitória
-seguinte o compra, equipa e mostra na mesma revelação do prêmio de mundo, com
-"Desbloqueado!" no título. Se a mesma vitória já tem prêmio de mundo, a compra espera a
-próxima. O motivo: no teste da 1.0.10, de 1.018 jogadores novos, 6 abriram a loja.
+**A moeda compra o hexágono sozinha** (1.0.12; regra atual da 1.0.14). Embaixo das
+moedas do HUD fica a barra do hexágono que vem — o ícone, a barra e `moedas/preço`
+(`#gameMeta`, `atualizaMeta()`) —, e o fim do mundo o compra, equipa e mostra na
+revelação. O motivo: no teste da 1.0.10, de 1.018 jogadores novos, 6 abriram a loja.
 
-**Um hexágono por mundo**, pedido do Evandro: os mundos ímpares dão o da trilha como
-prêmio (o Feliz na 5, a Melancia na 15…), e a barra compra nos **pares a partir do 2**
-(`BARRA_DESDE_MUNDO`), no máximo uma vez por mundo (`barraMundo` no save). Ela compra
-`HEX_DA_BARRA`, na ordem, e nunca os da trilha. Os preços são para a barra encher
-dentro do mundo em que compra — 220, 300, 450 e 500: medido com o jogador automático,
-uma fase rende ~35 moedas nas vinte primeiras, então o Descolado sai pela fase 8 e a
-Bola de basquete pela 17. Com a barra cheia fora de um mundo em que pode comprar, a
-compra espera. Assim os nove primeiros mundos dão um hexágono cada (Feliz, Descolado,
-Melancia, Basquete, Robô, Pizza, Futebol, Controle, Queijo) e daí em diante só os
-ímpares, porque são quatorze. Já houve duas versões antes desta: a primeira comprava a
-skin mais barata de qualquer tipo, e o prêmio do mundo 1 virava o do mundo 3 duas fases
-depois; a segunda segurava o primeiro prêmio por dois mundos (a barra só a partir do 4,
-custando 700), e o Evandro a desfez. Prêmio de skin já comprada (só pela loja, agora)
-continua virando as moedas do preço.
+**A sequência é exata: um hexágono novo a cada cinco fases até a 45.** `WORLD_PRIZES`
+é a fonte única. Os mundos ímpares dão o da trilha como prêmio. Nos pares 2 a 8 o prêmio
+traz também o campo `barra`: no fim desses mundos a barra compra o hexágono dela **na
+mesma revelação da melhoria** — o hexágono é a manchete e a melhoria entra numa pílula
+embaixo do nome (`#revealExtra`; `showPrize(premio, moedas, extra)`).
+
+| fase | chega | em uso |
+|---|---|---|
+| 5 | Feliz | 6–10 |
+| 10 | Descolado (barra) + Estabilidade 1 | 11–15 |
+| 15 | Melancia | 16–20 |
+| 20 | Basquete (barra) + Aderência 1 | 21–25 |
+| 25 | Robô | 26–30 |
+| 30 | Pizza (barra) + Fortuna 1 | 31–35 |
+| 35 | Futebol | 36–40 |
+| 40 | Controle (barra) + Estabilidade 2 | 41–45 |
+| 45 a 95 | Queijo, Bravo, Ovo, Relógio, Escocês e Caveirinha nos ímpares; as cinco melhorias restantes nos pares | 10 fases cada |
+
+Três regras seguram essa tabela (`Progress.contaBarra`, `compraDaBarra`, `barraAlvo`):
+
+- **A barra conta só as moedas do próprio mundo par**, do zero (`barraDe` e
+  `barraMoedas` no save). Ela não aparece no mundo 1 nem nos ímpares: ali o próximo
+  hexágono é o prêmio do fim da fita.
+- **Só o fim do mundo compra**, nunca antes, mesmo com a barra cheia.
+- **Se a barra não encheu, o saldo completa**: a compra só falha quando o saldo não cobre
+  o preço (o jogador gastou na loja), e aí ela espera ele vencer de novo a última fase
+  daquele mundo. Quem já tem o hexágono da barra (o Descolado também sai por vídeo na
+  loja) fica só com a melhoria.
+
+**O preço é o que um mundo rende, não o saldo.** `tools/economia.mjs` joga as fases com
+o solucionador e o `Progress` de verdade, em dois perfis. O perfil mediano faz 224
+moedas no mundo 1 — o Evandro fez 223. A renda dos mundos pares é quase plana: 255,
+245, 275 e 327 de mediana do mediano. O preço é 80% disso, arredondado: **200, 200, 220
+e 260**. Com esses preços a barra enche sozinha até a chuva do fim do mundo em 11 ou
+12 de 12 partidas, e nos dois perfis cada hexágono do Feliz ao Controle fica cinco
+fases.
+
+Antes desta já houve três versões:
+
+- a primeira comprava a skin mais barata de qualquer tipo, e o prêmio do mundo 1 virava
+  o do mundo 3 duas fases depois;
+- a segunda segurava o primeiro prêmio por dois mundos (a barra só a partir do 4,
+  custando 700), e o Evandro a desfez;
+- a terceira (1.0.13) media o **saldo inteiro** e comprava na primeira vitória do mundo
+  par. Os preços (220, 300, 450, 500) contavam ~35 moedas por fase, mas o mundo 1 rende
+  ~223 com a chuva: o Descolado saía na fase 6, o Feliz durava **uma fase**, e a barra
+  mostrava o Descolado desde a fase 1.
+
+Prêmio de skin já comprada (só pela loja, agora) continua virando as moedas do preço.
 
 O save ganhou `prizes` (mundos entregues) **sem trocar `SAVE_VERSION`**. Um save da
 versão 3 sem o campo passa por `migrarPremios()`, uma vez: recebe os prêmios dos
@@ -849,9 +883,10 @@ layout, e a quinta abre o cartão), confere a rampa de derrota (10 sem limite, 1
 com duas voltas, 16 e 20 com uma, 21 sem volta) e que três quedas de verdade na 11 dão
 volta, volta e derrota, vence pela força a 20 (a cascata tem que abrir como chuva de
 moedas, sem toque nenhum) e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
-selo) e a 5 (o hexágono novo equipado na 6), confere que só a 100 para o fluxo, e
-segue do cartão da 100 para a 101 e a 102 — a 101 com a bolsa cheia, para ver a moeda
-comprar e equipar um hexágono. A vitória forçada grava as estrelas em
+selo) e a 5 (o hexágono novo equipado na 6), confere a barra (oculta na fase 1, em 0
+na 6; com a bolsa cheia não compra na 7 nem na 12, e compra na 10 e na 20, com a
+melhoria na mesma revelação), confere que só a 100 para o fluxo, e segue do cartão da
+100 para a 101 e a 102. A vitória forçada grava as estrelas em
 `world.starsCrossed` — `Session.stars` é só um getter — e dispara o `onFirstTap`, senão
 a partida nunca teria `gameplayStart`.
 

@@ -1577,12 +1577,8 @@ class Game {
       chuvaPieces: this.chuvaAtiva ? session.bonusTotal : 0,
     });
     this.hideChuva();
-    // As moedas compram o proximo hexagono assim que chegam ao preco. Com
-    // premio de mundo na mesma vitoria, o desbloqueio espera a seguinte: duas
-    // revelacoes juntas seriam um recado so.
-    if (!result.prize && this.flowContinues()) {
-      /** @type {*} */ (result).unlock = this.progress.unlockNextSkin(this.origem.mundo);
-    }
+    // No fim dos mundos pares 2 a 8, `finishLevel` ja comprou o hexagono da
+    // barra (`result.unlock`), na mesma gravacao do premio do mundo.
     this.lastResult = result;
     // Dentro de um mundo o jogo nao para: o premio vira um selo sobre a cena e
     // a fase seguinte entra sozinha. Quem reabilita os botoes do HUD nesse
@@ -1649,7 +1645,10 @@ class Game {
    * @param {*} session
    */
   flowToNext(result, session) {
-    const premio = result.prize || result.unlock || null;
+    // No fim de um mundo par vem os dois: o hexagono da barra e a manchete, e a
+    // melhoria do mundo entra numa linha embaixo dele, na mesma revelacao.
+    const premio = result.unlock || result.prize || null;
+    const extra = result.unlock && result.prize ? result.prize : null;
     const gasto = result.unlock ? result.unlock.coins || 0 : 0;
     if (premio) audio.prize();
     else audio.win();
@@ -1668,12 +1667,12 @@ class Game {
     this.fillWorldPip();
     // No fim de mundo quem fala e a revelacao, com as moedas dentro dela; o
     // selo comum por cima seriam dois recados ao mesmo tempo.
-    if (premio) this.showPrize(premio, moedas);
+    if (premio) this.showPrize(premio, moedas, extra);
     else box.hidden = false;
 
     // As moedas pousam no contador do HUD, nao numa bolsa de cartao: o premio
     // fica onde o jogador vai continuar olhando.
-    const moedasDoPremio = premio && premio.kind === 'coins' ? premio.coins || 0 : 0;
+    const moedasDoPremio = result.prize && result.prize.kind === 'coins' ? result.prize.coins || 0 : 0;
     // O desbloqueio ja gastou o preco: o contador sobe com as moedas da fase,
     // a barra enche, e so depois a compra desconta.
     const bolsaAntes = this.progress.data.coins + gasto - moedas - moedasDoPremio;
@@ -1682,9 +1681,10 @@ class Game {
     this.countUp($('gameCoins'), this.progress.data.coins + gasto, 260, false, bolsaAntes);
     // Com compra, a barra do hexagono seguinte so aparece depois da revelacao:
     // antes dela ainda e a do que acabou de ser comprado.
-    if (!gasto) this.atualizaMeta(this.progress.data.coins, 260);
+    if (!gasto) this.atualizaMeta(260);
     else if (result.unlock) {
-      // Durante a revelacao a barra fica cheia: e ela que acabou de pagar.
+      // Durante a revelacao a barra fica cheia: e ela que acabou de pagar - se
+      // ela nao tinha enchido sozinha, o saldo completou.
       $('gameMetaFill').style.width = '100%';
       $('gameMetaTxt').textContent = `${gasto}/${gasto}`;
     }
@@ -1713,16 +1713,30 @@ class Game {
    * Revelacao do premio de fim de mundo, no centro da tela: o titulo do mundo
    * concluido, o premio entrando grande e girando, o nome, as moedas da fase,
    * o hexagono trocando na cena atras do veu e o confete.
-   * @param {*} premio PrizeResult
+   *
+   * Nos mundos pares 2 a 8 a manchete e o hexagono da barra, e a melhoria do
+   * mundo vem em `extra`, numa linha menor embaixo do nome: as duas chegam na
+   * mesma vitoria, e duas revelacoes seguidas seriam o dobro da espera.
+   * @param {*} premio PrizeResult, ou a compra da barra
    * @param {number} moedas moedas da fase (sem as do premio)
+   * @param {*} [extra] premio do mundo que chega junto da compra da barra
    */
-  showPrize(premio, moedas) {
+  showPrize(premio, moedas, extra = null) {
     const box = $('prizeReveal');
     const porMoedas = premio.via === 'moedas';
-    $('revealTitle').textContent = porMoedas ? t('unlockTitle') : t('worldClear');
+    const doMundo = porMoedas ? extra : premio;
+    // A barra so compra no fim do mundo: o titulo e sempre o do mundo concluido.
+    $('revealTitle').textContent = t('worldClear');
     const { titulo, nome } = this.prizeTexts(premio);
     $('revealKind').textContent = titulo;
     $('revealName').textContent = nome;
+    const linhaExtra = $('revealExtra');
+    linhaExtra.hidden = !extra;
+    if (extra) {
+      const textos = this.prizeTexts(extra);
+      $('revealExtraTxt').textContent = `${textos.titulo} ${textos.nome}`;
+      this.paintPrizeIcon(/** @type {HTMLCanvasElement} */ ($('revealExtraIcon')), extra, 22);
+    }
     $('revealCoins').textContent = moedas > 0 ? `+${moedas}` : '';
     $('revealHint').textContent = t('prizeTapHint');
     const icone = /** @type {HTMLCanvasElement} */ ($('revealIcon'));
@@ -1739,9 +1753,10 @@ class Game {
     // O icone do fim da fita no HUD "entra" na revelacao: o premio que estava
     // sendo prometido e o que acabou de chegar.
     const hud = document.getElementById('gamePrize');
-    if (hud && !porMoedas) hud.classList.add('claimed');
-    this.flowPrizeEv = porMoedas ? 'desbloqueio' : `mundo-${premio.world + 1}`;
+    if (hud && doMundo) hud.classList.add('claimed');
+    this.flowPrizeEv = doMundo ? `mundo-${doMundo.world + 1}` : 'desbloqueio';
     this.medirPremio(premio);
+    if (extra) this.medirPremio(extra);
     if (premio.kind === 'skin' && premio.id) {
       const id = premio.id;
       window.setTimeout(() => this.swapHexSkin(id), PRIZE_SWAP_MS);
@@ -1848,16 +1863,17 @@ class Game {
 
   /**
    * A barra do proximo hexagono, embaixo das moedas no HUD: o icone dele, a
-   * barra e "moedas/preco". Enche com as moedas de cada fase e, cheia, a
-   * proxima vitoria o compra (`Progress.unlockNextSkin`). Some quando nao ha
-   * mais hexagono para comprar.
-   * @param {number} [moedas] o que mostrar; o saldo, se omitido
+   * barra e "moedas/preco". So existe nos mundos pares 2 a 8, conta so as
+   * moedas ganhas nas fases deste mundo - comeca do zero na primeira - e o fim
+   * do mundo compra o hexagono (`Progress.compraDaBarra`). Nos outros mundos
+   * ela some: o proximo hexagono e o premio do fim da fita.
    * @param {number} [atraso] ms ate aplicar, para andar junto com o contador
    */
-  atualizaMeta(moedas = this.progress.data.coins, atraso = 0) {
+  atualizaMeta(atraso = 0) {
     const box = document.getElementById('gameMeta');
     if (!box) return;
-    const alvo = this.progress.nextCoinSkin();
+    const mundo = this.origem.mundo;
+    const alvo = this.progress.barraAlvo(mundo);
     if (!alvo) {
       box.hidden = true;
       return;
@@ -1868,6 +1884,7 @@ class Game {
       this.paintPrizeIcon(cv, { kind: 'skin', id: alvo.id }, 20);
       cv.dataset.skin = alvo.id;
     }
+    const moedas = this.progress.barraMoedasDe(mundo);
     const frac = Math.max(0, Math.min(1, moedas / alvo.cost));
     const aplica = () => {
       $('gameMetaFill').style.width = `${Math.round(frac * 100)}%`;
@@ -2191,15 +2208,18 @@ class Game {
     $('winNote').textContent = result.best && !result.prize ? t('newRecord') : '';
     // O premio de mundo tambem aparece no cartao: e o caminho da fase 100 e de
     // toda vitoria quando a automacao desliga o fluxo.
+    // No fim de um mundo par a manchete e o hexagono da barra, como na revelacao.
     const linhaPremio = document.getElementById('winPrize');
+    const destaque = result.unlock || result.prize;
     if (linhaPremio) {
-      linhaPremio.hidden = !result.prize;
-      if (result.prize) {
-        const { titulo, nome } = this.prizeTexts(result.prize);
+      linhaPremio.hidden = !destaque;
+      if (destaque) {
+        const { titulo, nome } = this.prizeTexts(destaque);
         $('winPrizeTitle').textContent = titulo;
         $('winPrizeName').textContent = nome;
-        this.paintPrizeIcon(/** @type {HTMLCanvasElement} */ ($('winPrizeIcon')), result.prize, 40);
-        this.medirPremio(result.prize);
+        this.paintPrizeIcon(/** @type {HTMLCanvasElement} */ ($('winPrizeIcon')), destaque, 40);
+        this.medirPremio(destaque);
+        if (result.unlock && result.prize) this.medirPremio(result.prize);
       }
     }
     // Linha de bonus: so aparece quando houve merito a mostrar, e diz de onde

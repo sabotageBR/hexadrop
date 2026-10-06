@@ -184,15 +184,18 @@ async function ganharEsperando(nivel, verChuva = false) {
     chuva = await js(`(() => { const b = document.getElementById('bonusBox'); return { aberta: !b.hidden && b.classList.contains('chuva'),
       brilho: document.getElementById('s-game').classList.contains('chuva'), placar: document.getElementById('bonusCount').textContent }; })()`);
   }
+  // A linha da melhoria embaixo do hexagono da barra (fim dos mundos pares 2 a 8).
+  let extra = null;
   for (let t = 0; t < 110; t++) {
     const st = await js(`({screen: window.__game.screen, level: window.__game.level, advancing: window.__game.advancing,
-      premio: !document.getElementById('prizeReveal').hidden})`);
+      premio: !document.getElementById('prizeReveal').hidden, extra: !document.getElementById('revealExtra').hidden})`);
     if (st && st.premio) selo = true;
-    if (st && st.screen !== 'game') return { ...st, selo, chuva };
-    if (st && st.level !== nivel && !st.advancing) return { ...st, selo, chuva };
+    if (st && st.premio && st.extra) extra = true;
+    if (st && st.screen !== 'game') return { ...st, selo, chuva, extra };
+    if (st && st.level !== nivel && !st.advancing) return { ...st, selo, chuva, extra };
     await sleep(250);
   }
-  return { ...(await js('({screen: window.__game.screen, level: window.__game.level})')), selo, chuva };
+  return { ...(await js('({screen: window.__game.screen, level: window.__game.level})')), selo, chuva, extra };
 }
 
 const estado = () => js('({screen: window.__game.screen, level: window.__game.level, variante: window.__game.variantIndex})');
@@ -205,6 +208,8 @@ if ((await js('window.__game.screen')) !== 'game') {
   await sleep(1500);
 }
 const entrouJogando = await js('window.__game.level');
+// A barra de moedas so existe nos mundos pares 2 a 8: na fase 1 ela nao aparece.
+const metaNaFase1 = await js(`!document.getElementById('gameMeta').hidden`);
 // Fluxo continuo: a fase 1 nao abre cartao nenhum e a 2 entra sozinha, sem
 // ninguem clicar em nada. Se alguma coisa parou o jogador, segue pelo cartao
 // para o resto do roteiro continuar valendo.
@@ -345,36 +350,44 @@ else if (parada && parada.screen === 'lose') await js('document.getElementById("
 await sleep(1500);
 
 // O primeiro premio de mundo: vencer a fase 5 entrega a skin do mundo 1, ja
-// equipada, e a fase 6 entra com o hexagono novo (main.js, `showPrize`).
-await js('window.__game.progress.data.prizes = (window.__game.progress.data.prizes || []).filter((w) => w !== 0)');
+// equipada, e a fase 6 entra com o hexagono novo (main.js, `showPrize`). As
+// vitorias forcadas de antes (20, 30) ja entregaram os premios e podem ter
+// comprado pela barra: zera os mundos 1, 2 e 4, as skins e o contador.
+await js('window.__game.progress.data.prizes = (window.__game.progress.data.prizes || []).filter((w) => w !== 0 && w !== 1 && w !== 3)');
 await js('window.__game.progress.data.skins = window.__game.progress.data.skins.filter((id) => id === "classic")');
-// As vitorias forcadas de antes (10, 20, 30) podem ter comprado pela barra:
-// zera tambem o mundo da ultima compra, senao a do mundo 2 nao repete.
-await js('window.__game.progress.data.barraMundo = -1');
+await js('Object.assign(window.__game.progress.data, { barraDe: -1, barraMoedas: 0 })');
 await js('window.__game.startLevel(5)');
 await sleep(1200);
 const fimDoMundo1 = await ganharEsperando(5);
 const skinPremio = await js(`(() => { const g = window.__game; return { salva: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id }; })()`);
+// A fase 6 entrou sozinha: a barra do mundo 2 aparece, e do zero, por mais
+// que o mundo 1 tenha rendido.
+const metaNaFase6 = await js(`(() => { const b = document.getElementById('gameMeta'); return { level: window.__game.level,
+  visivel: !b.hidden, txt: document.getElementById('gameMetaTxt').textContent }; })()`);
 await sleep(600);
 
-// A barra de moedas compra o proximo hexagono so nos mundos pares, a partir
-// do 2 (Progress.unlockNextSkin): um hexagono por mundo, os impares sao premio.
-// Com a bolsa cheia, vencer a 7 (mundo 2) compra; a 12 (mundo 3) nao compra
-// nada; a 18 (mundo 4, sem premio de mundo) compra o seguinte - cada compra
-// revelada e equipada na cena.
+// A barra compra so no fim dos mundos pares 2 a 8, junto da melhoria e na
+// mesma revelacao (Progress.compraDaBarra): um hexagono a cada cinco fases.
+// Com a bolsa cheia, vencer a 7 nao compra; a 10 compra o Descolado e entrega
+// a melhoria; a 12 (mundo 3) nao compra; a 20 compra o seguinte.
 await js('window.__game.progress.data.coins = 99999');
 const skinAntesDaCompra = await js('window.__game.progress.data.skin');
 await js('window.__game.startLevel(7)');
 await sleep(1200);
 await ganharEsperando(7);
-const compraNo2 = await js(`(() => { const g = window.__game; return { skin: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id }; })()`);
+const semCompraNa7 = await js('window.__game.progress.data.skin');
+await js('window.__game.startLevel(10)');
+await sleep(1200);
+const fimDoMundo2 = await ganharEsperando(10);
+const compraNo2 = await js(`(() => { const g = window.__game; return { skin: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id,
+  melhoria: g.progress.prizeClaimed(1) }; })()`);
 await js('window.__game.startLevel(12)');
 await sleep(1200);
 await ganharEsperando(12);
 const semCompraNo3 = await js('window.__game.progress.data.skin');
-await js('window.__game.startLevel(18)');
+await js('window.__game.startLevel(20)');
 await sleep(1200);
-await ganharEsperando(18);
+const fimDoMundo4 = await ganharEsperando(20);
 const compra = await js(`(() => { const g = window.__game; return { skin: g.progress.data.skin, cena: g.scene.skin && g.scene.skin.id }; })()`);
 
 // So a fase 100 para o fluxo, e so por uma vez a cada vitoria: e o fim da
@@ -598,12 +611,19 @@ check(
   JSON.stringify(fronteiraCedo && fronteiraCedo.chuva),
 );
 check(
-  'a barra compra no mundo 2, nao no 3, e de novo no 4, equipando sem cartao (fases 7, 12 e 18)',
-  !!compraNo2 && compraNo2.skin !== skinAntesDaCompra && compraNo2.skin === compraNo2.cena &&
+  'a barra some no mundo 1 e aparece do zero no 2 (fases 1 e 6)',
+  metaNaFase1 === false && !!metaNaFase6 && metaNaFase6.level === 6 && metaNaFase6.visivel === true && String(metaNaFase6.txt).startsWith('0/'),
+  JSON.stringify({ metaNaFase1, metaNaFase6 }),
+);
+check(
+  'a barra compra so no fim do mundo par, com a melhoria na mesma revelacao (fases 7, 10, 12 e 20)',
+  semCompraNa7 === skinAntesDaCompra &&
+    !!compraNo2 && compraNo2.skin !== skinAntesDaCompra && compraNo2.skin === compraNo2.cena && compraNo2.melhoria === true &&
+    !!fimDoMundo2 && fimDoMundo2.extra === true &&
     semCompraNo3 === compraNo2.skin &&
-    !!compra && compra.skin !== compraNo2.skin && compra.skin === compra.cena &&
-    measures.includes('premio/desbloqueio/visible'),
-  JSON.stringify({ skinAntesDaCompra, compraNo2, semCompraNo3, compra }),
+    !!compra && compra.skin !== compraNo2.skin && compra.skin === compra.cena && !!fimDoMundo4 && fimDoMundo4.extra === true &&
+    measures.includes('premio/desbloqueio/visible') && measures.includes('premio/mundo-2/visible'),
+  JSON.stringify({ skinAntesDaCompra, semCompraNa7, compraNo2, extra10: fimDoMundo2 && fimDoMundo2.extra, semCompraNo3, compra }),
 );
 check('a home oferece a fase depois da 101', typeof botaoHome === 'string' && botaoHome.includes('102'), String(botaoHome));
 {

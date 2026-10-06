@@ -10,7 +10,7 @@
 
 import { load, save, isPersistent } from '../core/storage.js';
 import { LEVEL_COUNT, WORLD_COUNT, worldOf, worldStart, worldSize } from './levelgen.js';
-import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE, CHUVA_COINS_PER_PIECE, HEX_DA_BARRA, BARRA_DESDE_MUNDO, worldPrize, prizeWorldOfSkin, skin as getSkin } from './content.js';
+import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE, CHUVA_COINS_PER_PIECE, barraDoMundo, worldPrize, prizeWorldOfSkin, skin as getSkin } from './content.js';
 import { faseDeOrigem } from './alem.js';
 
 /**
@@ -47,7 +47,8 @@ const SAVE_VERSION = 3;
  * @property {number} mapaAte ultima fase cuja chegada o mapa ja animou
  * @property {number} dailyAt
  * @property {number} plays
- * @property {number} barraMundo ultimo mundo (0-based) em que a barra de moedas comprou
+ * @property {number} barraDe mundo (0-based) a que o contador da barra se refere; -1 = nenhum
+ * @property {number} barraMoedas moedas ganhas no mundo `barraDe`, rumo ao hexagono da barra
  * @property {number[]} prizes mundos (0-based) cujo premio ja foi entregue
  * @property {number} alem proxima fase depois da 100 a jogar; 0 = ainda nao venceu a 100
  * @property {boolean} shopNews ha premio novo para ver na loja
@@ -61,6 +62,16 @@ const SAVE_VERSION = 3;
  * @property {number} [level] nivel da melhoria depois do premio
  * @property {number} [coins] moedas, no bau ou no lugar de algo que o jogador ja tinha
  * @property {'chest'|'owned'|'max'} [why] por que vieram moedas
+ */
+
+/**
+ * O hexagono que a barra de moedas comprou no fim de um mundo par.
+ * @typedef {object} BarraResult
+ * @property {number} world
+ * @property {'skin'} kind
+ * @property {string} id
+ * @property {number} coins o preco pago
+ * @property {'moedas'} via
  */
 
 /** @returns {SaveData} */
@@ -77,7 +88,8 @@ function blank() {
     boosts: Object.fromEntries(BOOSTS.map((b) => [b.id, b.inicial])),
     mapaAte: 0,
     dailyAt: 0,
-    barraMundo: -1,
+    barraDe: -1,
+    barraMoedas: 0,
     plays: 0,
     prizes: [],
     alem: 0,
@@ -111,6 +123,9 @@ export class Progress {
     delete this.data.upgrades.heart;
     delete (/** @type {*} */ (this.data)).hearts;
     delete (/** @type {*} */ (this.data)).heartsAt;
+    // A barra da 1.0.13 guardava o mundo da ultima compra; a de agora guarda o
+    // contador do mundo. O campo velho nao diz nada a regra nova.
+    delete (/** @type {*} */ (this.data)).barraMundo;
     if (valido && !Array.isArray(stored.prizes)) this.migrarPremios();
     // Quem ja venceu a 100 antes de existir o depois dela comeca na 101, senao a
     // home continuaria oferecendo "Jogar 100".
@@ -316,7 +331,7 @@ export class Progress {
    * @param {boolean} o.won
    * @param {number} o.taps
    * @param {number} o.par
-   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, chuvaPieces:number, best:boolean, rankUp:boolean, prize:PrizeResult|null}}
+   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, chuvaPieces:number, best:boolean, rankUp:boolean, prize:PrizeResult|null, unlock:BarraResult|null}}
    */
   finishLevel(o) {
     const d = this.data;
@@ -371,10 +386,17 @@ export class Progress {
     // sai no meio do selo, do intervalo ou do corte nao o perde - vale o mesmo
     // que vale para a vitoria (commitPendingWin).
     let prize = null;
+    let unlock = null;
     const origem = faseDeOrigem(o.level);
-    if (o.stars > 0 && origem.fimDeMundo) prize = this.claimWorldPrize(origem.mundo, true, false);
+    if (o.stars > 0) this.contaBarra(origem.mundo, coins + bonusCoins);
+    if (o.stars > 0 && origem.fimDeMundo) {
+      prize = this.claimWorldPrize(origem.mundo, true, false);
+      // Depois do premio: a melhoria nao troca skin, e o hexagono da barra e o
+      // que fica equipado.
+      unlock = this.compraDaBarra(origem.mundo);
+    }
     this.flush();
-    return { coins, xp, bonusCoins, bonusXp, bonusPieces, chuvaPieces, best, rankUp, prize };
+    return { coins, xp, bonusCoins, bonusXp, bonusPieces, chuvaPieces, best, rankUp, prize, unlock };
   }
 
   /**
@@ -463,44 +485,70 @@ export class Progress {
   }
 
   /**
-   * O proximo hexagono que as moedas compram: o primeiro de `HEX_DA_BARRA` que
-   * o jogador ainda nao tem. E a barra do HUD (1.0.12). Os da trilha ficam de
-   * fora - sao os premios dos mundos impares.
+   * O hexagono que a barra de moedas compra no fim deste mundo, se o jogador
+   * ainda nao o tem: e o alvo da barra no HUD. So os mundos pares 2 a 8 tem
+   * um; nos outros a barra some, e quem fala do proximo hexagono e a fita do
+   * mundo. Quem ja o tem (o Descolado tambem sai por video na loja) fica so
+   * com a melhoria.
+   * @param {number} mundo 0-based
    * @returns {*|null}
    */
-  nextCoinSkin() {
-    for (const id of HEX_DA_BARRA) {
-      const s = SKINS.find((k) => k.id === id);
-      if (s && !s.retired && !this.ownsSkin(id)) return s;
-    }
-    return null;
+  barraAlvo(mundo) {
+    const id = barraDoMundo(mundo);
+    if (!id || this.ownsSkin(id)) return null;
+    const s = SKINS.find((k) => k.id === id);
+    return s && !s.retired ? s : null;
   }
 
   /**
-   * Compra e equipa o proximo hexagono quando as moedas chegam ao preco.
-   *
-   * Sem pergunta e sem loja: no Player Fit Test da 1.0.10, de 1.018 jogadores
-   * novos, 6 abriram a loja e 2 compraram - a moeda caia no contador a cada
-   * fase e ninguem sabia para que ela servia. Agora ela enche uma barra a vista
-   * e, cheia, troca o hexagono na hora.
-   *
-   * Um hexagono por mundo: a barra so compra nos mundos pares, a partir do 2
-   * (`BARRA_DESDE_MUNDO`) - os impares ja dao o premio da trilha - e no maximo
-   * uma vez por mundo (`barraMundo`). Com a barra cheia fora disso, a compra
-   * espera o proximo mundo em que pode.
-   * @param {number} mundo mundo da fase vencida, 0-based
-   * @returns {{kind:'skin', id:string, coins:number, via:'moedas'}|null}
+   * Moedas que a barra mostra neste mundo: so as ganhas nas fases dele.
+   * @param {number} mundo 0-based
+   * @returns {number}
    */
-  unlockNextSkin(mundo) {
-    if (mundo < BARRA_DESDE_MUNDO || mundo % 2 !== 1 || this.data.barraMundo === mundo) return null;
-    const s = this.nextCoinSkin();
-    if (!s || this.data.coins < s.cost) return null;
-    this.data.coins -= s.cost;
-    if (!this.ownsSkin(s.id)) this.data.skins.push(s.id);
-    this.data.skin = s.id;
-    this.data.barraMundo = mundo;
-    this.flush();
-    return { kind: 'skin', id: s.id, coins: s.cost, via: 'moedas' };
+  barraMoedasDe(mundo) {
+    return this.data.barraDe === mundo ? Math.max(0, this.data.barraMoedas || 0) : 0;
+  }
+
+  /**
+   * Soma as moedas de uma vitoria ao contador da barra. O contador e do mundo:
+   * entrar em outro mundo com barra recomeca do zero. Sem isso a barra do
+   * mundo 2 ja nascia cheia com as ~220 moedas do mundo 1, e comprava na
+   * primeira vitoria dele (1.0.13).
+   * @param {number} mundo 0-based
+   * @param {number} ganho
+   */
+  contaBarra(mundo, ganho) {
+    if (!this.barraAlvo(mundo)) return;
+    const d = this.data;
+    if (d.barraDe !== mundo) {
+      d.barraDe = mundo;
+      d.barraMoedas = 0;
+    }
+    d.barraMoedas = Math.max(0, d.barraMoedas || 0) + Math.max(0, Math.round(ganho));
+  }
+
+  /**
+   * No fim de um mundo par, as moedas compram e equipam o hexagono da barra -
+   * sem pergunta e sem loja: no Player Fit Test da 1.0.10, de 1.018 jogadores
+   * novos, 6 abriram a loja e 2 compraram.
+   *
+   * So no fim do mundo, e nunca antes: e o que poe um hexagono novo a cada
+   * cinco fases. Se a barra nao encheu, o saldo completa - a compra so nao sai
+   * quando o saldo nao cobre o preco (o jogador gastou na loja), e ai espera a
+   * proxima vitoria nesta mesma fase.
+   * @param {number} mundo 0-based
+   * @returns {BarraResult|null}
+   */
+  compraDaBarra(mundo) {
+    const s = this.barraAlvo(mundo);
+    const d = this.data;
+    if (!s || d.coins < s.cost) return null;
+    d.coins -= s.cost;
+    if (!this.ownsSkin(s.id)) d.skins.push(s.id);
+    d.skin = s.id;
+    d.barraDe = -1;
+    d.barraMoedas = 0;
+    return { world: mundo, kind: 'skin', id: s.id, coins: s.cost, via: 'moedas' };
   }
 
   /** @param {string} id */

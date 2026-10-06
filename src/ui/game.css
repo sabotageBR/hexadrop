@@ -892,6 +892,23 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   color: var(--ink-soft);
   animation: revealUp 0.34s ease 0.38s both;
 }
+/* A melhoria que chega junto do hexagono da barra (fim dos mundos pares 2 a 8):
+   uma pilula menor que o nome, para a manchete continuar sendo o hexagono. */
+.reveal-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 2px;
+  padding: 5px 12px 5px 7px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  background: var(--wash);
+  font: 800 12px/1 var(--font);
+  color: var(--ink);
+  animation: revealUp 0.34s ease 0.42s both;
+}
+.reveal-extra[hidden] { display: none; }
+.reveal-extra canvas { width: 22px; height: 22px; flex: none; }
 .reveal-coins { font: 900 20px/1 var(--font); color: var(--gold); animation: revealUp 0.34s ease 0.45s both; }
 .reveal-coins:empty { display: none; }
 .reveal-hint {
