@@ -434,6 +434,25 @@ export class AudioEngine {
   }
 
   /**
+   * O grito da vitoria, portado do stringcut: um arpejo rapido em do maior com
+   * uma oitava abaixo em onda quadrada, os estalos do confete saindo dos
+   * canhoes e o sopro do grito saindo por cima aos 1,3 s. No fim de mundo (e
+   * na fase 100) o arpejo sobe uma nota a mais.
+   * @param {boolean} [mundo]
+   */
+  yes(mundo = false) {
+    const notas = mundo ? [523, 659, 784, 1046, 1318] : [523, 659, 784, 1046];
+    notas.forEach((f, i) => {
+      this.tone({ freq: f, dur: 0.26, gain: 0.13, type: 'triangle', attack: 0.012, delay: i * 0.075 });
+      this.tone({ freq: f / 2, dur: 0.2, gain: 0.03, type: 'square', attack: 0.012, delay: i * 0.075 });
+    });
+    for (let k = 0; k < 6; k++) {
+      this.noise({ freq: 2500 + k * 300, dur: 0.05, gain: 0.25, q: 1.2, filter: 'bandpass', delay: 0.12 + k * 0.05 });
+    }
+    this.noise({ freq: 600, freqEnd: 3000, dur: 0.3, gain: 0.15, q: 0.6, filter: 'bandpass', delay: 1.3 });
+  }
+
+  /**
    * Premio de fim de mundo: o arpejo da vitoria esticado por duas oitavas e um
    * acorde que fica soando - o recado e "fechou um capitulo", nao "fechou uma
    * fase", e o selo dura meio segundo a mais que o comum.

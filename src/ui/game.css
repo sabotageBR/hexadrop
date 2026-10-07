@@ -1,6 +1,16 @@
 /* Interface do jogo. Canvas embaixo, HTML por cima: texto nitido em qualquer
    densidade de tela e layout que se adapta a retrato e paisagem sem esforco. */
 
+/* Fredoka (SIL OFL 1.1, public/LICENCAS.txt), so para o grito da vitoria, que
+   o canvas desenha (render/transicoes.js). Subconjunto latin: os textos dela
+   ficam no Latin-1. */
+@font-face {
+  font-family: 'Fredoka';
+  src: url('./fontes/fredoka-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --ink: #f4ecff;
@@ -753,44 +763,10 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
 .settings-row:has(#segLang) { flex-wrap: wrap; row-gap: 8px; }
 #segLang { flex-wrap: wrap; justify-content: flex-end; }
 
-/* ------------------------------------------------- celebracao de fim de fase */
-/* Sobre a cena, sem cartao: o que interessa ver e a torre estourando atras. */
-.bonus {
-  align-self: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  margin-top: 14px;
-  padding: 8px 22px;
-  border-radius: 18px;
-  background: rgba(var(--sheet-rgb), 0.52);
-  backdrop-filter: blur(4px);
-  pointer-events: none;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
-}
-.bonus-label {
-  font: 800 11px/1 var(--font);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-.bonus-count {
-  font: 900 clamp(38px, 12vw, 58px)/1 var(--font);
-  color: var(--ink);
-  letter-spacing: -0.03em;
-}
-.bonus-count.pop { animation: bonusPop 0.22s cubic-bezier(0.2, 1.5, 0.4, 1); }
-@keyframes bonusPop {
-  from { transform: scale(1.38); color: var(--gold); }
-  to { transform: scale(1); }
-}
-.bonus-gain { font: 800 16px/1 var(--font); color: var(--gold); }
-
 /* ------------------------------------------------- selo do fluxo continuo */
-/* O recibo da fase vencida quando nao ha cartao: entra sobre a cena, sem
-   botao, e sai quando a fase seguinte carrega. Deliberadamente mais discreto
-   que a contagem da celebracao - quem tem que chamar atencao e a torre nova. */
+/* O "Quase!" da derrota sem parada: entra sobre a cena, sem botao, e sai
+   quando a fase recomeca. A vitoria nao tem selo: o grito, as estrelas e as
+   moedas sao desenhados no canvas (render/transicoes.js). */
 .flow {
   align-self: center;
   display: flex;
@@ -819,10 +795,8 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
    e a cor do premio, e aqui nao ha premio nenhum. */
 .flow.miss .flow-coins { color: var(--ink); }
 
-/* Revelacao do premio de fim de mundo. Ocupa o centro da tela sobre um veu,
-   mas nao tem botao e nao pega toque: o toque cai no canvas, e o jogo o le
-   como "adiantar" (skipWait), igual ao selo. E o momento que o selo comum
-   escondia - quem vinha tocando para avancar o via por 0,7 s. */
+/* Revelacao do premio de fim de mundo, no meio da transicao. Ocupa o centro
+   da tela sobre um veu por 2,2 s fixos, sem botao e sem pegar toque. */
 .reveal {
   position: fixed;
   inset: 0;
@@ -911,15 +885,6 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
 .reveal-extra canvas { width: 22px; height: 22px; flex: none; }
 .reveal-coins { font: 900 20px/1 var(--font); color: var(--gold); animation: revealUp 0.34s ease 0.45s both; }
 .reveal-coins:empty { display: none; }
-.reveal-hint {
-  margin-top: 8px;
-  font: 700 11px/1 var(--font);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  opacity: 0;
-  animation: revealHint 1.4s ease-in-out 1s infinite;
-}
 @keyframes revealVeil { from { opacity: 0; } to { opacity: 1; } }
 @keyframes revealUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes revealPop {
@@ -928,9 +893,8 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   100% { opacity: 1; transform: scale(1) rotate(0deg); }
 }
 @keyframes revealRays { to { transform: rotate(360deg); } }
-@keyframes revealHint { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.85; } }
 @media (prefers-reduced-motion: reduce) {
-  .reveal-rays, .reveal-stage canvas, .reveal-hint { animation: none; opacity: 1; }
+  .reveal-rays, .reveal-stage canvas { animation: none; opacity: 1; }
 }
 
 /* A linha do premio no cartao de vitoria (fase 100 e fluxo desligado). */
@@ -974,18 +938,6 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   from { transform: scale(0.82); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
-
-/* Corte entre fases: cobre o quadro em que a cena e remontada. */
-.wipe {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  background: rgb(var(--sheet-rgb));
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-.wipe.on { opacity: 1; }
 
 /* Texto que sobe do ponto da quebra: combo e moeda do bonus. */
 .floater {
@@ -1082,9 +1034,8 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   #s-home .home-actions { padding-top: 8px; gap: 8px; }
   #s-home .home-foot { margin-top: 8px; padding-top: 8px; }
   #gameStars { position: fixed; left: calc(14px + var(--safe-l)); top: calc(66px + var(--safe-t)); margin: 0; gap: 7px; }
-  /* As estrelas do HUD ocuparam o canto de cima; o selo e a contagem descem
-     para nao ficarem em cima delas. */
-  .bonus { margin-top: 4px; padding: 5px 16px; }
+  /* As estrelas do HUD ocuparam o canto de cima; o selo desce para nao
+     ficar em cima delas. */
   .flow { margin-top: 4px; padding: 6px 18px; gap: 4px; }
   .flow-coins { font-size: clamp(20px, 6vh, 26px); }
   /* Em paisagem baixa a revelacao encolhe para caber na altura, e desce um
@@ -1092,7 +1043,6 @@ html[data-ui="light"] .world-dots button { background: rgba(0, 0, 0, 0.22); }
   .reveal { gap: 4px; padding: 64px 12px 8px; }
   .reveal-stage { width: min(38vh, 170px); }
   .reveal-kind { font-size: clamp(18px, 6vh, 24px); }
-  .reveal-hint { margin-top: 2px; }
   #gameStars i { width: 19px; height: 19px; }
   .trail { height: calc(var(--nos, 10) * 58px); }
   .tut { top: auto; bottom: calc(14px + var(--safe-b)); }
@@ -1374,10 +1324,9 @@ html[data-hud='lateral'] .tut.perto {
 @keyframes metaCheia { 50% { transform: scale(1.18); } }
 
 /* ----------------------------------------------------------- chuva de moedas
-   Na ultima fase de cada mundo a cascata vira a chuva: o painel da contagem fica
-   dourado e a borda da cena ganha um brilho que pulsa enquanto ela dura. */
-.bonus.chuva { padding: 10px 26px 12px; border: 1px solid var(--gold); }
-.bonus.chuva .bonus-label { color: var(--gold); font-weight: 900; letter-spacing: 0.04em; }
+   Na ultima fase de cada mundo a rajada vira a chuva: o contador sob o grito
+   fica dourado (canvas) e a borda da cena ganha um brilho que pulsa enquanto
+   ela dura. */
 #s-game.chuva::after {
   content: "";
   position: absolute;
@@ -1389,14 +1338,4 @@ html[data-hud='lateral'] .tut.perto {
 @keyframes chuvaBrilho { from { opacity: 0.45; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .meta-next.cheia canvas, #s-game.chuva::after { animation: none; }
-}
-/* No desktop deitado o placar da chuva e a contagem da cascata vao para a faixa
-   da direita: no meio eles cobriam o topo da torre, justo onde se toca. */
-html[data-hud='lateral'] #s-game .bonus {
-  position: fixed;
-  right: calc(14px + var(--safe-r));
-  top: 50%;
-  margin: 0;
-  transform: translateY(-50%);
-  max-width: min(260px, 26vw);
 }

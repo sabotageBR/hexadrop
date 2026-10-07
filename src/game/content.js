@@ -219,6 +219,26 @@ export const BONUS_XP_PER_PIECE = 2;
 export const CHUVA_COINS_PER_PIECE = BONUS_COINS_PER_PIECE * 2;
 
 /**
+ * Quao boa foi a jogada, para o grito do fim de fase (main.js, gritoBoa,
+ * gritoOtima e gritoPerfeita no i18n).
+ *
+ * A regua e a meta da fase, `par`: o menor numero de toques que o validador
+ * achou para a variante. E a mesma meta do cartao de pausa ("Toques · Meta") e
+ * a que `Progress.finishLevel` ja premia com moeda extra. Encalhar
+ * (`'stuck'`) conta como vitoria, mas nunca passa de boa: o hexagono nao chegou
+ * a pousar.
+ *
+ * @param {{estado:string, taps:number, par:number, bestCombo:number}} o
+ * @returns {'boa'|'otima'|'perfeita'}
+ */
+export function notaDaJogada(o) {
+  if (o.estado !== 'won') return 'boa';
+  if (o.par > 0 && o.taps <= o.par) return 'perfeita';
+  if ((o.par > 0 && o.taps <= o.par + 2) || o.bestCombo >= 4) return 'otima';
+  return 'boa';
+}
+
+/**
  * Estrelas acumuladas para abrir cada mundo.
  *
  * O teto e 300 (100 fases x 3 estrelas), 15 por mundo. A curva e folgada no

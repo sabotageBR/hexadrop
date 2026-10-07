@@ -595,52 +595,80 @@ jogador quer saber como está indo.
 
 ### Celebração de fim de fase
 
-Toda vitória passa por uma cascata: as peças que sobraram estouram uma a uma, de
-cima para baixo, com um contador na tela (`session.startBonus()` / `_stepBonus()`).
-Cada peça intacta vale `BONUS_COINS_PER_PIECE` moedas e `BONUS_XP_PER_PIECE` de XP
-(`game/content.js`) — é o que transforma "sobrou peça" de sobra em meta, sem tocar
-em estrela nenhuma: os portões de mundo continuam pedindo o que pediam.
+**O fim de fase é a transição do stringcut** (1.0.15, `render/transicoes.js`, que veio
+do Blumgi Bounce medido quadro a quadro). O Evandro a trouxe porque o stringcut passou
+no Player Fit Test com 4m54s. No instante da vitória vêm o flash branco, um feixe sobre
+o hexágono e um soco de câmera de 6,5%. Aos 0,08 s entra **o grito**: texto branco com
+contorno colorido que troca de cor e extrusão 3D, na Fredoka (`ui/fontes`, OFL em
+`public/LICENCAS.txt`). As três estrelas pulam embaixo dele, o confete sai de canhões
+nas duas laterais, e o grito e as estrelas saem por cima entre 1,3 e 1,6 s. Aos 2,3 s
+a fase seguinte entra por baixo do confete com zoom de 1,25 recuando para 1 e lavada de
+branco. Tudo é função pura do tempo; quem conta o tempo é `main.js`
+(`passoTransicao`, no `onUpdate` da cena), e por isso o intervalo comercial, que pausa
+o laço, congela a transição no ponto da troca até voltar.
+
+**O grito depende de quão boa foi a jogada** (`notaDaJogada` em `game/content.js`):
+
+- **perfeita**: pousou com toques ≤ `par`, a meta da variante (a do cartão de pausa e a
+  que o `Progress` já premia). Ganha grito 10% maior, contorno dourado fixo e confete
+  dobrado;
+- **ótima**: até dois toques acima da meta, ou um combo de 4;
+- **boa**: o resto, inclusive o hexágono encalhado.
+
+Cada nível tem uma lista por língua (`gritoBoa`, `gritoOtima`, `gritoPerfeita` no i18n),
+sorteada sem repetir o anterior, e o texto encolhe até caber em 86% da largura — "JA!"
+e "MÜKEMMEL!" não têm o mesmo tamanho.
+
+**A sobra da torre estoura em rajada debaixo do grito**, de cima para baixo
+(`session.startBonus()` / `_stepBonus()`): o primeiro estouro aos 0,3 s, a fila inteira
+em `BONUS_BURST_TIME` (0,8 s), seja de cinco peças ou de trinta. Embaixo das estrelas um
+contador "+N" com a moeda sobe a cada estouro (só número, nada a traduzir), cada peça
+solta uma moeda voando para o HUD (até `MOEDAS_DA_RAJADA`), e quando a gravação sai o
+contador salta para o total da fase. Cada peça intacta continua valendo
+`BONUS_COINS_PER_PIECE` moedas e `BONUS_XP_PER_PIECE` de XP (`game/content.js`): os
+preços da barra, medidos pelo `economia.mjs`, não mudaram.
+
+**Tempo fixo, como no stringcut: o toque não adianta nada** — nem o grito, nem a
+revelação do prêmio, nem a troca. Até a 1.0.14 um toque apertava a cascata
+(`Session.hurryBonus`) e pulava o selo, pela frase da Poki sobre *"waiting and
+downtime"*; o Evandro escolheu o tempo fixo do stringcut. O `skipWait` continua só para
+o selo "Quase!" da derrota.
 
 Três invariantes:
 
-1. **`evaluate()` não roda durante a cascata.** `step()` desvia para `_stepBonus`
+1. **`evaluate()` não roda durante a rajada.** `step()` desvia para `_stepBonus`
    enquanto `session.bonus` é true. Sem isso, esvaziar a torre dispararia `stuck`
    por cima do resultado que o jogador acabou de conquistar.
-2. **O resultado só é gravado quando a contagem termina** (`finishWin()` em
-   `main.js`). As peças que sobraram fazem parte do prêmio, e a contagem acontece
-   no canvas, antes do cartão entrar.
+2. **O resultado só é gravado quando a rajada termina** (`finishWin()` em `main.js`),
+   e **a troca espera a gravação**: com `pendingWin` de pé, `passoTransicao` segura o
+   relógio na troca (e na revelação, no fim de mundo). As peças que sobraram fazem
+   parte do prêmio.
 3. **`onLevelEnd` ignora reentrada** (`pendingWin` preenchido ou tela diferente de
-   `game`). Durante a cascata a torre se desfaz e o hexágono desce; um segundo
+   `game`). Durante a rajada a torre se desfaz e o hexágono desce; um segundo
    veredito no meio disso recomeçaria a contagem com a torre já vazia e apagaria o
    prêmio — foi exatamente o que aconteceu no primeiro teste.
+
+A camada da transição usa o `onOverlay` da cena, e o zoom o `zoomFx`, que só escala o
+desenho: câmera, cache de sprites e toque continuam no zoom da fase, e
+`GameScene.desfazZoom` devolve o toque ao ponto que o jogador vê (a fase nova já se toca
+durante o zoom de entrada). A automação (`flowLevels` falso) fica sem transição: a
+thumbnail sobrescreve o `onOverlay` e não pode ter texto, e o `playsweep` mede uma fase
+por vez, com a rajada e o cartão. Ele espera a tela sair de `game` antes de anotar o
+resultado.
 
 No cartão de vitória, **"tentar de novo" só existe abaixo de três estrelas**: com as
 três o botão não leva a lugar nenhum e ainda divide a fileira com "próxima", que é para
 onde o jogador quer ir. Escondido, "próxima" ocupa a fileira inteira sozinha — a regra
 `.card .row .btn` já é `flex: 1 1`.
 
-O ritmo acelera pela posição na fila e pelo tempo restante, com teto em
-`BONUS_MAX_TIME`: com trinta peças sobrando a celebração aperta o passo em vez de
-arrastar. **Um toque durante a celebração aperta mais** (`Session.hurryBonus`: uma peça
-a cada dois quadros, assentar final pela metade), e um toque com o selo do fluxo já na
-tela vai direto para a fase seguinte (`skipWait` em `main.js`, com piso de 300 ms para o
-mesmo toque não engolir o selo). A Poki mede que *"games where the player can constantly
-perform an action outperform games with waiting and downtime"*, e entre vencer e a fase
-seguinte havia até ~5 s só de espera. Medido na fase 6: a cascata de 2,3 s caiu para 1 s
-e o selo de 1 s para 0,3 s. O toque não pula a contagem: toda peça intacta ainda estoura
-e ainda vale moeda. `tools/playsweep.mjs` espera a tela sair de `game` antes de anotar o
-resultado — sem isso toda vitória com muitas peças vira "ainda jogando"; é por isso
-que ele desliga o fluxo contínuo (abaixo).
-
-**Na última fase de cada mundo a cascata vira a chuva de moedas** (1.0.12,
-`startCelebration` em `main.js`): a mesma cascata, sozinha, com cada peça que sobrou
-valendo `CHUVA_COINS_PER_PIECE` (o dobro da intacta de uma fase comum), o placar
-dourado ("Chuva de moedas! / Moedas em dobro!"), o brilho pulsando nas bordas da cena e
-uma moeda voando para o contador a cada estouro. **Não depende de toque** — tocar só
-apressa, como em qualquer cascata. A primeira versão era um frenesi de 8 s em que o
-jogador estourava as peças tocando, e o Evandro a trocou por esta: a recompensa de
-chegar ao fim do mundo não pode depender de o jogador entender que tinha que tocar. É
-o momento diferente a cada cinco fases, antes do prêmio do mundo, para o trecho depois
+**Na última fase de cada mundo a rajada vira a chuva de moedas** (1.0.12,
+`startCelebration` em `main.js`): a mesma rajada, com cada peça que sobrou valendo
+`CHUVA_COINS_PER_PIECE` (o dobro da intacta de uma fase comum), o contador sob o grito
+dourado e com "x2", o confete dobrado e o brilho pulsando nas bordas da cena. **Não
+depende de toque.** A primeira versão era um frenesi de 8 s em que o jogador estourava
+as peças tocando, e o Evandro a trocou por uma cascata sozinha: a recompensa de chegar
+ao fim do mundo não pode depender de o jogador entender que tinha que tocar. É o
+momento diferente a cada cinco fases, antes do prêmio do mundo, para o trecho depois
 da 11, em que só mudavam céu e dificuldade. Só no jogo corrido: o `playsweep` e o
 `thumbnail` desligam o fluxo e não a veem.
 
@@ -662,18 +690,20 @@ pelo próprio `Progress.finishLevel`, na mesma gravação da vitória, e por iss
 `commitPendingWin` (quem sai no meio da celebração) também o leva. Pular a última
 fase com vídeo não dá o prêmio; ele fica pendente até o jogador vencê-la.
 
-**É revelação, não cartão.** No fim de mundo, `flowToNext` troca o selo comum por
-uma revelação no centro da tela (`#prizeReveal`, `showPrize`): a cena escurece atrás
-de um véu, o prêmio entra grande e girando sobre raios, com "Mundo concluído", o nome
-e as moedas da fase, `audio.prize()` no lugar de `audio.win()`, a skin trocando na cena
-aos 120 ms e o confete. Ela fica 2,2 s, e o toque só adianta depois de 1 s
-(`PRIZE_SKIP_FLOOR_MS`). Não tem botão e não pega toque — o toque atravessa para o
-canvas e vira o `skipWait` de sempre —, porque a lição medida continua valendo: o
-cartão de fim de mundo custou 15% na passagem da 20 para a 21. A primeira versão era só
-uma linha a mais no selo, e o Evandro não a viu: quem vinha tocando para avançar a via
-por 0,7 s. A fita do mundo e o contador ficam por cima do véu (é para lá que as moedas
-voam), o toast de patente espera a revelação sair, e o cartão de estreia de material
-sai quando a fase termina (`onLevelEnd`).
+**É revelação, não cartão, no meio da transição.** No fim de mundo os pips da fita
+voam para o centro e estouram (1,45 a 1,95 s), e ali abre a revelação (`#prizeReveal`,
+`showPrize`): a cena escurece atrás de um véu, o prêmio entra grande e girando sobre
+raios, com "Mundo concluído", o nome e as moedas da fase, `audio.prize()`, a skin
+trocando na cena aos 120 ms e o confete. Ela fica `PREMIO_DUR` (2,2 s) fixos, sem botão
+e sem toque, porque a lição medida continua valendo: o cartão de fim de mundo custou 15%
+na passagem da 20 para a 21. Quando ela sai, uma varredura diagonal na cor do mundo
+seguinte cobre a troca com "MUNDO N" por cima (`temposDoMundo`), e sai revelando o mundo
+novo; enquanto ela cobre, o toque fica travado. Sem prêmio (mundo rejogado) os tempos
+são os do stringcut: "MUNDO N" no centro desde que os pips estouram e a troca aos 3,3 s.
+A fita do mundo e o contador ficam por cima do véu (é para lá que as moedas voam), o
+toast de patente espera a revelação sair, e o cartão de estreia de material sai quando
+a fase termina (`onLevelEnd`). A primeira versão do prêmio era só uma linha a mais no
+selo, e o Evandro não a viu: quem vinha tocando para avançar a via por 0,7 s.
 
 **O HUD mostra a fita do mundo** embaixo do nome da fase: um pip por fase, saídos de
 `worldSize` — cinco cravado no HTML seria o erro do dez de antes —, e no fim o ícone
@@ -769,10 +799,13 @@ porque quem jogou a fase 1 e perdeu continua com `unlocked` em 1 — e para ele 
 
 ### Fluxo contínuo entre fases
 
-**Vencer não abre tela, do começo ao fim do jogo.** `finishWin()` grava o prêmio, a contagem
-da celebração sai, um selo entra no lugar dela com o `+moedas` e a linha de bônus, as
-moedas voam para o contador `#gameCoins` do HUD, e um segundo depois a fase seguinte
-entra atrás de um corte de 200 ms (`.wipe`). Ninguém clica em nada.
+**Vencer não abre tela, do começo ao fim do jogo.** A transição do stringcut (ver
+"Celebração de fim de fase") leva da vitória à fase seguinte em 2,3 s fixos:
+`finishWin()` grava o prêmio no meio dela, as moedas voam para o contador `#gameCoins`
+do HUD, e `trocaDeFase()` passa pelo intervalo comercial e chama
+`startLevel(alvo, undefined, true)`, que monta a fase nova com o zoom de entrada e
+deixa a transição de pé por cima dela até o confete acabar. Ninguém clica em nada. A
+cortina de 200 ms (`.wipe`) e o selo de vitória com o `+moedas` saíram na 1.0.15.
 
 `flowContinues()` só para na **fase 100** — nem o fim de mundo abre o cartão de vitória.
 Ele ainda aparece na fase final e quando a automação desliga o fluxo (`flowLevels`).
@@ -811,7 +844,7 @@ sai do próprio ponto de volta.
 **Perder também não abre tela, nas quatro primeiras vezes.** Na derrota, `onLevelEnd`
 manda o `fail` e chama `flowRetry()`: o mesmo selo, agora com
 "Quase!" na tinta do tema (`.flow.miss`), e ~900 ms depois `retryLevel()` passa pelo
-intervalo comercial, pelo corte e recomeça. As duas primeiras derrotas seguidas repetem
+intervalo comercial e recomeça, com a mesma entrada da vitória (zoom e lavado). As duas primeiras derrotas seguidas repetem
 a **mesma variante** (`RETRIES_MESMO_LAYOUT`); a terceira e a quarta trocam de variante
 sozinhas, de graça, com "Novo layout" no selo; só a quinta (`RETRIES_SEM_CARTAO`) abre o
 cartão de derrota, onde moram pular fase e voltar uma jogada. Na 1.0.3 o cartão de
@@ -856,22 +889,23 @@ Quatro coisas que esse fluxo precisa respeitar:
 - **O intervalo comercial termina antes de `startLevel`, e passa pelo funil da classe.**
   `startLevel` dispara `measure('level', N, 'start')`, e a Poki não aceita evento nenhum
   dentro de um intervalo — por isso o `await this.commercialBreak()` mora em
-  `advanceLevel()`, antes da troca de cena. E é `this.commercialBreak()`, não
-  `poki.commercialBreak()`: o direto pularia a carência de `FASES_SEM_INTERVALO`.
+  `trocaDeFase()` (e em `advanceLevel()`, o caminho do cartão), antes da troca de cena,
+  com a transição parada. E é `this.commercialBreak()`, não `poki.commercialBreak()`: o
+  direto pularia a carência de `FASES_SEM_INTERVALO`.
 - **O vídeo de dobrar prêmio não cabe no selo.** A Poki exige um botão padrão de tamanho
   igual ou maior ao lado do vídeo, e um par de botões sobre a cena é o cartão de volta.
   Então `#winDouble` continua só no cartão — ou seja, na fase 100. É o custo desta
   mudança.
-- **O selo não repete as estrelas.** A fileira do HUD já acende durante a jogada, e o kit
-  do mundo decide se ela fica em cima ou embaixo; uma fileira própria no selo era o mesmo
-  recado duas vezes, às vezes colado nela.
-- **O HUD fica fora do ar da celebração até a fase seguinte.** `hideBonusCounter(false)`
-  esconde a contagem sem devolver `gameBack` e `gamePause`, e `flowRetry()` os desliga
-  do mesmo jeito; quem os devolve é o `hideBonusCounter()` de `startLevel`.
-  `pauseLevel()` também recusa enquanto `pendingWin`, `flowTimer`, `advancing` ou
-  `loseTimer` estiverem de pé, e com a sessão já terminada — senão `Escape` entrava por
-  trás dos botões desabilitados, ou escondia o cartão de derrota a caminho e deixava uma
-  fase terminada sem saída.
+- **As estrelas pulam sob o grito**, como no stringcut, além de acenderem na fileira do
+  HUD durante a jogada. Até a 1.0.14 o selo não as repetia, para não dar o mesmo recado
+  duas vezes; na transição elas são parte do momento, junto do contador de moedas.
+- **O HUD fica fora do ar da celebração até a fase seguinte.** `startCelebration()`
+  chama `travaHud()`, que tira `gameBack` e `gamePause` do ar, e `flowRetry()` os
+  desliga do mesmo jeito; quem os devolve é o `liberaHud()` de `startLevel`.
+  `pauseLevel()` também recusa enquanto `pendingWin`, `flowTimer`, `advancing`,
+  `loseTimer` ou a transição antes da troca estiverem de pé, e com a sessão já
+  terminada — senão `Escape` entrava por trás dos botões desabilitados, ou escondia o
+  cartão de derrota a caminho e deixava uma fase terminada sem saída.
 
 `flowLevels = false` é o que mantém o `playsweep` medindo uma fase por vez — ele desliga
 também a derrota sem parada, e cada derrota volta a abrir o cartão. Ele também marca
@@ -879,11 +913,13 @@ todos os prêmios de mundo como entregues antes de varrer: uma melhoria ganha no
 mudaria a medição das fases seguintes. Quem cobre o caminho do fluxo é o `sdkcheck`:
 ele joga a fase 1 (a 2 tem que entrar sozinha), força cinco derrotas seguidas na 2 (as
 quatro primeiras recomeçam sozinhas com `fail` → `start`, a terceira já em outro
-layout, e a quinta abre o cartão), confere a rampa de derrota (10 sem limite, 11 e 15
-com duas voltas, 16 e 20 com uma, 21 sem volta) e que três quedas de verdade na 11 dão
-volta, volta e derrota, vence pela força a 20 (a cascata tem que abrir como chuva de
-moedas, sem toque nenhum) e a 30 (fronteiras de mundo, que não param e entregam o prêmio no
-selo) e a 5 (o hexágono novo equipado na 6), confere a barra (oculta na fase 1, em 0
+layout, e a quinta abre o cartão), confere que a vitória da fase 1 abre a transição
+com um grito da lista do nível da jogada (e o `notaDaJogada` em casos puros), confere a
+rampa de derrota (10 sem limite, 11 e 15 com duas voltas, 16 e 20 com uma, 21 sem volta)
+e que três quedas de verdade na 11 dão volta, volta e derrota, vence pela força a 20 (a
+transição tem que ser de fim de mundo, com a chuva de moedas, sem toque nenhum) e a 30
+(fronteiras de mundo, que não param e revelam o prêmio) e a 5 (o hexágono novo equipado
+na 6), confere a barra (oculta na fase 1, em 0
 na 6; com a bolsa cheia não compra na 7 nem na 12, e compra na 10 e na 20, com a
 melhoria na mesma revelação), confere que só a 100 para o fluxo, e segue do cartão da
 100 para a 101 e a 102. A vitória forçada grava as estrelas em
@@ -1221,6 +1257,13 @@ qualquer idioma. Botão com texto comprido (alemão, turco) quebra em duas linha
 fileira dos vídeos do cartão de derrota, e o seletor de idioma dos ajustes quebra em
 quantas linhas precisar.
 
+**Os gritos da vitória são arrays** (`gritoBoa`, `gritoOtima`, `gritoPerfeita`): o `t()`
+devolve o valor cru, e `escolheGrito()` sorteia na lista. Cada língua tem as próprias
+palavras, não traduções umas das outras. Elas são desenhadas no canvas com a Fredoka do
+subconjunto latin, então **só levam letras do Latin-1**: um İ ou um ş turco sairia em
+outra fonte no meio da palavra — por isso o turco não tem "HARİKA" nem "MÜTHİŞ". O
+francês leva o espaço fino antes do "!" como ` `.
+
 ### Duas versoes: Poki e lisa
 
 O alvo do build entra por `VITE_PLATAFORMA` e vive em `src/core/platform.js`.
@@ -1345,10 +1388,11 @@ inteira mostrou 0% de interação nesses botões por isso. Os botões de compra 
 (`comprar-skin`, `equipar-skin`, `comprar-melhoria`, `comprar-impulso`) ganharam o par
 `visible` (`ofertasDaLoja`), sem o qual o painel nem os listava.
 
-O prêmio de mundo sai como `premio / mundo-N / visible` na revelação, `interact` com o
-mesmo nome quando o toque adianta o selo, e `premio / skin-<id>` (ou `melhoria-<id>`,
-`moedas-<motivo>`) com a ação `ganho`, que cai na aba Other. Os três saem síncronos,
-antes do `advanceLevel`: o intervalo comercial vem logo depois do selo. O hexágono
+O prêmio de mundo sai como `premio / mundo-N / visible` na revelação e
+`premio / skin-<id>` (ou `melhoria-<id>`, `moedas-<motivo>`) com a ação `ganho`, que cai
+na aba Other. Os dois saem síncronos, antes da troca: o intervalo comercial vem logo
+depois da revelação. O `interact` de quem adiantava o prêmio com um toque saiu na 1.0.15
+com o tempo fixo. O hexágono
 comprado pelas moedas sai como `premio / desbloqueio / visible` e
 `premio / desbloqueio-<id> / ganho`, e a chuva como `chuva / mundo-N / visible` ao
 abrir. Os marcos de tempo de sessão (`MARCOS_MIN` em `main.js`)

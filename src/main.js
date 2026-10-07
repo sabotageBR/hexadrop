@@ -16,10 +16,14 @@ import { faseDeOrigem } from './game/alem.js';
 import { Progress } from './game/progress.js';
 import {
   UPGRADES, BOOSTS, gateStars, xpForRank, skin as getSkin, BONUS_COINS_PER_PIECE,
-  CHUVA_COINS_PER_PIECE, WORLD_PRIZES, worldPrize,
+  CHUVA_COINS_PER_PIECE, WORLD_PRIZES, worldPrize, notaDaJogada,
 } from './game/content.js';
 import { THEMES } from './render/themes.js';
 import { applyUiTheme } from './render/uitheme.js';
+import {
+  desenhar as desenharTransicao, desenharBranco, tempos as temposDaTransicao, temposDoMundo, soco, entrada,
+  pontoDasMoedas, PREMIO_INI, PREMIO_DUR,
+} from './render/transicoes.js';
 import { brilhoDaSkin } from './render/sprites.js';
 import { paintHexModel, hexPath } from './render/hexmodels.js';
 import { material as getMaterial } from './physics/materials.js';
@@ -202,28 +206,15 @@ const EVENTOS_UI = {
 };
 
 /**
- * Quanto tempo o selo de recompensa fica sobre a cena antes do corte, e quanto
- * dura o corte - igual a transicao de .wipe no CSS.
+ * O fim de fase e a transicao do stringcut (render/transicoes.js): o grito, as
+ * estrelas, a rajada da sobra da torre e o corte para a fase seguinte aos 2,3
+ * s, com tempo fixo - o toque nao adianta nada, como la. No fim de mundo a
+ * revelacao do premio ocupa PREMIO_DUR (2,2 s) no meio dela, tambem fixa.
  *
- * Dentro de um mundo, vencer nao abre tela: a fase seguinte entra sozinha
- * atras desse corte. A fronteira de mundo continua sendo WORLD_SIZES, a unica
- * fonte de verdade sobre isso - e e la que o cartao ainda tem trabalho a
- * fazer, porque e onde o tema, a musica, o portao e o video de dobrar
- * recompensa entram.
+ * A revelacao ocupa o centro da tela, mas nao e cartao: nao tem botao. A licao
+ * medida e que o fluxo continuo nao perde jogador e a parada perde - o cartao
+ * de fim de mundo custou 15% na passagem da fase 20 para a 21.
  */
-const FLOW_SEAL_MS = 1000;
-
-/**
- * Revelacao do premio de fim de mundo: 2,2 s, e o toque so adianta depois de 1 s.
- *
- * Ela ocupa o centro da tela, mas nao e cartao: nao tem botao. A licao medida e
- * que o fluxo continuo nao perde jogador e a parada perde - o cartao de fim de
- * mundo custou 15% na passagem da fase 20 para a 21. A primeira versao era so
- * uma linha no selo, e o Evandro nao a viu: quem vinha tocando para avancar a
- * via por 0,7 s. O piso existe porque o mesmo toque que apressava a cascata
- * engoliria o premio antes de ele ser visto.
- */
-const FLOW_PRIZE_MS = 2200;
 
 
 /**
@@ -237,10 +228,10 @@ const FLOW_PRIZE_MS = 2200;
  * novo: a curva de sobrevivencia por aparelho, que e o que se compara.
  */
 const MARCOS_MIN = [1, 2, 3, 5, 7, 10, 15];
-const PRIZE_SKIP_FLOOR_MS = 1000;
-/** Quando o hexagono troca de skin na cena, depois de o selo entrar. */
+/** Quando o hexagono troca de skin na cena, depois de a revelacao entrar. */
 const PRIZE_SWAP_MS = 120;
-const WIPE_MS = 200;
+/** No maximo uma moeda voando por peca estourada, e estas no total por fase. */
+const MOEDAS_DA_RAJADA = 12;
 
 /**
  * Derrota sem parada: quanto tempo o selo "Quase!" fica sobre a cena antes do
@@ -393,8 +384,21 @@ class Game {
     this.flowNext = null;
     /** Quando o selo entrou, em performance.now(). */
     this.flowShownAt = 0;
-    /** true entre o fim do selo e a fase seguinte estar no ar. */
+    /** true entre a troca da transicao (ou o fim do selo) e a fase seguinte estar no ar. */
     this.advancing = false;
+    /**
+     * Transicao de fim de fase em curso (render/transicoes.js); null fora dela.
+     * Continua de pe depois da troca, enquanto o confete cai e a varredura do
+     * fim de mundo sai de cima da fase nova.
+     * @type {*}
+     */
+    this.trans = null;
+    /** Segundos desde que a fase entrou pela transicao (zoom e lavado); -1 sem entrada. */
+    this.entradaT = -1;
+    /** O ultimo grito mostrado, para o sorteio nao repetir. */
+    this.ultimoGrito = '';
+    /** Quando tocou o ultimo estouro da rajada, em performance.now(). */
+    this.ultimoPop = 0;
     /** Temporizador do cartao de derrota; zero quando nao ha cartao a caminho. */
     this.loseTimer = 0;
     /** A proxima fase a carregar e o recomeco de uma derrota: a dica vem logo. */
@@ -429,6 +433,10 @@ class Game {
     this.bindUi();
     this.applyLang();
     this.applyQuality();
+    // O grito da vitoria e desenhado no canvas com a Fredoka (ui/fontes): sem
+    // pedir antes, o primeiro grito sairia na fonte do sistema, porque o canvas
+    // nao espera fonte nenhuma carregar.
+    if (document.fonts && document.fonts.load) document.fonts.load('700 80px Fredoka').catch(() => {});
     // A folha de estilo esconde os botoes de video pela raiz: na versao lisa
     // nao existe video, e um botao que promete recompensa e nao entrega e pior
     // do que nao ter botao.
@@ -493,6 +501,11 @@ class Game {
     });
     this.scene.input.onKey((code) => this.onKey(code));
     this.scene.onTapAfterEnd = () => this.skipWait();
+    // A transicao de fim de fase anda no passo fixo da cena: o laco para no
+    // intervalo comercial, e ela para junto, como no stringcut.
+    this.scene.onUpdate = (dt) => this.passoTransicao(dt);
+    this.scene.onOverlay = (ctx) => this.desenhaTransicao(ctx);
+    this.scene.zoomFx = () => this.zoomTransicao();
     // O reenquadramento da home vem depois do refit da cena, senao mede o
     // layout antigo.
     window.addEventListener('resize', () => {
@@ -557,11 +570,10 @@ class Game {
 
   /** @param {string} name */
   show(name) {
-    // Sair da tela de jogo por qualquer caminho fecha o contador da
-    // celebracao e o selo do fluxo: os dois vivem sobre a cena, nao sobre o
-    // menu.
+    // Sair da tela de jogo por qualquer caminho fecha o selo do fluxo, que
+    // vive sobre a cena e nao sobre o menu, e devolve os botoes do HUD.
     if (name !== 'game') {
-      this.hideBonusCounter();
+      this.liberaHud();
       this.hideFlowSeal();
     }
     // A folha de estilo precisa saber qual tela esta no ar: em paisagem baixa
@@ -1168,11 +1180,21 @@ class Game {
   }
 
   /** @param {number} level */
-  startLevel(level, variantIndex) {
+  /**
+   * @param {number} level
+   * @param {number} [variantIndex]
+   * @param {boolean} [entrar] a fase entra pela transicao: zoom recuando e
+   *   lavado de branco, e a transicao de fim de fase continua de pe por cima
+   *   dela (o confete caindo, a varredura do fim de mundo saindo)
+   */
+  startLevel(level, variantIndex, entrar = false) {
     // Fecha o gameplay anterior antes de abrir o proximo: a Poki reprova
     // gameplayStart repetido sem um gameplayStop entre eles.
     poki.gameplayStop();
+    const trans = entrar ? this.trans : null;
     this.cancelFlow();
+    this.trans = trans;
+    this.entradaT = entrar ? 0 : -1;
     // Sem teto: depois da 100 o jogo continua (game/alem.js). Quem barra fase
     // nao alcancada e o mapa e a home, como sempre foi.
     const mudouDeFase = this.level !== Math.max(1, level | 0);
@@ -1181,7 +1203,7 @@ class Game {
     if (mudouDeFase) this.lossStreak = 0;
     this.paused = false;
     this.pendingWin = null;
-    this.hideBonusCounter();
+    this.liberaHud();
     this.hideChuva();
     const { session, theme } = this.makeSession(this.level, variantIndex);
     session.autoHintAfter = this.autoHintFor(this.level, this.hintOnStart);
@@ -1366,6 +1388,10 @@ class Game {
       // fazem parte do premio, e a contagem delas acontece no canvas, antes do
       // cartao entrar.
       this.pendingWin = { stars, won: state === 'won' };
+      // No jogo corrido a vitoria e a transicao do stringcut. A automacao
+      // (`flowLevels` falso: playsweep, thumbnail) fica sem ela - sem texto
+      // na thumbnail, e uma fase por vez no playsweep, com o cartao.
+      if (this.flowLevels) this.iniciaTransicao(session, stars, state);
       this.startCelebration(session);
     } else {
       this.lossStreak++;
@@ -1385,51 +1411,37 @@ class Game {
   }
 
   /**
-   * A cascata da celebracao: as pecas que sobraram estouram uma a uma e o
-   * resultado e gravado no fim dela (finishWin).
+   * A rajada da celebracao: as pecas que sobraram estouram debaixo do grito e
+   * o resultado e gravado no fim dela (finishWin).
    *
-   * Na ultima fase de cada mundo ela e a chuva de moedas: a mesma cascata,
-   * sozinha, com cada peca valendo o dobro (`CHUVA_COINS_PER_PIECE`), o placar
-   * dourado e as moedas voando para o contador. A 1.0.10 mostrou o jogador
-   * saindo num ritmo constante de ~0,3 por minuto do minuto 1 ao 7, e da fase
-   * 11 em diante so trocavam o ceu e a dificuldade: a chuva e um momento
-   * diferente a cada cinco fases, antes do premio do mundo. Ela nao depende de
-   * toque - tocar so apressa, como em qualquer cascata. Fora do jogo corrido
-   * (playsweep) nao ha chuva, para a fase continuar medida sozinha.
+   * Na ultima fase de cada mundo ela e a chuva de moedas: a mesma rajada,
+   * dourada, com cada peca valendo o dobro (`CHUVA_COINS_PER_PIECE`) e o brilho
+   * nas bordas da cena. A 1.0.10 mostrou o jogador saindo num ritmo constante
+   * de ~0,3 por minuto do minuto 1 ao 7, e da fase 11 em diante so trocavam o
+   * ceu e a dificuldade: a chuva e um momento diferente a cada cinco fases,
+   * antes do premio do mundo. Fora do jogo corrido (playsweep) nao ha chuva,
+   * para a fase continuar medida sozinha.
    * @param {*} session
    */
   startCelebration(session) {
     const sobraram = session.startBonus();
     this.chuvaAtiva = sobraram > 0 && this.flowLevels && this.atWorldEnd();
+    if (this.trans) this.trans.dobro = this.chuvaAtiva;
+    // Durante a celebracao o jogador nao sai nem pausa: a fase ja acabou, e o
+    // premio so e gravado quando a rajada termina.
+    this.travaHud();
     if (this.chuvaAtiva) this.showChuva();
-    else if (sobraram > 0) this.showBonusCounter(sobraram);
-    else window.setTimeout(() => this.finishWin(), 700);
+    if (sobraram === 0) window.setTimeout(() => this.finishWin(), 700);
   }
 
-  /**
-   * Abre a chuva de moedas: o painel da contagem vira o placar dourado e a cena
-   * ganha o brilho nas bordas.
-   */
+  /** Abre a chuva de moedas: a cena ganha o brilho nas bordas. */
   showChuva() {
-    const box = $('bonusBox');
-    if (box) {
-      $('bonusLabel').textContent = t('chuvaTitle');
-      $('bonusCount').textContent = '+0';
-      $('bonusGain').textContent = t('chuvaHint');
-      box.classList.add('chuva');
-      box.hidden = false;
-    }
     $('s-game').classList.add('chuva');
-    /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = true;
-    /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = true;
-    audio.prize();
     poki.measure('chuva', `mundo-${this.origem.mundo + 1}`, 'visible');
   }
 
   hideChuva() {
     this.chuvaAtiva = false;
-    const box = document.getElementById('bonusBox');
-    if (box) box.classList.remove('chuva');
     const tela = document.getElementById('s-game');
     if (tela) tela.classList.remove('chuva');
   }
@@ -1491,7 +1503,7 @@ class Game {
     // De volta a "pronta": o gameplayStart sai no primeiro toque de verdade,
     // pelo mesmo onFirstTap de qualquer fase, e nao ao fechar o video.
     session.state = 'ready';
-    this.hideBonusCounter();
+    this.liberaHud();
     this.setStars('gameStars', session.stars);
     this.show('game');
     this.ofertaVisivel('pausa');
@@ -1520,7 +1532,7 @@ class Game {
    * qualquer fase. As duas primeiras repetem a variante porque e o que o
    * jogador escolhe quando pode: no cartao da 1.0.3, 63% tocaram em "tentar de
    * novo" e 13% em "embaralhar". O HUD fica fora do ar ate a fase recomecar,
-   * como na celebracao - quem o devolve e o hideBonusCounter() de startLevel.
+   * como na celebracao - quem o devolve e o liberaHud() de startLevel.
    */
   flowRetry() {
     audio.lose();
@@ -1542,17 +1554,16 @@ class Game {
   }
 
   /**
-   * O corte do recomeco. Mesma ordem de advanceLevel(): o intervalo comercial
-   * termina antes de startLevel, e passa pela carencia da classe.
+   * O recomeco. Mesma ordem da troca de fase: o intervalo comercial termina
+   * antes de startLevel, e passa pela carencia da classe. A fase entra como
+   * depois de uma vitoria, com o zoom recuando e o lavado de branco.
    * @param {number} [variante] a mesma, se omitida
    */
   async retryLevel(variante = this.variantIndex) {
     this.flowTimer = 0;
     this.advancing = true;
     await this.commercialBreak();
-    $('wipe').classList.add('on');
-    await new Promise((resolve) => window.setTimeout(resolve, WIPE_MS));
-    this.startLevel(this.level, variante);
+    this.startLevel(this.level, variante, true);
   }
 
   /**
@@ -1580,17 +1591,13 @@ class Game {
     // No fim dos mundos pares 2 a 8, `finishLevel` ja comprou o hexagono da
     // barra (`result.unlock`), na mesma gravacao do premio do mundo.
     this.lastResult = result;
-    // Dentro de um mundo o jogo nao para: o premio vira um selo sobre a cena e
-    // a fase seguinte entra sozinha. Quem reabilita os botoes do HUD nesse
-    // caminho e o hideBonusCounter() de startLevel, no fim da transicao.
-    if (this.flowContinues()) {
-      // A contagem sai e o selo entra no mesmo lugar: sao o mesmo recado em
-      // dois tempos, e empilhados viravam duas caixas sobre a torre.
-      this.hideBonusCounter(false);
-      this.flowToNext(result, session);
+    // No jogo corrido o resto e da transicao, que segue no relogio dela; quem
+    // reabilita os botoes do HUD e o liberaHud() de startLevel, na troca.
+    if (this.trans) {
+      this.fechaTransicao(result, session, pend.stars);
       return;
     }
-    this.hideBonusCounter();
+    this.liberaHud();
     this.showWin(pend.stars, result, session);
   }
 
@@ -1632,52 +1639,143 @@ class Game {
   }
 
   /**
-   * Fluxo continuo: mostra o recibo da fase sobre a cena e agenda a seguinte.
+   * Abre a transicao de fim de fase, no mesmo passo em que a vitoria sai.
    *
-   * Tudo que o cartao dizia continua sendo dito, so nao em tela cheia - as
-   * estrelas na fileira do HUD, as moedas no selo e no contador do topo, e o
-   * resto (recorde e patente) nos toasts que o jogo ja usa
-   * em qualquer outra tela. O que nao cabe no selo e o video de dobrar
-   * recompensa: ele exige um botao padrao do mesmo tamanho ao lado, e um par
-   * de botoes e o cartao de volta. Ele fica no fim de mundo.
+   * O tipo decide o que vem depois do grito: 'fase' corta para a seguinte aos
+   * 2,3 s; 'mundo' faz os pips voarem, abre a revelacao do premio e cobre a
+   * troca com a varredura na cor do mundo seguinte; 'final' (a fase 100, onde o
+   * fluxo para) abre o cartao de vitoria no lugar do corte.
+   * @param {*} session
+   * @param {number} stars
+   * @param {string} estado 'won' | 'stuck'
+   */
+  iniciaTransicao(session, stars, estado) {
+    const final = !this.flowContinues();
+    const mundo = !final && this.atWorldEnd();
+    const tipo = final ? 'final' : mundo ? 'mundo' : 'fase';
+    const hex = session.world.hexTransform();
+    const [fx, fy] = this.scene.camera.toScreen(hex.x, hex.y);
+    const nota = notaDaJogada({ estado, taps: session.taps, par: session.par || 0, bestCombo: session.bestCombo });
+    let textoMundo = '';
+    let corMundo = '';
+    if (mundo) {
+      // O mundo seguinte vem de `faseDeOrigem`, que vale tambem depois da 100:
+      // pelo indice, a 105 cairia no mundo 20.
+      const prox = faseDeOrigem(this.level + 1);
+      textoMundo = `${t('world')} ${prox.mundo + 1}`.toLocaleUpperCase(getLang());
+      const tema = THEMES[prox.tema] || this.scene.theme;
+      corMundo = tema.sky[Math.floor(tema.sky.length / 2)];
+    }
+    const reduzido = this.movimentoReduzido();
+    this.trans = {
+      tipo,
+      t: 0,
+      fx,
+      fy,
+      nota,
+      grito: this.escolheGrito(nota),
+      estrelas: stars,
+      corEstrela: this.scene.theme.star,
+      moedas: 0,
+      pulo: 0,
+      dobro: false,
+      moedasVoando: 0,
+      pips: mundo && !reduzido ? this.posicoesDosPips() : [],
+      textoMundo,
+      corMundo,
+      semente: (this.level * 31 + 7) | 0,
+      /** @type {*} {premio, moedas, extra}, quando finishWin achar um */
+      premio: null,
+      premioAberto: false,
+      premioFechado: false,
+      /** @type {*} o que o cartao da fase 100 precisa, guardado por finishWin */
+      cartao: null,
+      trocou: false,
+      anuncio: false,
+      reduzido,
+      baixa: this.scene.quality === 'low',
+    };
+    this.fillWorldPip();
+    audio.yes(mundo || final);
+  }
+
+  /**
+   * O grito, na lingua do jogador e no nivel da jogada (`notaDaJogada`):
+   * sorteado na lista, sem repetir o anterior.
+   * @param {'boa'|'otima'|'perfeita'} nota
+   * @returns {string}
+   */
+  escolheGrito(nota) {
+    const chave = nota === 'perfeita' ? 'gritoPerfeita' : nota === 'otima' ? 'gritoOtima' : 'gritoBoa';
+    const lista = /** @type {*} */ (t(chave));
+    const opcoes = Array.isArray(lista) && lista.length ? lista : [String(lista)];
+    const livres = opcoes.length > 1 ? opcoes.filter((g) => g !== this.ultimoGrito) : opcoes;
+    const grito = livres[Math.floor(this.rng.next() * livres.length) % livres.length];
+    this.ultimoGrito = grito;
+    return grito;
+  }
+
+  /**
+   * Onde estao os pips da fita do mundo, em px CSS do canvas: e de la que eles
+   * voam para o centro no fim de mundo.
+   * @returns {{x:number, y:number}[]}
+   */
+  posicoesDosPips() {
+    const host = document.getElementById('gameWorldPips');
+    if (!host) return [];
+    const base = this.canvas.getBoundingClientRect();
+    return Array.from(host.querySelectorAll('i')).map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2 - base.left, y: r.top + r.height / 2 - base.top };
+    });
+  }
+
+  /** @returns {boolean} */
+  movimentoReduzido() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  /**
+   * A vitoria acabou de ser gravada (finishWin) com a transicao no ar: o
+   * contador salta para o total da fase, as moedas voam para o HUD e o premio
+   * fica guardado para a revelacao abrir no tempo dela.
    *
+   * Tudo que o selo dizia continua sendo dito: as estrelas sob o grito, as
+   * moedas no contador e no HUD, e o resto (recorde e patente) nos toasts que
+   * o jogo ja usa em qualquer outra tela.
    * @param {*} result
    * @param {*} session
+   * @param {number} stars
    */
-  flowToNext(result, session) {
+  fechaTransicao(result, session, stars) {
+    const tr = this.trans;
+    const moedas = result.coins + (result.bonusCoins || 0);
+    tr.moedas = moedas;
+    tr.pulo = 1;
+    if (tr.tipo === 'final') {
+      // A fase 100 fecha a campanha no cartao, que abre na troca e conta as
+      // moedas ele mesmo.
+      tr.cartao = { stars, result, session };
+      return;
+    }
     // No fim de um mundo par vem os dois: o hexagono da barra e a manchete, e a
     // melhoria do mundo entra numa linha embaixo dele, na mesma revelacao.
     const premio = result.unlock || result.prize || null;
     const extra = result.unlock && result.prize ? result.prize : null;
     const gasto = result.unlock ? result.unlock.coins || 0 : 0;
-    if (premio) audio.prize();
-    else audio.win();
-    const box = $('flowSeal');
-    this.resetSeal();
-    const moedas = result.coins + (result.bonusCoins || 0);
-    $('flowCoins').textContent = moedas > 0 ? `+${moedas}` : '';
-    // De onde veio o extra, com o mesmo texto do cartao: peca intacta e combo
-    // sao coisas que o jogador pode repetir de proposito na fase seguinte.
-    const sobraram = result.chuvaPieces > 0 ? 0 : session && session.bonusTotal ? session.bonusTotal : result.bonusPieces || 0;
-    const partes = [];
-    if (result.chuvaPieces > 0) partes.push(`${t('chuvaSeal')} x${result.chuvaPieces}`);
-    if (sobraram > 0) partes.push(`${t('bonusIntact')} x${sobraram}`);
-    if (session && session.bestCombo > 1) partes.push(`${t('combo')} x${session.bestCombo}`);
-    $('flowWhat').textContent = partes.join('  \u00b7  ');
-    this.fillWorldPip();
-    // No fim de mundo quem fala e a revelacao, com as moedas dentro dela; o
-    // selo comum por cima seriam dois recados ao mesmo tempo.
-    if (premio) this.showPrize(premio, moedas, extra);
-    else box.hidden = false;
+    if (premio) tr.premio = { premio, moedas, extra };
 
-    // As moedas pousam no contador do HUD, nao numa bolsa de cartao: o premio
-    // fica onde o jogador vai continuar olhando.
+    // As moedas pousam no contador do HUD: o premio fica onde o jogador vai
+    // continuar olhando.
     const moedasDoPremio = result.prize && result.prize.kind === 'coins' ? result.prize.coins || 0 : 0;
     // O desbloqueio ja gastou o preco: o contador sobe com as moedas da fase,
     // a barra enche, e so depois a compra desconta.
     const bolsaAntes = this.progress.data.coins + gasto - moedas - moedasDoPremio;
-    const deOnde = premio ? $('revealCoins') : $('flowCoins');
-    this.flyCoins(deOnde, Math.min(12, Math.max(4, Math.round(moedas / 3))), premio ? 650 : 200, $('gameCoins'));
+    const vp = this.scene.viewport;
+    const p = pontoDasMoedas(tr.t, vp.width, vp.height);
+    const base = this.canvas.getBoundingClientRect();
+    const de = { x: p.x + base.left, y: p.y + base.top };
+    this.flyCoins(de, Math.min(12, Math.max(4, Math.round(moedas / 3))), 0, $('gameCoins'));
     this.countUp($('gameCoins'), this.progress.data.coins + gasto, 260, false, bolsaAntes);
     // Com compra, a barra do hexagono seguinte so aparece depois da revelacao:
     // antes dela ainda e a do que acabou de ser comprado.
@@ -1688,12 +1786,14 @@ class Game {
       $('gameMetaFill').style.width = '100%';
       $('gameMetaTxt').textContent = `${gasto}/${gasto}`;
     }
+    // Quanto falta para a revelacao sair, contado de agora.
+    const fimDoPremio = Math.max(0, PREMIO_INI + PREMIO_DUR - tr.t) * 1000;
     if (gasto) {
       window.setTimeout(() => {
         if (this.screen !== 'game') return;
         $('gameCoins').textContent = String(this.progress.data.coins);
         this.atualizaMeta();
-      }, FLOW_PRIZE_MS - 300);
+      }, fimDoPremio - 300);
     }
 
     // No fim de mundo o recado e o premio: um "novo recorde" ao mesmo tempo
@@ -1702,11 +1802,113 @@ class Game {
     // Com premio, a patente espera a revelacao sair: os dois juntos disputavam
     // o centro da tela, e em paisagem baixa o toast caia em cima do nome.
     if (result.rankUp) {
-      window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), premio ? FLOW_PRIZE_MS + 300 : 700);
+      window.setTimeout(() => this.toast(`${t('playerLevel')} ${this.progress.rank}`), premio ? fimDoPremio + 300 : 900);
     }
+  }
 
-    if (premio) this.scheduleFlow(() => this.advanceLevel(), FLOW_PRIZE_MS, PRIZE_SKIP_FLOOR_MS);
-    else this.scheduleFlow(() => this.advanceLevel(), FLOW_SEAL_MS);
+  /**
+   * Um passo fixo da cena: anda o relogio da transicao e dispara o que tem
+   * hora marcada - a revelacao do premio, a troca de fase, o fim da camada.
+   *
+   * O relogio para sozinho no intervalo comercial (o laco pausa), e para na
+   * troca enquanto o intervalo nao volta. Tambem espera a gravacao: se a
+   * rajada ainda nao terminou (torre enorme), a transicao segura na revelacao
+   * e na troca em vez de trocar de fase com a vitoria pendente.
+   * @param {number} dt
+   */
+  passoTransicao(dt) {
+    if (this.entradaT >= 0) {
+      this.entradaT += dt;
+      if (this.entradaT > 0.7) this.entradaT = -1;
+    }
+    const tr = this.trans;
+    if (!tr) return;
+    if (tr.pulo > 0) tr.pulo = Math.max(0, tr.pulo - dt * 5);
+    const espera = !!this.pendingWin;
+    const { troca, fim } = temposDaTransicao(tr.tipo, !!tr.premio);
+    let tempo = tr.t + dt;
+    if (tr.tipo === 'mundo' && espera) tempo = Math.min(tempo, PREMIO_INI);
+    if (!tr.trocou && (espera || tr.anuncio)) tempo = Math.min(tempo, troca);
+    tr.t = tempo;
+    if (tr.premio && !tr.premioAberto && tempo >= PREMIO_INI) {
+      tr.premioAberto = true;
+      if (this.screen === 'game') this.showPrize(tr.premio.premio, tr.premio.moedas, tr.premio.extra);
+    }
+    if (tr.premioAberto && !tr.premioFechado && tempo >= temposDoMundo(true).varIni) {
+      tr.premioFechado = true;
+      const box = document.getElementById('prizeReveal');
+      if (box) box.hidden = true;
+    }
+    if (!tr.trocou && !tr.anuncio && !espera && tempo >= troca) this.trocaDeFase(tr);
+    if (tr.trocou && tempo >= fim && this.trans === tr) this.trans = null;
+  }
+
+  /**
+   * A troca de fase, no meio da transicao: o intervalo comercial (com a
+   * transicao parada) e a fase seguinte entrando por baixo dela.
+   *
+   * A ordem e obrigatoria: o intervalo termina ANTES de startLevel, porque
+   * startLevel dispara measure('level', N, 'start') e a Poki nao aceita evento
+   * nenhum dentro de um intervalo. E passa pelo commercialBreak() da classe,
+   * nao pelo do poki, senao pula a carencia.
+   * @param {*} tr
+   */
+  async trocaDeFase(tr) {
+    if (tr.tipo === 'final') {
+      tr.trocou = true;
+      const c = tr.cartao;
+      if (c && this.screen === 'game') {
+        this.liberaHud();
+        this.showWin(c.stars, c.result, c.session, true);
+      }
+      return;
+    }
+    tr.anuncio = true;
+    this.advancing = true;
+    const alvo = this.level + 1;
+    this.level = alvo;
+    await this.commercialBreak();
+    // Saiu da fase durante o intervalo: quem limpou a transicao foi o cancelFlow.
+    if (this.trans !== tr) return;
+    tr.anuncio = false;
+    tr.trocou = true;
+    this.startLevel(alvo, undefined, true);
+  }
+
+  /**
+   * A camada da transicao por cima da cena, e o lavado de branco da entrada.
+   * @param {CanvasRenderingContext2D} ctx
+   */
+  desenhaTransicao(ctx) {
+    const vp = this.scene.viewport;
+    if (this.entradaT >= 0) desenharBranco(ctx, entrada(this.entradaT).branco, vp.width, vp.height);
+    const tr = this.trans;
+    if (!tr) return;
+    desenharTransicao(ctx, tr.tipo, tr.t, { ...tr, W: vp.width, H: vp.height });
+  }
+
+  /**
+   * Zoom de efeito da cena: o soco da vitoria, em volta do hexagono, e a
+   * entrada da fase nova, em volta do centro. `trava` segura o toque enquanto a
+   * varredura do fim de mundo ainda cobre a fase nova.
+   * @returns {{z:number, fx:number, fy:number, trava:boolean}|null}
+   */
+  zoomTransicao() {
+    const vp = this.scene.viewport;
+    const tr = this.trans;
+    const parado = this.movimentoReduzido();
+    let z = 1;
+    let fx = vp.width / 2;
+    let fy = vp.height / 2;
+    if (tr && !tr.trocou && !parado) {
+      z = soco(tr.t);
+      fx = tr.fx;
+      fy = tr.fy;
+    }
+    if (this.entradaT >= 0 && !parado) z *= entrada(this.entradaT).zoom;
+    const trava = !!(tr && tr.trocou && tr.tipo === 'mundo' && tr.t < temposDoMundo(!!tr.premio).varFim);
+    if (z === 1 && !trava) return null;
+    return { z, fx, fy, trava };
   }
 
   /**
@@ -1738,7 +1940,6 @@ class Game {
       this.paintPrizeIcon(/** @type {HTMLCanvasElement} */ ($('revealExtraIcon')), extra, 22);
     }
     $('revealCoins').textContent = moedas > 0 ? `+${moedas}` : '';
-    $('revealHint').textContent = t('prizeTapHint');
     const icone = /** @type {HTMLCanvasElement} */ ($('revealIcon'));
     this.paintPrizeIcon(icone, premio, 160);
     // O tamanho na tela e do CSS (uma fracao do palco, que encolhe em paisagem
@@ -1754,7 +1955,6 @@ class Game {
     // sendo prometido e o que acabou de chegar.
     const hud = document.getElementById('gamePrize');
     if (hud && doMundo) hud.classList.add('claimed');
-    this.flowPrizeEv = doMundo ? `mundo-${doMundo.world + 1}` : 'desbloqueio';
     this.medirPremio(premio);
     if (extra) this.medirPremio(extra);
     if (premio.kind === 'skin' && premio.id) {
@@ -1762,6 +1962,7 @@ class Game {
       window.setTimeout(() => this.swapHexSkin(id), PRIZE_SWAP_MS);
     }
     if (premio.kind === 'coins') this.flyCoins($('revealIcon'), 10, 700, $('gameCoins'));
+    audio.prize();
     window.setTimeout(() => this.confetti($('revealIcon')), 380);
   }
 
@@ -1858,7 +2059,6 @@ class Game {
     if (box) box.classList.remove('miss');
     const revelacao = document.getElementById('prizeReveal');
     if (revelacao) revelacao.hidden = true;
-    this.flowPrizeEv = '';
   }
 
   /**
@@ -2020,24 +2220,17 @@ class Game {
   }
 
   /**
-   * Toque depois do fim da fase.
+   * Toque depois do fim da fase: com o selo "Quase!" na tela, vai direto para
+   * o recomeco da derrota sem parada. Os 300 ms de piso impedem que o mesmo
+   * toque que derrubou o hexagono engula o selo.
    *
-   * A Poki mede que "games where the player can constantly perform an action
-   * outperform games with waiting and downtime", e entre vencer e a fase
-   * seguinte havia ate ~5 s so de espera: a cascata (ate 3,2 s), o assentar
-   * final (0,9 s), o selo (1 s) e o corte. A cena ja aperta a cascata sozinha
-   * (Session.hurryBonus); aqui, com o selo na tela, o toque vai direto para a
-   * fase seguinte - ou para o recomeco, na derrota sem parada. Os 300 ms de
-   * piso impedem que o mesmo toque que apressou a cascata engula o selo.
+   * A vitoria nao passa por aqui: a transicao do stringcut tem tempo fixo, e
+   * o Evandro escolheu manter assim - o toque nao adianta o grito, a revelacao
+   * nem a troca. Ela nao agenda `flowTimer`, entao este metodo nao acha passo.
    */
   skipWait() {
     if (this.screen !== 'game' || !this.flowTimer || this.advancing || !this.flowNext) return;
     if (performance.now() - this.flowShownAt < (this.flowFloor || 300)) return;
-    // Quantos adiantam o premio: o par do 'visible' que saiu na revelacao.
-    if (this.flowPrizeEv) {
-      poki.measure('premio', this.flowPrizeEv, 'interact');
-      this.flowPrizeEv = '';
-    }
     const passo = this.flowNext;
     window.clearTimeout(this.flowTimer);
     this.flowTimer = 0;
@@ -2060,13 +2253,14 @@ class Game {
     window.clearTimeout(this.loseTimer);
     this.loseTimer = 0;
     this.advancing = false;
+    this.trans = null;
+    this.entradaT = -1;
     this.hideFlowSeal();
-    const wipe = document.getElementById('wipe');
-    if (wipe) wipe.classList.remove('on');
   }
 
   /**
-   * Leva o jogador para a fase seguinte, com ou sem cartao antes.
+   * Do cartao de vitoria para a fase seguinte (a 100, e toda fase quando a
+   * automacao desliga o fluxo). No jogo corrido quem troca e trocaDeFase().
    *
    * A ordem aqui e obrigatoria: o intervalo comercial tem que terminar ANTES
    * de startLevel, porque startLevel dispara measure('level', N, 'start') e a
@@ -2079,83 +2273,50 @@ class Game {
     const target = this.level + 1;
     this.level = target;
     await this.commercialBreak();
-    // O corte cobre o quadro em que a cena e remontada: sobe, troca a fase
-    // escondido e desce sobre a torre nova. Quem baixa a cortina e o
-    // cancelFlow() de startLevel, ja com a fase nova montada.
-    $('wipe').classList.add('on');
-    await new Promise((resolve) => window.setTimeout(resolve, WIPE_MS));
-    this.startLevel(target);
+    this.startLevel(target, undefined, true);
   }
 
   /**
-   * Mostra o painel de contagem da celebracao.
-   * @param {number} total
+   * Tira voltar e pausar do ar: a fase ja acabou (celebracao, transicao,
+   * derrota a caminho) e o premio so e gravado no fim da rajada.
    */
-  showBonusCounter(total) {
-    const box = $('bonusBox');
-    if (!box) return;
-    void total;
-    $('bonusLabel').textContent = t('bonusIntact');
-    // Comeca em zero e SOBE a cada estouro. Contar para baixo dava a sensacao
-    // de algo acabando; contar para cima e o placar crescendo, que e o que faz
-    // o jogador querer deixar mais pecas na proxima vez.
-    $('bonusCount').textContent = '0';
-    $('bonusGain').textContent = '';
-    box.hidden = false;
-    // Durante a celebracao o jogador nao sai nem pausa: a fase ja acabou, e o
-    // premio so e gravado quando a contagem termina.
+  travaHud() {
     /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = true;
     /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = true;
   }
 
-  /**
-   * @param {boolean} [reabilitar] devolve o HUD ao jogador; falso no fluxo
-   *   continuo, onde a contagem sai de cena mas a fase ainda vai trocar
-   */
-  hideBonusCounter(reabilitar = true) {
-    const box = $('bonusBox');
-    if (box) box.hidden = true;
-    if (!reabilitar) return;
+  /** Devolve voltar e pausar ao jogador. */
+  liberaHud() {
     /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = false;
     /** @type {HTMLButtonElement} */ ($('gamePause')).disabled = false;
   }
 
   /**
-   * Uma peca da celebracao estourou.
+   * Uma peca da rajada estourou: o contador sob o grito sobe, e a peca vira
+   * uma moeda voando para o HUD.
    * @param {number} done
    * @param {number} total
    * @param {number} [x] em metros
    * @param {number} [y]
    */
   onBonusPiece(done, total, x, y) {
-    audio.bonusPop(done, total);
-    if (this.chuvaAtiva) {
-      const count = $('bonusCount');
-      count.textContent = `+${done * CHUVA_COINS_PER_PIECE}`;
-      count.classList.remove('pop');
-      void count.offsetWidth;
-      count.classList.add('pop');
-      audio.coin(done);
-      this.scene.camera.addTrauma(0.1 + (done / Math.max(1, total)) * 0.16);
-      if (x !== undefined && y !== undefined) this.floatText(`+${CHUVA_COINS_PER_PIECE}`, x, y, 'coin');
-      // A chuva: cada estouro solta uma moeda que voa para o contador do HUD.
-      this.flyCoins(count, 1, 0, $('gameCoins'));
-      return;
+    // A rajada estoura uma peca a cada um ou dois quadros: tocando todas, a
+    // escala do bonusPop vira chiado.
+    const agora = performance.now();
+    if (agora - this.ultimoPop >= 40) {
+      this.ultimoPop = agora;
+      audio.bonusPop(done, total);
+      if (this.chuvaAtiva) audio.coin(done);
     }
-    const count = $('bonusCount');
-    if (count) {
-      count.textContent = String(done);
-      count.classList.remove('pop');
-      // Reinicia a animacao: sem o reflow o navegador ignora a reaplicacao.
-      void count.offsetWidth;
-      count.classList.add('pop');
-    }
-    const gain = $('bonusGain');
-    if (gain) gain.textContent = `+${done * BONUS_COINS_PER_PIECE}`;
-    this.scene.camera.addTrauma(0.1 + (done / Math.max(1, total)) * 0.14);
-    if (x !== undefined && y !== undefined) {
-      this.floatText(`+${BONUS_COINS_PER_PIECE}`, x, y, 'coin');
-    }
+    const tr = this.trans;
+    if (!tr) return;
+    tr.moedas = done * (this.chuvaAtiva ? CHUVA_COINS_PER_PIECE : BONUS_COINS_PER_PIECE);
+    tr.pulo = 1;
+    if (x === undefined || y === undefined || tr.moedasVoando >= MOEDAS_DA_RAJADA) return;
+    tr.moedasVoando++;
+    const [sx, sy] = this.scene.camera.toScreen(x, y);
+    const base = this.canvas.getBoundingClientRect();
+    this.flyCoins({ x: sx + base.left, y: sy + base.top }, 1, 0, $('gameCoins'));
   }
 
   /**
@@ -2196,8 +2357,14 @@ class Game {
     ).onfinish = () => el.remove();
   }
 
-  showWin(stars, result, session) {
-    audio.win();
+  /**
+   * @param {number} stars
+   * @param {*} result
+   * @param {*} session
+   * @param {boolean} [calado] a transicao ja tocou o grito: sem o segundo arpejo
+   */
+  showWin(stars, result, session, calado = false) {
+    if (!calado) audio.win();
     // No fim de um mundo o cartao fecha um capitulo, e nao uma fase; na 100 ele
     // fecha a campanha, e a 101 vem logo depois.
     $('winTitle').textContent =
@@ -2278,7 +2445,8 @@ class Game {
 
   /**
    * Lanca moedas do bloco de recompensa ate um contador.
-   * @param {HTMLElement} from
+   * @param {HTMLElement|{x:number, y:number}} from elemento, ou ponto em px CSS
+   *   da janela (o contador sob o grito e as pecas da rajada moram no canvas)
    * @param {number} count
    * @param {number} delay
    * @param {HTMLElement} [target] contador de destino; a bolsa do cartao por padrao
@@ -2286,7 +2454,7 @@ class Game {
   flyCoins(from, count, delay, target = $('winPurse')) {
     if (!target || !from) return;
     window.setTimeout(() => {
-      const a = from.getBoundingClientRect();
+      const a = 'getBoundingClientRect' in from ? from.getBoundingClientRect() : { left: from.x, top: from.y, width: 0, height: 0 };
       const b = target.getBoundingClientRect();
       for (let i = 0; i < count; i++) {
         const dot = document.createElement('div');
@@ -2378,7 +2546,7 @@ class Game {
     if (this.screen !== 'game' || !this.scene.session) return;
     // Celebracao e transicao nao se pausam: a fase ja acabou e os botoes do
     // HUD estao fora do ar. Sem esta guarda, Escape entrava por tras deles.
-    if (this.pendingWin || this.flowTimer || this.advancing) return;
+    if (this.pendingWin || this.flowTimer || this.advancing || (this.trans && !this.trans.trocou)) return;
     // Nem com a derrota ja decidida: a pausa escondia o cartao que estava a
     // caminho, e ao continuar sobrava uma fase terminada sem saida nenhuma.
     if (this.loseTimer || this.scene.session.finished) return;

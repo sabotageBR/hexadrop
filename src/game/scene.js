@@ -36,6 +36,7 @@ export class GameScene {
    * @param {number} [opts.bottomInset]
    * @param {(dt:number)=>void} [opts.onUpdate]
    * @param {(ctx:CanvasRenderingContext2D)=>void} [opts.onOverlay]
+   * @param {()=>({z:number, fx:number, fy:number, trava?:boolean}|null)} [opts.zoomFx]
    */
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
@@ -55,6 +56,12 @@ export class GameScene {
     this.lateral = false;
     this.onUpdate = opts.onUpdate || null;
     this.onOverlay = opts.onOverlay || null;
+    /**
+     * Zoom de efeito por quadro, em volta de um ponto da tela (px CSS): o soco
+     * da vitoria e a entrada da fase nova (render/transicoes.js). So escala o
+     * desenho - camera, toque e cache de sprites continuam no zoom da fase.
+     */
+    this.zoomFx = opts.zoomFx || null;
 
     /** @type {import('./session.js').Session|null} */
     this.session = null;
@@ -207,7 +214,9 @@ export class GameScene {
     // afinado: somar o estalo de quebra por cima vira ruido.
     if (cause !== 'bonus') audio.breakPiece(piece.material, Math.min(1, piece.area / 6));
     if (cause === 'bonus') {
-      this.camera.addTrauma(0.22);
+      // A rajada estoura uma peca a cada um ou dois quadros: com o tremor de
+      // uma pancada por peca, trinta pecas sacudiam a tela inteira sob o grito.
+      this.camera.addTrauma(0.05);
       this.particles.spark(pos.x, pos.y, color, 6, () => this.rng.next());
     } else if (cause === 'blast') {
       this.camera.addTrauma(0.5);
@@ -222,14 +231,16 @@ export class GameScene {
   /** @param {{x:number,y:number}} p */
   handleDown(p) {
     if (!this.session) return;
-    // Fase terminada: o toque nao quebra nada, mas encurta a espera - aperta a
-    // cascata da celebracao e deixa main.js pular o selo (onTapAfterEnd).
+    // Fase terminada: o toque nao quebra nada. A vitoria tem tempo fixo, como
+    // no stringcut; so o selo "Quase!" da derrota aceita ser adiantado
+    // (onTapAfterEnd -> main.js skipWait).
     if (this.session.finished) {
-      if (this.session.bonus) this.session.hurryBonus();
       if (this.onTapAfterEnd) this.onTapAfterEnd();
       return;
     }
-    const [wx, wy] = this.camera.toWorld(p.x, p.y);
+    const q = this.desfazZoom(p);
+    if (!q) return;
+    const [wx, wy] = this.camera.toWorld(q.x, q.y);
     const finger = this.touch ? 0.32 : 0;
     const result = this.session.tap(wx, wy, finger);
     if (!result) return;
@@ -247,12 +258,31 @@ export class GameScene {
       this.hovered = null;
       return;
     }
-    const [wx, wy] = this.camera.toWorld(p.x, p.y);
+    const q = this.desfazZoom(p);
+    if (!q) {
+      this.hovered = null;
+      return;
+    }
+    const [wx, wy] = this.camera.toWorld(q.x, q.y);
     this.hovered = this.session.world.pickAt(wx, wy, 0);
     // A mao do mouse sobre a peca diz que ela se clica: no desktop ninguem ve o
     // dedo de ninguem tocando.
     const cursor = this.hovered ? 'pointer' : '';
     if (this.canvas.style.cursor !== cursor) this.canvas.style.cursor = cursor;
+  }
+
+  /**
+   * O ponto da tela no desenho sem o zoom de efeito: a fase nova entra com zoom
+   * de 1,25, e o toque tem que cair na peca que o jogador ve. Null quando o
+   * efeito trava o toque (a varredura do fim de mundo ainda cobre a fase).
+   * @param {{x:number,y:number}} p
+   * @returns {{x:number,y:number}|null}
+   */
+  desfazZoom(p) {
+    const fx = this.zoomFx ? this.zoomFx() : null;
+    if (!fx) return p;
+    if (fx.trava) return null;
+    return { x: fx.fx + (p.x - fx.fx) / fx.z, y: fx.fy + (p.y - fx.fy) / fx.z };
   }
 
   /** @param {number} dt */
@@ -272,6 +302,13 @@ export class GameScene {
   render() {
     const ctx = this.viewport.begin();
     if (this.session && this.sprites) {
+      const fx = this.zoomFx ? this.zoomFx() : null;
+      if (fx && fx.z !== 1) {
+        ctx.save();
+        ctx.translate(fx.fx, fx.fy);
+        ctx.scale(fx.z, fx.z);
+        ctx.translate(-fx.fx, -fx.fy);
+      }
       this.renderer.draw(ctx, {
         session: this.session,
         theme: this.theme,
@@ -281,6 +318,7 @@ export class GameScene {
         time: this.time,
         hovered: this.hovered,
       });
+      if (fx && fx.z !== 1) ctx.restore();
     }
     const s = this.session;
     if (this.tapHand && s && s.hintPiece && s.hintPiece.alive && !s.finished) {

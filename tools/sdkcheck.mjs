@@ -15,6 +15,7 @@
  */
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { notaDaJogada } from '../src/game/content.js';
 
 const PORT = 9888;
 const BASE = process.env.SDK_URL || 'http://127.0.0.1:4173';
@@ -108,9 +109,19 @@ async function jogarFase(maxToques = 45) {
   }
 }
 
+/**
+ * A transicao de fim de fase vista por ultimo (main.js, `iniciaTransicao`):
+ * tipo, grito e nivel da jogada. Guardada enquanto o teste espera o desfecho.
+ * @type {Record<number, *>}
+ */
+const transVista = {};
+const LER_TRANS = `(() => { const tr = window.__game.trans; return tr ? { tipo: tr.tipo, grito: tr.grito, nota: tr.nota, dobro: tr.dobro } : null; })()`;
+
 /** Espera o desfecho: celebracao, selo e transicao levam alguns segundos. */
 async function esperarDesfecho(deLevel) {
   for (let t = 0; t < 40; t++) {
+    const tr = await js(LER_TRANS);
+    if (tr && !transVista[deLevel]) transVista[deLevel] = tr;
     const st = await js('({screen: window.__game.screen, level: window.__game.level, advancing: window.__game.advancing})');
     if (st && st.screen !== 'game') return st;
     if (st && st.level !== deLevel && !st.advancing) return st;
@@ -175,14 +186,15 @@ async function ganhar() {
 async function ganharEsperando(nivel, verChuva = false) {
   await ganhar();
   let selo = null;
-  // Fim de mundo: a cascata da celebracao vira a chuva de moedas (main.js,
-  // startCelebration), sozinha - as pecas estouram sem toque nenhum.
+  // Fim de mundo: a rajada da celebracao vira a chuva de moedas (main.js,
+  // startCelebration), sozinha - as pecas estouram sem toque nenhum, debaixo
+  // do grito da transicao de fim de mundo.
   /** @type {*} */
   let chuva = null;
   if (verChuva) {
     await sleep(500);
-    chuva = await js(`(() => { const b = document.getElementById('bonusBox'); return { aberta: !b.hidden && b.classList.contains('chuva'),
-      brilho: document.getElementById('s-game').classList.contains('chuva'), placar: document.getElementById('bonusCount').textContent }; })()`);
+    chuva = await js(`(() => { const tr = window.__game.trans; return { tipo: tr && tr.tipo, dobro: !!(tr && tr.dobro),
+      brilho: document.getElementById('s-game').classList.contains('chuva') }; })()`);
   }
   // A linha da melhoria embaixo do hexagono da barra (fim dos mundos pares 2 a 8).
   let extra = null;
@@ -606,10 +618,31 @@ check(
 }
 check(
   'fim de mundo vira chuva de moedas sozinha, sem toque (fase 20)',
-  !!fronteiraCedo && !!fronteiraCedo.chuva && fronteiraCedo.chuva.aberta === true && fronteiraCedo.chuva.brilho === true &&
-    measures.includes('chuva/mundo-4/visible'),
+  !!fronteiraCedo && !!fronteiraCedo.chuva && fronteiraCedo.chuva.tipo === 'mundo' && fronteiraCedo.chuva.dobro === true &&
+    fronteiraCedo.chuva.brilho === true && measures.includes('chuva/mundo-4/visible'),
   JSON.stringify(fronteiraCedo && fronteiraCedo.chuva),
 );
+{
+  // A vitoria no jogo corrido e a transicao do stringcut, com um grito da
+  // lista do nivel da jogada, na lingua do jogador - e nao o nome da chave.
+  const tr = transVista[1];
+  check(
+    'vitoria abre a transicao do grito (fase 1)',
+    !!tr && tr.tipo === 'fase' && ['boa', 'otima', 'perfeita'].includes(tr.nota) &&
+      typeof tr.grito === 'string' && tr.grito.length > 0 && !tr.grito.startsWith('grito'),
+    JSON.stringify(tr),
+  );
+  // O nivel da jogada (game/content.js): a meta e o par da variante.
+  const nota = (/** @type {string} */ estado, /** @type {number} */ taps, /** @type {number} */ combo = 0) =>
+    notaDaJogada({ estado, taps, par: 6, bestCombo: combo });
+  const casos = [nota('won', 6), nota('won', 5), nota('won', 8), nota('won', 9), nota('won', 11, 4), nota('stuck', 6), nota('won', 3, 0)];
+  check(
+    'nivel da jogada pela meta: perfeita, otima e boa',
+    casos.join(' ') === 'perfeita perfeita otima boa otima boa perfeita' &&
+      notaDaJogada({ estado: 'won', taps: 4, par: 0, bestCombo: 0 }) === 'boa',
+    casos.join(' '),
+  );
+}
 check(
   'a barra some no mundo 1 e aparece do zero no 2 (fases 1 e 6)',
   metaNaFase1 === false && !!metaNaFase6 && metaNaFase6.level === 6 && metaNaFase6.visivel === true && String(metaNaFase6.txt).startsWith('0/'),

@@ -101,24 +101,16 @@
       <span class="meta-track"><i class="meta-bar"><b id="gameMetaFill"></b></i><small id="gameMetaTxt"></small></span>
     </div>
     <div class="starrow" id="gameStars"><i></i><i></i><i></i></div>
-    <!-- Contador da celebracao de fim de fase. Fica sobre a cena, sem cartao:
-         o que interessa ver e a torre estourando atras dele. -->
-    <div class="bonus" id="bonusBox" hidden>
-      <span class="bonus-label" id="bonusLabel"></span>
-      <b class="bonus-count" id="bonusCount">0</b>
-      <span class="bonus-gain" id="bonusGain"></span>
-    </div>
-    <!-- Selo do fluxo continuo: o recibo da fase vencida, sobre a cena e sem
-         botao nenhum. Sai sozinho quando a fase seguinte entra. Nao repete as
-         estrelas: as do HUD acendem durante a jogada e ja estao logo acima. -->
+    <!-- Selo "Quase!" da derrota sem parada, sobre a cena e sem botao. A
+         vitoria nao usa mais selo: o grito, as estrelas e as moedas sao
+         desenhados no canvas (render/transicoes.js). -->
     <div class="flow" id="flowSeal" hidden>
       <b class="flow-coins" id="flowCoins"></b>
       <span class="flow-what" id="flowWhat"></span>
     </div>
-    <!-- Revelacao do premio de fim de mundo: a cena escurece e o premio entra
-         grande no centro. Sem botao - o toque atravessa para o canvas e
-         adianta, como no selo -, para nao virar a parada que o cartao de fim
-         de mundo foi. -->
+    <!-- Revelacao do premio de fim de mundo, no meio da transicao: a cena
+         escurece e o premio entra grande no centro por 2,2 s fixos. Sem botao
+         e sem toque, para nao virar a parada que o cartao de fim de mundo foi. -->
     <div class="reveal" id="prizeReveal" hidden>
       <span class="reveal-title" id="revealTitle"></span>
       <div class="reveal-stage">
@@ -131,7 +123,6 @@
            hexagono da barra, numa linha menor. -->
       <span class="reveal-extra" id="revealExtra" hidden><canvas id="revealExtraIcon" width="22" height="22"></canvas><span id="revealExtraTxt"></span></span>
       <b class="reveal-coins" id="revealCoins"></b>
-      <span class="reveal-hint" id="revealHint"></span>
     </div>
     <div class="grow"></div>
     <div class="shade bottom"></div>
@@ -268,7 +259,6 @@
 
   <!-- Corte entre fases. A troca de cena remonta o cache de sprites e troca a
        torre no mesmo quadro; sem este vao escuro a passagem e um salto seco. -->
-  <div class="wipe" id="wipe"></div>
 
 </div>
 

@@ -13,22 +13,24 @@ import { Rng } from '../core/rng.js';
 import { choosePiece } from './solver.js';
 
 // --- celebracao de fim de fase -------------------------------------------
-/** Intervalo entre os primeiros estouros, em segundos. */
-const BONUS_FIRST = 0.2;
-/** Intervalo dos ultimos: a cascata acelera ate o fim. */
-const BONUS_LAST = 0.07;
-/** Teto de duracao da cascata inteira. */
-const BONUS_MAX_TIME = 3.2;
+/**
+ * A sobra da torre estoura em rajada debaixo do grito da vitoria (main.js,
+ * render/transicoes.js), e nao mais uma a uma: o primeiro estouro espera o
+ * grito assentar, e a fila inteira cabe em BONUS_BURST_TIME, tenha a torre
+ * cinco pecas ou trinta. A transicao tem tempo fixo (2,3 s ate a troca), e o
+ * resultado tem que estar gravado antes dela.
+ */
+const BONUS_DELAY = 0.3;
+const BONUS_BURST_TIME = 0.8;
+/** Intervalo maximo entre dois estouros: com poucas pecas a rajada nao arrasta. */
+const BONUS_GAP_MAX = 0.07;
 const BONUS_BURST_RADIUS = 2.4;
 const BONUS_BURST_FORCE = 3.2;
-/** Tempo depois do ultimo estouro, para os estilhacos cairem. */
-const BONUS_OUTRO = 0.9;
 /**
- * Com um toque na celebracao, uma peca a cada dois quadros e o assentar final
- * pela metade: trinta pecas estouram em um segundo, e nao em tres.
+ * Tempo depois do ultimo estouro. Curto de proposito: o total da fase entra no
+ * contador sob o grito quando a gravacao sai, e o grito sai de cena aos 1,3 s.
  */
-const BONUS_HURRY = 0.035;
-const BONUS_OUTRO_HURRY = 0.45;
+const BONUS_OUTRO = 0.12;
 
 // --- combo ----------------------------------------------------------------
 /** Teto de espera para fechar uma jogada, mesmo sem tudo parar. */
@@ -119,7 +121,6 @@ export class Session {
     this.bonusTimer = 0;
     this.bonusElapsed = 0;
     this.bonusOutro = BONUS_OUTRO;
-    this.bonusHurry = false;
 
     // --- combo -----------------------------------------------------------
     this.comboOpen = false;
@@ -204,10 +205,10 @@ export class Session {
   }
 
   /**
-   * Celebracao de fim de fase: as pecas que sobraram estouram uma a uma.
+   * Celebracao de fim de fase: as pecas que sobraram estouram em rajada.
    *
    * So a vitoria chama isto. O estado ('won' ou 'stuck') fica congelado o tempo
-   * todo - evaluate() nao roda durante a cascata, senao esvaziar a torre
+   * todo - evaluate() nao roda durante a rajada, senao esvaziar a torre
    * dispararia 'stuck' por cima do resultado que o jogador acabou de conquistar.
    *
    * @returns {number} quantas pecas vao estourar
@@ -215,30 +216,17 @@ export class Session {
   startBonus() {
     if (this.bonus) return this.bonusTotal;
     const vivas = this.world.alivePieces().filter((p) => getMaterial(p.material).destructible);
-    // De cima para baixo: a torre desmonta em cascata, e o hexagono ja pousado
+    // De cima para baixo: a torre desmonta de cima, e o hexagono ja pousado
     // nao leva o primeiro estouro na cara.
     vivas.sort((a, b) => b.body.getPosition().y - a.body.getPosition().y);
     this.bonusQueue = vivas;
     this.bonusTotal = vivas.length;
     this.bonusDone = 0;
-    this.bonusTimer = 0;
+    this.bonusTimer = BONUS_DELAY;
     this.bonusElapsed = 0;
     this.bonusOutro = BONUS_OUTRO;
-    this.bonusHurry = false;
     this.bonus = vivas.length > 0;
     return this.bonusTotal;
-  }
-
-  /**
-   * O jogador tocou durante a celebracao: a cascata aperta o passo. Nao pula a
-   * contagem - cada peca intacta ainda estoura e ainda vale moeda -, so tira a
-   * espera entre uma e outra.
-   */
-  hurryBonus() {
-    if (!this.bonus) return;
-    this.bonusHurry = true;
-    this.bonusTimer = Math.min(this.bonusTimer, BONUS_HURRY);
-    this.bonusOutro = Math.min(this.bonusOutro, BONUS_OUTRO_HURRY);
   }
 
   /** @param {number} dt */
@@ -250,8 +238,8 @@ export class Session {
     if (this.bonusTimer > 0) return;
 
     if (this.bonusQueue.length === 0) {
-      // Acabou a fila, mas a cena nao: deixa os estilhacos cairem antes de
-      // entregar a tela ao cartao de vitoria.
+      // Acabou a fila, mas a cena nao: deixa os estilhacos voarem antes de
+      // gravar o resultado.
       this.bonusOutro -= dt;
       if (this.bonusOutro > 0) return;
       this.bonus = false;
@@ -264,7 +252,7 @@ export class Session {
     if (!piece.alive) {
       this.bonusDone++;
       // Sem posicao: ela ja estourou junto com outra, e fingir um ponto faria
-      // o texto flutuante nascer num canto qualquer da tela.
+      // a moeda nascer num canto qualquer da tela.
       if (this.onBonusPiece) this.onBonusPiece(this.bonusDone, this.bonusTotal);
       return;
     }
@@ -276,16 +264,9 @@ export class Session {
     this.world.burstAt(px, py, BONUS_BURST_RADIUS, BONUS_BURST_FORCE);
     this.bonusDone++;
     if (this.onBonusPiece) this.onBonusPiece(this.bonusDone, this.bonusTotal, px, py);
-
-    // O ritmo acelera de duas formas: pela posicao na fila e pelo tempo que
-    // ainda resta. Com trinta pecas sobrando a celebracao aperta o passo em vez
-    // de arrastar por seis segundos.
-    const restantes = this.bonusQueue.length;
-    const fracao = this.bonusTotal > 0 ? this.bonusDone / this.bonusTotal : 1;
-    const ideal = BONUS_FIRST + (BONUS_LAST - BONUS_FIRST) * fracao;
-    const sobra = Math.max(0, BONUS_MAX_TIME - this.bonusElapsed);
-    const cabe = restantes > 0 ? sobra / restantes : ideal;
-    this.bonusTimer = this.bonusHurry ? BONUS_HURRY : Math.max(BONUS_LAST, Math.min(ideal, cabe));
+    // Somado, e nao atribuido: o que sobrou do passo fixo conta, e a fila cabe
+    // mesmo em BONUS_BURST_TIME em vez de arredondar cada intervalo para cima.
+    this.bonusTimer += Math.min(BONUS_GAP_MAX, BONUS_BURST_TIME / Math.max(1, this.bonusTotal));
   }
 
   /** @returns {number} estrelas conquistadas ate agora */
