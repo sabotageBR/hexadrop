@@ -1,0 +1,51 @@
+# Compila o app iOS no simulador, sem assinatura: prova que o projeto em ios/
+# (gerado no Linux, onde nao ha Xcode) continua montando - Capacitor, plugins,
+# Firebase e os adaptadores de mediacao da AdMob por Swift Package Manager.
+#
+# Runner macOS custa 10 minutos por minuto no plano do GitHub, entao so roda
+# quando algo do iOS muda, ou a mao (aba Actions -> ios -> Run workflow).
+# Assinar e mandar para o TestFlight depende da conta Apple Developer e de
+# segredos no repositorio; ver CLAUDE.md, "Versao app".
+name: ios
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios/**'
+      - 'capacitor.config.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ios.yml'
+
+jobs:
+  compila:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # build:app + cap sync ios + versao do package.json no projeto.
+      - run: npm run ios:sync
+
+      - name: Xcode
+        run: xcodebuild -version
+
+      - name: Compila para o simulador
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            build

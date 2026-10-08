@@ -52,6 +52,7 @@ const SAVE_VERSION = 3;
  * @property {number[]} prizes mundos (0-based) cujo premio ja foi entregue
  * @property {number} alem proxima fase depois da 100 a jogar; 0 = ainda nao venceu a 100
  * @property {boolean} shopNews ha premio novo para ver na loja
+ * @property {number} [rev] gravacoes ate aqui; no app decide entre o localStorage e a copia do Preferences (src/app/save.js)
  */
 
 /**
@@ -217,6 +218,11 @@ export class Progress {
   }
 
   flush() {
+    // No app o save tem uma copia no Preferences (src/app/save.js), e o
+    // Chromium grava o localStorage em disco com atraso: morto logo depois de
+    // uma fase, o app pode voltar com o localStorage mais velho que a copia.
+    // Quem decide qual dos dois vale e este contador, que so cresce.
+    this.data.rev = (this.data.rev || 0) + 1;
     save('save', this.data);
   }
 
@@ -616,7 +622,11 @@ export class Progress {
   }
 
   reset() {
+    // O `rev` continua contando: zerado, a copia do Preferences de antes do
+    // reset venceria no proximo boot do app e devolveria o progresso apagado.
+    const rev = this.data.rev || 0;
     this.data = blank();
+    this.data.rev = rev;
     this.flush();
   }
 }

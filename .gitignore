@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-lisa/
+dist-app/
 .vite/
 *.log
 .tmp/
@@ -18,3 +19,6 @@ proposals/
 
 # Pacote de upload para a Poki.
 *.zip
+
+# Pacote de upload para a Play Store (npm run android:aab / android:aab:teste).
+*.aab

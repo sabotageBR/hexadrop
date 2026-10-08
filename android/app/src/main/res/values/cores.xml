@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- O fundo de html/body em src/ui/game.css. Aparece onde o WebView nao
+         cobre: com WebView abaixo do 140 o Capacitor encolhe o WebView para
+         baixo do recorte da camera, e a faixa ficava clara sobre o jogo escuro. -->
+    <color name="fundo_jogo">#06030f</color>
+    <!-- O fundo do carregador (#loader) e da splash de assets/splash.png. -->
+    <color name="fundo_splash">#1a0b2e</color>
+</resources>

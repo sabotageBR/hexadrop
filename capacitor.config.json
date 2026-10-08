@@ -1,0 +1,41 @@
+{
+  "appId": "br.com.emtech.hexadrop",
+  "appName": "Hexa Drop",
+  "webDir": "dist-app",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost"
+  },
+  "android": {
+    "backgroundColor": "#06030f"
+  },
+  "ios": {
+    "backgroundColor": "#06030f",
+    "contentInset": "never"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover",
+      "style": "DARK",
+      "hidden": true
+    },
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#1a0b2e",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_CROP"
+    }
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "packageOptions": {
+          "@capacitor-firebase/analytics": {
+            "symlink": true
+          }
+        }
+      }
+    }
+  }
+}

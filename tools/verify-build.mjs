@@ -15,9 +15,17 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// Duas saidas de build: dist/ e a da Poki, dist-lisa/ e a versao sem
-// plataforma. DIST_DIR escolhe qual conferir.
+// Tres saidas de build: dist/ e a da Poki, dist-lisa/ e a versao sem
+// plataforma e dist-app/ e o app do Capacitor (Android/iOS). DIST_DIR escolhe
+// qual conferir.
 const DIST = resolve(HERE, '..', process.env.DIST_DIR || 'dist');
+/**
+ * Com EXIGE_PRODUCAO=1 o build do app tem que ser o de producao: nenhuma
+ * unidade de anuncio de teste dentro e as reais preenchidas (src/app/config.js).
+ */
+const EXIGE_PRODUCAO = process.env.EXIGE_PRODUCAO === '1';
+/** Prefixo das unidades de demonstracao da Google, que so servem anuncio de teste. */
+const ADMOB_TESTE = 'ca-app-pub-3940256099942544';
 const BASE = process.env.VERIFY_URL || 'http://127.0.0.1:5173';
 const ALLOWED_HOST = 'game-cdn.poki.com';
 /** Dominios do proprio SDK da Poki: o jogo nao os chama, o SDK chama. */
@@ -96,11 +104,28 @@ for (const f of files) {
 check('nenhuma URL externa alem do SDK da Poki', external.length === 0, external.slice(0, 4).join(' | '));
 
 const indexHtml = readFileSync(join(DIST, 'index.html'), 'utf8');
+const jsFiles = files.filter((f) => extname(f) === '.js');
+const allJs = jsFiles.map((f) => readFileSync(f, 'utf8')).join('\n');
 // A versao lisa e reconhecida pelo que ela nao tem: sem o carregador da Poki no
-// HTML, a exigencia se inverte - nenhum script de fora, de dominio nenhum.
+// HTML, a exigencia se inverte - nenhum script de fora, de dominio nenhum. O
+// app e reconhecido pelo plugin da AdMob registrado no bundle.
 const COM_PLATAFORMA = indexHtml.includes(`https://${ALLOWED_HOST}/scripts/v2/poki-sdk.js`);
+const NO_APP = !COM_PLATAFORMA && /["']AdMob["']\s*,\s*\{\s*web\s*:/.test(allJs);
 if (COM_PLATAFORMA) {
   check('script do Poki SDK v2 presente', true);
+  check('nada do app no build da Poki', !/isNativePlatform|["']AdMob["']|Capacitor/.test(allJs));
+} else if (NO_APP) {
+  check('app: nenhum script externo no HTML', !/<script[^>]*src="https?:/i.test(indexHtml));
+  check('app: nenhuma URL externa no build', external.length === 0);
+  check('app: nada da Poki no build', !allJs.includes(ALLOWED_HOST) && !/PokiSDK/.test(allJs));
+  const teste = allJs.includes(ADMOB_TESTE + '/');
+  const reais = (allJs.match(/ca-app-pub-\d{16}\/\d{10}/g) || []).filter((u) => !u.startsWith(ADMOB_TESTE));
+  if (EXIGE_PRODUCAO) {
+    check('app de producao: nenhuma unidade de anuncio de teste', !teste);
+    check('app de producao: unidades reais da AdMob preenchidas', reais.length >= 2, `${reais.length} encontradas`);
+  } else if (teste) {
+    warn('app', 'build com anuncios de TESTE (o de release e `npm run build:app:producao`)');
+  }
 } else {
   check(
     'versao lisa: nenhum script externo no HTML',
@@ -111,8 +136,6 @@ if (COM_PLATAFORMA) {
 check('sem links de saida', !/<a\s[^>]*href="https?:/i.test(indexHtml));
 check('viewport com viewport-fit=cover', indexHtml.includes('viewport-fit=cover'));
 
-const jsFiles = files.filter((f) => extname(f) === '.js');
-const allJs = jsFiles.map((f) => readFileSync(f, 'utf8')).join('\n');
 check('sem setDebug ligado', !/setDebug\s*\(\s*true/.test(allJs));
 check('sem console.log restante', !/console\s*\.\s*log\s*\(/.test(allJs));
 check('sem source map publicado', !files.some((f) => f.endsWith('.map')));

@@ -25,11 +25,12 @@ import {
   pontoDasMoedas, PREMIO_INI, PREMIO_DUR,
 } from './render/transicoes.js';
 import { brilhoDaSkin } from './render/sprites.js';
+import { roundRect } from './render/draw2d.js';
 import { paintHexModel, hexPath } from './render/hexmodels.js';
 import { material as getMaterial } from './physics/materials.js';
 import { audio } from './core/audio.js';
-import { poki } from './poki.js';
-import { PLATAFORMA, COM_ANUNCIOS } from './core/platform.js';
+import { plataforma } from '@plataforma';
+import { PLATAFORMA, COM_ANUNCIOS, NO_APP } from './core/platform.js';
 import { t, getLang, setLang, LANGS, LANG_NAMES, onLangChange } from './core/i18n.js';
 import { load, save, isPersistent } from './core/storage.js';
 import { Rng } from './core/rng.js';
@@ -64,8 +65,7 @@ function hazardIcon(id) {
   ctx.lineJoin = 'round';
   ctx.lineWidth = 3;
   if (id === 'swing') {
-    ctx.beginPath();
-    ctx.roundRect(9, 20, 18, 7, 2);
+    roundRect(ctx, 9, 20, 18, 7, 2);
     ctx.fill();
     for (const s of [-1, 1]) {
       const x = 18 + s * 14;
@@ -165,7 +165,7 @@ function acionavel(el) {
  *
  * Os nomes sao os do painel, entao mudam com mais cuidado do que os ids: um
  * nome trocado quebra a serie historica do relatorio. Nada de `/` nem `^`,
- * que a Poki reserva para separar os campos - `poki.measure` ja limpa, mas o
+ * que a Poki reserva para separar os campos - `plataforma.measure` ja limpa, mas o
  * nome tambem nao deve precisar.
  *
  * O mesmo nome em telas diferentes e de proposito onde a acao e a mesma: sair
@@ -203,6 +203,10 @@ const EVENTOS_UI = {
   tabSkins: 'aba-skins',
   tabUpgrades: 'aba-melhorias',
   tabBoosts: 'aba-impulsos',
+  // so no app
+  setNoAds: 'remover-anuncios',
+  setRestore: 'restaurar-compras',
+  setPrivacy: 'privacidade',
 };
 
 /**
@@ -446,20 +450,34 @@ class Game {
     const logo = /** @type {HTMLImageElement|null} */ (document.getElementById('homeLogo'));
     if (logo && !logo.complete) logo.addEventListener('load', () => this.fitHomeScene());
 
-    poki.onAdStart = () => {
+    plataforma.onAdStart = () => {
       audio.muteForAd();
       this.scene.input.disable();
       this.scene.loop.pause();
     };
-    poki.onAdEnd = () => {
+    plataforma.onAdEnd = () => {
       audio.unmuteAfterAd();
       this.scene.input.enable();
       this.scene.loop.start();
+      if (NO_APP) this.rearmaSom();
     };
+    // So o app dispara estes (src/app/nativo.js); na Poki eles nunca chamam.
+    plataforma.onAdLoading = (on) => this.veuDoVideo(on);
+    plataforma.onSemVideo = () => this.toast(t('videoIndisponivel'));
+    plataforma.onVoltar = () => this.voltar();
+    plataforma.onSegundoPlano = () => this.segundoPlano();
+    plataforma.onPrimeiroPlano = () => this.rearmaSom();
 
     $('loaderBar').style.width = '35%';
-    await poki.init();
+    await plataforma.init();
     $('loaderBar').style.width = '75%';
+    if (plataforma.loja) {
+      plataforma.loja.onMudou = () => {
+        if (this.screen === 'settings') this.buildSettings();
+        if (this.screen === 'shop') this.buildShop();
+      };
+    }
+    if (NO_APP) this.vigiaSafeArea();
 
     // Cena de fundo da tela inicial: uma fase real rodando atras do menu. Quem
     // entra jogando nao passa por ela, e montar as duas seria montar a cena
@@ -483,7 +501,7 @@ class Game {
     // `gameLoadingFinished` vem ANTES de entrar na fase: `startLevel` dispara
     // `measure('level', 1, 'start')`, e um evento de progresso antes do fim do
     // carregamento inverte a ordem que o sdkcheck cobra.
-    poki.gameLoadingFinished();
+    plataforma.gameLoadingFinished();
     this.ligaMarcosDeTempo();
     if (entraJogando) this.startLevel(1);
     else this.show('home');
@@ -491,7 +509,7 @@ class Game {
     // que ja concluiu. O toast diz quantos; o resto esta na loja.
     if (!entraJogando && this.progress.retroativos.length) {
       window.setTimeout(() => this.toast(t('prizesRetro', this.progress.retroativos.length)), 600);
-      poki.measure('premio', 'retroativo', 'visible');
+      plataforma.measure('premio', 'retroativo', 'visible');
     }
     window.setTimeout(() => $('loader').classList.add('gone'), 260);
 
@@ -521,7 +539,7 @@ class Game {
   /**
    * Conta o tempo de aba visivel e solta os marcos de `MARCOS_MIN`. O tempo de
    * um intervalo comercial conta - a Poki mede tempo na pagina -, mas o marco
-   * que cair dentro dele espera o fim: `poki.measure` descarta evento ali.
+   * que cair dentro dele espera o fim: `plataforma.measure` descarta evento ali.
    */
   ligaMarcosDeTempo() {
     /** Segundos de aba visivel. Publico para a automacao poder adiantar. */
@@ -530,9 +548,9 @@ class Game {
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'hidden') return;
       this.tempoVisivelS += 1;
-      if (poki.inBreak) return;
+      if (plataforma.inBreak) return;
       while (proximo < MARCOS_MIN.length && this.tempoVisivelS >= MARCOS_MIN[proximo] * 60) {
-        poki.measure('tempo', `min-${MARCOS_MIN[proximo]}`, 'visible');
+        plataforma.measure('tempo', `min-${MARCOS_MIN[proximo]}`, 'visible');
         proximo++;
       }
       if (proximo >= MARCOS_MIN.length) window.clearInterval(timer);
@@ -602,7 +620,7 @@ class Game {
     // na frente; startLevel ja aplicou, e ai isto nao reenquadra nada.
     if (name === 'game') this.aplicaHud();
     // No mobile, afasta o botao flutuante da Poki da HUD do topo.
-    poki.movePill(name === 'game' ? 0 : 0, name === 'game' ? 64 : 24);
+    plataforma.movePill(name === 'game' ? 0 : 0, name === 'game' ? 64 : 24);
   }
 
   /**
@@ -661,6 +679,9 @@ class Game {
     }
     if (this.screen === 'shop') this.buildShop();
     if (this.screen === 'home') this.buildHomeWorlds();
+    // A loja do app responde depois do boot (preco, compra ja feita): os
+    // ajustes montados no applyLang ainda nao sabiam dela.
+    if (this.screen === 'settings') this.buildAppSettings();
     const daily = $('btnDaily');
     if (daily) {
       daily.textContent = p.dailyReady ? t('dailyBonus') : t('comeBackTomorrow');
@@ -738,7 +759,7 @@ class Game {
    * O ouvinte e de CAPTURA, e isso importa: ele roda antes do `onclick` do
    * proprio botao. Na fase de bolha ele rodava depois, e nos botoes de video e
    * no "repetir" o handler ja tinha chamado `commercialBreak`/`rewardedBreak`,
-   * que ligam `inBreak` na hora - e `poki.measure` descarta evento dentro de
+   * que ligam `inBreak` na hora - e `plataforma.measure` descarta evento dentro de
    * intervalo. A 1.0.7 inteira mostrou 0% de interacao nesses botoes por isso.
    *
    * Antes disto a aba de interacao do painel da Poki estava literalmente
@@ -755,7 +776,7 @@ class Game {
       // nao tem id: os da loja, um por skin, melhoria e impulso.
       const nome = btn.dataset.ev || EVENTOS_UI[btn.id];
       if (!nome) return;
-      poki.measure('botao', nome, 'interact');
+      plataforma.measure('botao', nome, 'interact');
     }, true);
   }
 
@@ -770,7 +791,7 @@ class Game {
   ofertaVisivel(nome) {
     if (this._ofertasVistas.has(nome)) return;
     this._ofertasVistas.add(nome);
-    poki.measure('botao', nome, 'visible');
+    plataforma.measure('botao', nome, 'visible');
   }
 
   bindUi() {
@@ -814,6 +835,13 @@ class Game {
     $('setClose').onclick = () => {
       audio.buttonBack();
       this.show(this.scene.session && this.screen === 'settings' && this.paused ? 'pause' : 'home');
+    };
+    // So aparecem no app (buildAppSettings).
+    $('setNoAds').onclick = () => this.comprarSemAnuncios(/** @type {HTMLButtonElement} */ ($('setNoAds')));
+    $('setRestore').onclick = () => this.restaurarCompras();
+    $('setPrivacy').onclick = () => {
+      audio.button();
+      if (plataforma.privacidade) plataforma.privacidade.abrir();
     };
     $('gameBack').onclick = () => this.quitLevel();
     $('gameRestart').onclick = () => {
@@ -1021,11 +1049,11 @@ class Game {
         onStar: (n) => this.onStar(n),
         onEnd: (state) => this.onLevelEnd(state),
         onFirstTap: () => {
-          poki.gameplayStart();
+          plataforma.gameplayStart();
           // Nas fases do roteiro, separa quem comecou e nunca tocou de quem
           // tocou e saiu: o funil da Poki so via os dois juntos, e no desktop a
           // fase 1 perdia 26% contra 10% no celular (1.0.10).
-          if (this.level <= FASES_COM_MAO) poki.measure('level', String(this.level), 'tap1');
+          if (this.level <= FASES_COM_MAO) plataforma.measure('level', String(this.level), 'tap1');
         },
         onCombo: (n, x, y) => this.onCombo(n, x, y),
         onBonusPiece: (done, total, x, y) => this.onBonusPiece(done, total, x, y),
@@ -1175,8 +1203,43 @@ class Game {
     const lateral = hudLateral(vp.width, vp.height);
     if (lateral) document.documentElement.dataset.hud = 'lateral';
     else delete document.documentElement.dataset.hud;
-    if (lateral) this.scene.setInsets(HUD_LATERAL_TOP, HUD_LATERAL_BOTTOM, false, true);
-    else this.scene.setInsets(GAME_INSET_TOP, GAME_INSET_BOTTOM, false);
+    // No app a cena vai por baixo do notch e da barra de gestos, e o HUD desce
+    // com o safe-area (`.screen` em game.css); a camera tem que descer junto,
+    // senao o topo da torre fica sob o HUD e a base sob a barra de gestos. So
+    // no app: no navegador o safe-area so aparece no iOS em tela cheia, e a
+    // Poki fica exatamente como era.
+    const sa = NO_APP ? this.safeArea() : { top: 0, bottom: 0 };
+    if (lateral) this.scene.setInsets(HUD_LATERAL_TOP + sa.top, HUD_LATERAL_BOTTOM + sa.bottom, false, true);
+    else this.scene.setInsets(GAME_INSET_TOP + sa.top, GAME_INSET_BOTTOM + sa.bottom, false);
+  }
+
+  /**
+   * O safe-area em px, medido numa sonda com o padding das variaveis de
+   * game.css. O valor do Capacitor (`--safe-area-inset-*`) e injetado depois
+   * do carregamento e nao dispara `resize`, entao a sonda tem o proprio
+   * ResizeObserver (vigiaSafeArea).
+   * @returns {{top:number, bottom:number}}
+   */
+  safeArea() {
+    let sonda = document.getElementById('safeProbe');
+    if (!sonda) {
+      sonda = document.createElement('div');
+      sonda.id = 'safeProbe';
+      sonda.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(sonda);
+    }
+    const cs = window.getComputedStyle(sonda);
+    return { top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
+  }
+
+  /** Reenquadra a fase quando o safe-area muda (chegada do valor, rotacao). */
+  vigiaSafeArea() {
+    this.safeArea();
+    const sonda = document.getElementById('safeProbe');
+    if (!sonda || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(() => {
+      if (this.screen === 'game') this.aplicaHud();
+    }).observe(sonda, { box: 'border-box' });
   }
 
   /** @param {number} level */
@@ -1190,7 +1253,7 @@ class Game {
   startLevel(level, variantIndex, entrar = false) {
     // Fecha o gameplay anterior antes de abrir o proximo: a Poki reprova
     // gameplayStart repetido sem um gameplayStop entre eles.
-    poki.gameplayStop();
+    plataforma.gameplayStop();
     const trans = entrar ? this.trans : null;
     this.cancelFlow();
     this.trans = trans;
@@ -1244,7 +1307,7 @@ class Game {
     this.ofertaVisivel('sair-da-fase');
     if (showHelp) this.ofertaVisivel('reiniciar');
     this.showTutorial();
-    poki.measure('level', String(this.level), 'start');
+    plataforma.measure('level', String(this.level), 'start');
   }
 
   showTutorial() {
@@ -1370,7 +1433,7 @@ class Game {
     // segunda chamada recomeca a contagem com a torre ja vazia e apaga o
     // premio que o jogador tinha acabado de fazer.
     if (this.pendingWin || this.screen !== 'game') return;
-    poki.gameplayStop();
+    plataforma.gameplayStop();
     const session = this.scene.session;
     if (!session) return;
     // A fila de estreias sai quando a fase termina: quem vence rapido via o
@@ -1383,7 +1446,7 @@ class Game {
 
     if (completed) {
       this.lossStreak = 0;
-      poki.measure('level', String(this.level), 'complete');
+      plataforma.measure('level', String(this.level), 'complete');
       // O resultado so e gravado depois da celebracao: as pecas que sobraram
       // fazem parte do premio, e a contagem delas acontece no canvas, antes do
       // cartao entrar.
@@ -1395,7 +1458,7 @@ class Game {
       this.startCelebration(session);
     } else {
       this.lossStreak++;
-      poki.measure('level', String(this.level), 'fail');
+      plataforma.measure('level', String(this.level), 'fail');
       window.clearTimeout(this.loseTimer);
       if (this.flowLevels && this.lossStreak <= RETRIES_SEM_CARTAO) {
         this.flowRetry();
@@ -1437,7 +1500,7 @@ class Game {
   /** Abre a chuva de moedas: a cena ganha o brilho nas bordas. */
   showChuva() {
     $('s-game').classList.add('chuva');
-    poki.measure('chuva', `mundo-${this.origem.mundo + 1}`, 'visible');
+    plataforma.measure('chuva', `mundo-${this.origem.mundo + 1}`, 'visible');
   }
 
   hideChuva() {
@@ -1472,7 +1535,7 @@ class Game {
     this.rewindTimer = window.setTimeout(() => {
       if (!this.flowTimer) this.hideFlowSeal();
     }, 900);
-    poki.measure('level', String(this.level), 'rewind');
+    plataforma.measure('level', String(this.level), 'rewind');
   }
 
   /**
@@ -1492,7 +1555,7 @@ class Game {
     const btn = /** @type {HTMLButtonElement} */ ($('loseRevive'));
     if (!session || !session.checkpoint) return;
     btn.disabled = true;
-    const ok = COM_ANUNCIOS ? await poki.rewardedBreak('medium') : true;
+    const ok = COM_ANUNCIOS ? await plataforma.rewardedBreak('medium') : true;
     if (!ok || this.screen !== 'lose' || this.scene.session !== session) {
       btn.disabled = false;
       return;
@@ -1508,7 +1571,7 @@ class Game {
     this.show('game');
     this.ofertaVisivel('pausa');
     this.ofertaVisivel('sair-da-fase');
-    poki.measure('level', String(this.level), 'start');
+    plataforma.measure('level', String(this.level), 'start');
   }
 
   /**
@@ -1562,7 +1625,7 @@ class Game {
   async retryLevel(variante = this.variantIndex) {
     this.flowTimer = 0;
     this.advancing = true;
-    await this.commercialBreak();
+    await this.commercialBreak('recomeco');
     this.startLevel(this.level, variante, true);
   }
 
@@ -1850,7 +1913,7 @@ class Game {
    * A ordem e obrigatoria: o intervalo termina ANTES de startLevel, porque
    * startLevel dispara measure('level', N, 'start') e a Poki nao aceita evento
    * nenhum dentro de um intervalo. E passa pelo commercialBreak() da classe,
-   * nao pelo do poki, senao pula a carencia.
+   * nao pelo da plataforma, senao pula a carencia.
    * @param {*} tr
    */
   async trocaDeFase(tr) {
@@ -1867,7 +1930,7 @@ class Game {
     this.advancing = true;
     const alvo = this.level + 1;
     this.level = alvo;
-    await this.commercialBreak();
+    await this.commercialBreak('troca');
     // Saiu da fase durante o intervalo: quem limpou a transicao foi o cancelFlow.
     if (this.trans !== tr) return;
     tr.anuncio = false;
@@ -1969,19 +2032,19 @@ class Game {
   /**
    * Os dois eventos de um premio entregue. Saem na hora, sincronos: o
    * `advanceLevel` que vem depois do selo passa pelo intervalo comercial, e
-   * `poki.measure` descarta evento dentro de intervalo.
+   * `plataforma.measure` descarta evento dentro de intervalo.
    * @param {*} premio
    */
   medirPremio(premio) {
     if (premio.via === 'moedas') {
-      poki.measure('premio', 'desbloqueio', 'visible');
-      poki.measure('premio', `desbloqueio-${premio.id}`, 'ganho');
+      plataforma.measure('premio', 'desbloqueio', 'visible');
+      plataforma.measure('premio', `desbloqueio-${premio.id}`, 'ganho');
       return;
     }
-    poki.measure('premio', `mundo-${premio.world + 1}`, 'visible');
+    plataforma.measure('premio', `mundo-${premio.world + 1}`, 'visible');
     const oque =
       premio.kind === 'skin' ? `skin-${premio.id}` : premio.kind === 'upgrade' ? `melhoria-${premio.id}` : `moedas-${premio.why || 'bau'}`;
-    poki.measure('premio', oque, 'ganho');
+    plataforma.measure('premio', oque, 'ganho');
   }
 
   /**
@@ -2265,14 +2328,14 @@ class Game {
    * A ordem aqui e obrigatoria: o intervalo comercial tem que terminar ANTES
    * de startLevel, porque startLevel dispara measure('level', N, 'start') e a
    * Poki nao aceita evento nenhum dentro de um intervalo. E passa pelo
-   * commercialBreak() da classe, nao pelo do poki, senao pula a carencia.
+   * commercialBreak() da classe, nao pelo da plataforma, senao pula a carencia.
    */
   async advanceLevel() {
     this.flowTimer = 0;
     this.advancing = true;
     const target = this.level + 1;
     this.level = target;
-    await this.commercialBreak();
+    await this.commercialBreak('proxima');
     this.startLevel(target, undefined, true);
   }
 
@@ -2552,7 +2615,7 @@ class Game {
     if (this.loseTimer || this.scene.session.finished) return;
     this.paused = true;
     this.scene.session.paused = true;
-    poki.gameplayStop();
+    plataforma.gameplayStop();
     audio.button();
     // A trilha tocava na tela de pausa: quem pulsa o sequenciador e o passo da
     // cena, que segue rodando, e ele nao sabia de pausa nenhuma.
@@ -2587,25 +2650,31 @@ class Game {
     // quando havia jogo de fato. Pausar antes do primeiro toque nao e uma
     // interrupcao de gameplay, e um anuncio ali seria injustificado.
     const wasPlaying = !!this.scene.session && this.scene.session.state === 'playing';
-    if (wasPlaying) await this.commercialBreak();
+    if (wasPlaying) await this.commercialBreak('retomar');
     if (this.scene.session) {
       this.scene.session.paused = false;
-      if (wasPlaying && this.scene.session.state === 'playing') poki.gameplayStart();
+      if (wasPlaying && this.scene.session.state === 'playing') plataforma.gameplayStart();
     }
   }
 
   /**
    * Intervalo comercial, depois da carencia do comeco do jogo. Todo intervalo
-   * passa por aqui: chamar `poki.commercialBreak()` direto pularia a carencia.
+   * passa por aqui: chamar `plataforma.commercialBreak()` direto pularia a carencia.
+   *
+   * O `ponto` diz de onde o intervalo vem: `troca` (fluxo continuo), `proxima`
+   * (cartao de vitoria), `recomeco` (derrota sem parada), `repetir` (cartao) e
+   * `retomar` (saindo da pausa). A Poki ignora; o app tem frequencia propria e
+   * nunca mostra ao retomar (src/app/nativo.js).
+   * @param {'troca'|'proxima'|'recomeco'|'repetir'|'retomar'} ponto
    */
-  async commercialBreak() {
+  async commercialBreak(ponto) {
     if (this.progress.data.unlocked - 1 < FASES_SEM_INTERVALO) return;
-    await poki.commercialBreak();
+    await plataforma.commercialBreak(ponto);
   }
 
   quitLevel() {
     audio.buttonBack();
-    poki.gameplayStop();
+    plataforma.gameplayStop();
     this.cancelFlow();
     this.paused = false;
     audio.releaseMusic();
@@ -2696,7 +2765,7 @@ class Game {
     audio.button();
     this.paused = false;
     if (this.scene.session) this.scene.session.paused = false;
-    if (!fromPause) await this.commercialBreak();
+    if (!fromPause) await this.commercialBreak('repetir');
     // Mesma fase, mesmo layout: repetir tem que ser repetir.
     this.startLevel(this.level, this.variantIndex);
   }
@@ -2706,7 +2775,7 @@ class Game {
   async doubleReward() {
     const btn = /** @type {HTMLButtonElement} */ ($('winDouble'));
     btn.disabled = true;
-    const ok = await poki.rewardedBreak('small');
+    const ok = await plataforma.rewardedBreak('small');
     if (ok && this.lastResult) {
       this.progress.addCoins(this.lastResult.coins);
       this.progress.data.xp += this.lastResult.xp;
@@ -2725,7 +2794,7 @@ class Game {
   async skipByAd() {
     const btn = /** @type {HTMLButtonElement} */ ($('loseSkip'));
     btn.disabled = true;
-    const ok = COM_ANUNCIOS ? await poki.rewardedBreak('medium') : true;
+    const ok = COM_ANUNCIOS ? await plataforma.rewardedBreak('medium') : true;
     if (!ok) {
       btn.disabled = false;
       return;
@@ -2750,7 +2819,7 @@ class Game {
   async dailyByAd() {
     const btn = /** @type {HTMLButtonElement} */ ($('btnDaily'));
     btn.disabled = true;
-    const ok = COM_ANUNCIOS ? await poki.rewardedBreak('medium') : true;
+    const ok = COM_ANUNCIOS ? await plataforma.rewardedBreak('medium') : true;
     if (ok) {
       const amount = 60 + this.progress.rank * 12;
       this.progress.addCoins(amount);
@@ -2776,13 +2845,163 @@ class Game {
    * @returns {Promise<void>}
    */
   async unlockSkinByAd(skinId) {
-    const ok = await poki.rewardedBreak('large');
+    const ok = await plataforma.rewardedBreak('large');
     if (!ok) return;
     this.progress.grantSkin(skinId);
     this.useSkin(skinId);
     audio.win();
     this.buildShop();
     this.refreshScreen();
+  }
+
+  // ---------------------------------------------------------- so no app
+
+  /**
+   * Veu do video recompensado enquanto ele carrega (src/app/nativo.js). Sobe no
+   * clique e segura a tela inteira: sem ele os botoes continuavam vivos por ate
+   * 8 s, e o video podia abrir por cima de outra tela - ou pular a fase errada.
+   * @param {boolean} on
+   */
+  veuDoVideo(on) {
+    const veu = $('adVeil');
+    if (on) $('adVeilTxt').textContent = t('carregandoVideo');
+    veu.hidden = !on;
+  }
+
+  /**
+   * Botao voltar do Android. So o app chama: o Esc continua em onKey, e na
+   * Poki ele nao faz nada nos cartoes de fim de fase. Na fase o voltar pausa (e
+   * as guardas de pauseLevel recusam durante celebracao e transicao); na home
+   * o app vai para tras em vez de fechar.
+   */
+  voltar() {
+    const clica = (/** @type {string} */ id) => {
+      const botao = document.getElementById(id);
+      if (botao && acionavel(botao)) botao.click();
+    };
+    if (this.screen === 'game') this.pauseLevel();
+    else if (this.screen === 'home') plataforma.minimizar();
+    else if (this.screen === 'win') clica('winHome');
+    else if (this.screen === 'lose') clica('loseHome');
+    else {
+      const volta = TECLA_VOLTA[/** @type {keyof typeof TECLA_VOLTA} */ (this.screen)];
+      if (volta) clica(volta);
+    }
+  }
+
+  /**
+   * O app saiu da frente com a fase em jogo: abre a pausa, para a volta ser
+   * uma escolha do jogador. Com a fase ainda sem toque nao ha o que pausar, e
+   * celebracao, transicao e derrota a caminho sao recusadas por pauseLevel.
+   */
+  segundoPlano() {
+    const session = this.scene.session;
+    if (this.screen === 'game' && session && session.state === 'playing') this.pauseLevel();
+  }
+
+  /**
+   * Depois de um anuncio ou do segundo plano o AudioContext pode voltar
+   * suspenso - no iOS, "interrupted" -, e o resume sem gesto falha. O gesto
+   * que destrava o som dispara uma vez so (input.js), entao se o som nao
+   * voltou ele e armado de novo, e o proximo toque traz o som.
+   */
+  rearmaSom() {
+    window.setTimeout(() => {
+      const ctx = audio.ctx;
+      if (ctx && ctx.state !== 'running' && !audio.adMuted) {
+        this.scene.input.onFirstGesture(() => audio.unlock());
+      }
+    }, 300);
+  }
+
+  /** @param {HTMLButtonElement} btn */
+  async comprarSemAnuncios(btn) {
+    const loja = plataforma.loja;
+    if (!loja || loja.comprado) return;
+    audio.button();
+    btn.disabled = true;
+    const r = await loja.comprar();
+    if (r === 'ok') {
+      audio.win();
+      this.toast(t('noAdsDone'));
+      plataforma.measure('compra', 'remover-anuncios', 'ganho');
+    } else if (r === 'pendente') this.toast(t('purchasePending'));
+    else if (r === 'erro') this.toast(t('purchaseError'));
+    btn.disabled = false;
+    if (this.screen === 'settings') this.buildSettings();
+    if (this.screen === 'shop') this.buildShop();
+  }
+
+  async restaurarCompras() {
+    const loja = plataforma.loja;
+    if (!loja) return;
+    audio.button();
+    const btn = /** @type {HTMLButtonElement} */ ($('setRestore'));
+    btn.disabled = true;
+    const ok = await loja.restaurar();
+    btn.disabled = false;
+    this.toast(ok ? t('noAdsDone') : t('restoreNone'));
+    this.buildSettings();
+  }
+
+  /**
+   * O que so o app tem nos ajustes: a compra que tira os anuncios, restaurar
+   * (a Apple exige o botao para compra nao consumivel) e as opcoes de
+   * privacidade, que o GDPR exige quando o UMP diz que sao obrigatorias.
+   */
+  buildAppSettings() {
+    const loja = plataforma.loja;
+    const priv = plataforma.privacidade;
+    const comLoja = !!loja && (loja.disponivel || loja.comprado);
+    const comPriv = !!priv && priv.obrigatoria;
+    $('setApp').hidden = !comLoja && !comPriv;
+    const noAds = /** @type {HTMLButtonElement} */ ($('setNoAds'));
+    const restore = $('setRestore');
+    noAds.hidden = !comLoja;
+    restore.hidden = !comLoja || !!(loja && loja.comprado);
+    if (loja && loja.comprado) {
+      noAds.textContent = t('noAdsDone');
+      noAds.disabled = true;
+    } else if (loja) {
+      noAds.textContent = `${t('removeAds')} \u00b7 ${loja.preco || ''}`;
+      noAds.disabled = false;
+      if (comLoja) this.ofertaVisivel('remover-anuncios');
+    }
+    restore.textContent = t('restorePurchases');
+    $('setPrivacy').hidden = !comPriv;
+    $('setPrivacy').textContent = t('privacyOptions');
+  }
+
+  /**
+   * Destaque da compra que tira os anuncios, no topo dos impulsos. So no app,
+   * com a loja respondendo e a compra ainda por fazer.
+   * @param {HTMLElement} host
+   */
+  itemSemAnuncios(host) {
+    const loja = plataforma.loja;
+    if (!loja || !loja.disponivel || loja.comprado) return;
+    const item = document.createElement('div');
+    item.className = 'item item-noads';
+    const swatch = document.createElement('div');
+    swatch.className = 'swatch';
+    swatch.innerHTML = '<span>AD</span>';
+    item.appendChild(swatch);
+    const info = document.createElement('div');
+    info.className = 'info';
+    const name = document.createElement('b');
+    name.textContent = t('removeAds');
+    const sub = document.createElement('span');
+    sub.textContent = t('removeAdsDesc');
+    info.appendChild(name);
+    info.appendChild(sub);
+    item.appendChild(info);
+    const btn = document.createElement('button');
+    btn.className = 'btn primary';
+    btn.textContent = loja.preco || '';
+    btn.dataset.ev = 'remover-anuncios';
+    btn.onclick = () => this.comprarSemAnuncios(btn);
+    item.appendChild(btn);
+    host.appendChild(item);
   }
 
   // ----------------------------------------------------------------- mapa
@@ -3402,6 +3621,7 @@ class Game {
     }
 
     if (this.shopTab === 'boosts') {
+      this.itemSemAnuncios(host);
       for (const b of BOOSTS) {
         const restam = p.boostCount(b.id);
         const item = document.createElement('div');
@@ -3579,6 +3799,7 @@ class Game {
       getLang(),
       (v) => setLang(v),
     );
+    this.buildAppSettings();
   }
 
   applyQuality() {
@@ -3603,7 +3824,7 @@ class Game {
 
 const game = new Game();
 game.boot().catch((err) => {
-  poki.captureError(err instanceof Error ? err : new Error(String(err)));
+  plataforma.captureError(err instanceof Error ? err : new Error(String(err)));
   $('loader').classList.add('gone');
 });
 
@@ -3612,7 +3833,12 @@ game.boot().catch((err) => {
 // before publication": publicado, `__game` deixava qualquer jogador abrir o
 // console e chamar startLevel(100). Toda ferramenta de tools/ serve o jogo em
 // 127.0.0.1, entao a trava pelo endereco nao custa nada a elas.
-if (/^(127\.0\.0\.1|localhost|\[::1\])$/.test(window.location.hostname)) {
+// O app do Capacitor tambem roda em `localhost` (https://localhost no Android,
+// capacitor://localhost no iOS): sem a segunda condicao, o app publicado
+// entregaria os dois ganchos a quem abrisse o WebView pelo chrome://inspect.
+const capacitor = NO_APP ? /** @type {*} */ (window).Capacitor : null;
+const noAparelho = !!(capacitor && capacitor.isNativePlatform && capacitor.isNativePlatform());
+if (/^(127\.0\.0\.1|localhost|\[::1\])$/.test(window.location.hostname) && !noAparelho) {
   /** @type {*} */ (window).__game = game;
   /** @type {*} */ (window).__audio = audio;
 }

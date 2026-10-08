@@ -1,0 +1,2 @@
+/* Texto do pedido de rastreamento (ATT), antes dos anuncios. src/app/backend.js, rastreamento(). */
+"NSUserTrackingUsageDescription" = "Deine Wahl ermöglicht passendere Werbung. Die Werbung hält Hexa Drop kostenlos.";

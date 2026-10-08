@@ -18,12 +18,36 @@
     "playsweep": "node tools/playsweep.mjs",
     "thumbnail": "node tools/thumbnail.mjs",
     "check": "npm run build && node tools/verify-build.mjs && node tools/sdkcheck.mjs",
-    "verify:lisa": "DIST_DIR=dist-lisa VERIFY_URL=http://127.0.0.1:4174 node tools/verify-build.mjs"
+    "verify:lisa": "DIST_DIR=dist-lisa VERIFY_URL=http://127.0.0.1:4174 node tools/verify-build.mjs",
+    "dev:app": "VITE_PLATAFORMA=app vite",
+    "build:app": "VITE_PLATAFORMA=app vite build",
+    "build:app:producao": "VITE_PLATAFORMA=app VITE_ANUNCIOS=producao vite build",
+    "preview:app": "VITE_PLATAFORMA=app vite preview --host 127.0.0.1 --port 4175",
+    "verify:app": "DIST_DIR=dist-app VERIFY_URL=http://127.0.0.1:4175 node tools/verify-build.mjs",
+    "verify:app:producao": "EXIGE_PRODUCAO=1 DIST_DIR=dist-app VERIFY_URL=http://127.0.0.1:4175 node tools/verify-build.mjs",
+    "appcheck": "node tools/appcheck.mjs",
+    "android:sync": "npm run build:app && cap sync android",
+    "android:run": "npm run android:sync && cap run android",
+    "android:aab": "npm run build:app:producao && cap sync android && cd android && ./gradlew bundleRelease",
+    "android:aab:teste": "npm run build:app && cap sync android && cd android && ./gradlew bundleRelease -Phexadrop.permitirAdmobTeste=true",
+    "ios:sync": "npm run build:app && cap sync ios && node tools/versao-app.mjs",
+    "icones": "node tools/icone.mjs && capacitor-assets generate --android --ios --iconBackgroundColor '#1a0b2e' --iconBackgroundColorDark '#1a0b2e' --splashBackgroundColor '#1a0b2e' --splashBackgroundColorDark '#1a0b2e'"
   },
   "dependencies": {
+    "@capacitor-community/admob": "8.2.1",
+    "@capacitor-firebase/analytics": "8.5.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/preferences": "8.0.1",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capgo/native-purchases": "8.8.3",
     "planck": "1.5.0"
   },
   "devDependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.5.3",
+    "@capacitor/ios": "8.5.3",
     "vite": "^7.3.6"
   }
 }

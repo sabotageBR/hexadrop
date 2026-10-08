@@ -1,0 +1,17 @@
+App/build
+App/Pods
+App/output
+App/App/public
+DerivedData
+xcuserdata
+
+# Cordova plugins for Capacitor
+capacitor-cordova-ios-plugins
+
+# Generated Config files
+App/App/capacitor.config.json
+App/App/config.xml
+
+# Links para node_modules que o `cap sync ios` recria (packageOptions.symlink
+# do @capacitor-firebase/analytics em capacitor.config.json).
+App/CapApp-SPM/symlinks

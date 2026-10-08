@@ -1,0 +1,8 @@
+# app-ads.txt do Hexa Drop. Vai na RAIZ do dominio informado como site do
+# desenvolvedor na Play Store e na App Store (https://SEU-DOMINIO/app-ads.txt).
+# Sem ele a AdMob limita os anuncios servidos.
+#
+# pub-2218912496942356 e o ID de editor da conta AdMob do Evandro.
+# As linhas da AppLovin e da Unity vem dos paineis delas (AppLovin: Account >
+# app-ads.txt; Unity: Monetization > app-ads.txt) e entram embaixo destas.
+google.com, pub-2218912496942356, DIRECT, f08c47fec0942fa0

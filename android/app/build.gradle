@@ -1,0 +1,110 @@
+apply plugin: 'com.android.application'
+
+import groovy.json.JsonSlurper
+
+// A versao do jogo mora no package.json, e o app segue: versionName igual, e
+// versionCode = maior*10000 + menor*100 + patch (1.0.15 -> 10015), que so
+// cresce enquanto o patch ficar abaixo de 100.
+def pacote = new JsonSlurper().parse(file('../../package.json'))
+def (vMaior, vMenor, vPatch) = pacote.version.tokenize('.').collect { it as int }
+def versaoCodigo = vMaior * 10000 + vMenor * 100 + vPatch
+
+// ID do app na AdMob (android/gradle.properties). O de demonstracao da Google
+// so serve anuncio de teste; o release recusa sair com ele, a menos que se
+// passe -Phexadrop.permitirAdmobTeste=true (um AAB para o teste interno antes
+// de existir a conta da AdMob, por exemplo).
+def ADMOB_TESTE = 'ca-app-pub-3940256099942544~3347511713'
+def admobAppId = project.findProperty('hexadrop.admobAppId') ?: ADMOB_TESTE
+
+// Assinatura do release: android/keystore.properties, fora do git (ver
+// .gitignore). A chave de upload em si fica fora do repositorio.
+def keystoreArquivo = rootProject.file('keystore.properties')
+def keystore = new Properties()
+if (keystoreArquivo.exists()) keystoreArquivo.withInputStream { keystore.load(it) }
+
+android {
+    namespace = "br.com.emtech.hexadrop"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "br.com.emtech.hexadrop"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode versaoCodigo
+        versionName pacote.version
+        manifestPlaceholders = [admobAppId: admobAppId]
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (keystore['storeFile']) {
+                storeFile file(keystore['storeFile'])
+                storePassword keystore['storePassword']
+                keyAlias keystore['keyAlias']
+                keyPassword keystore['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            // R8 desligado na primeira versao: os plugins e os adaptadores de
+            // mediacao trazem as proprias regras, mas um corte errado so
+            // aparece em tempo de execucao, no aparelho do jogador.
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (keystore['storeFile']) signingConfig signingConfigs.release
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { grafo ->
+    def release = grafo.allTasks.any { it.project == project && it.name.toLowerCase().contains('release') }
+    if (!release) return
+    if (admobAppId == ADMOB_TESTE && project.findProperty('hexadrop.permitirAdmobTeste') != 'true') {
+        throw new GradleException('hexadrop.admobAppId (android/gradle.properties) ainda e o app de demonstracao da AdMob. ' +
+            'Ponha o ID do app Hexa Drop, ou passe -Phexadrop.permitirAdmobTeste=true.')
+    }
+    if (!keystore['storeFile']) {
+        throw new GradleException('Sem android/keystore.properties: o release precisa da chave de upload (ver CLAUDE.md, "Versao app").')
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+    // Mediacao da AdMob: AppLovin e Unity Ads, os dois em bidding. Os grupos de
+    // mediacao e as contas das duas redes se configuram no painel da AdMob; os
+    // dois SDKs leem o consentimento que o UMP grava (TCF e AC string), entao
+    // nao ha codigo de consentimento por rede.
+    implementation "com.google.ads.mediation:applovin:$mediacaoAppLovinVersion"
+    implementation "com.google.ads.mediation:unity:$mediacaoUnityVersion"
+    implementation "com.unity3d.ads:unity-ads:$unityAdsVersion"
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

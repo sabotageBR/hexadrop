@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hexa Drop - icone do app</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #333;
+      }
+      body {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        padding: 16px;
+      }
+      canvas {
+        width: 320px;
+        height: 320px;
+        background: repeating-conic-gradient(#666 0 25%, #999 0 50%) 0 0 / 24px 24px;
+      }
+      #splash {
+        width: 320px;
+        height: 320px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Cada canvas e uma camada do icone, no tamanho final (1024 e 2732). A
+         captura le os pixels direto do canvas (tools/icone.mjs), com a
+         transparencia da frente. -->
+    <canvas id="completo" width="1024" height="1024"></canvas>
+    <canvas id="frente" width="1024" height="1024"></canvas>
+    <canvas id="fundo" width="1024" height="1024"></canvas>
+    <canvas id="splash" width="2732" height="2732"></canvas>
+    <script type="module" src="./icone.js"></script>
+  </body>
+</html>

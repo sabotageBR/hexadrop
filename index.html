@@ -249,6 +249,13 @@
       <div class="settings-row"><label id="lblMusic"></label><div class="seg" id="segMusic"></div></div>
       <div class="settings-row"><label id="lblQuality"></label><div class="seg" id="segQuality"></div></div>
       <div class="settings-row"><label id="lblLang"></label><div class="seg" id="segLang"></div></div>
+      <!-- So no app (buildAppSettings): a compra que tira os anuncios,
+           restaurar compras e as opcoes de privacidade do GDPR. -->
+      <div class="settings-app" id="setApp" hidden>
+        <button class="btn wide" id="setNoAds"></button>
+        <button class="btn wide" id="setRestore"></button>
+        <button class="btn wide" id="setPrivacy"></button>
+      </div>
       <p id="setStorage" style="margin:12px 0 0; font-size:12px"></p>
       <div class="row" style="margin-top:14px">
         <button class="btn" id="setReset"></button>
@@ -264,6 +271,9 @@
 
 <div class="tut hide" id="tut"></div>
 <div class="toast" id="toast"></div>
+<!-- So no app: o video recompensado carregando. Segura a tela inteira ate o
+     video abrir ou o prazo acabar (src/app/nativo.js). -->
+<div class="ad-veil" id="adVeil" hidden><div class="ad-veil-box"><i class="ad-veil-spin"></i><span id="adVeilTxt"></span></div></div>
 
 <div id="loader">
   <div class="loader-inner">

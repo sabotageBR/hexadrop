@@ -74,6 +74,22 @@ class Poki {
     this.onAdStart = null;
     /** @type {null|(()=>void)} */
     this.onAdEnd = null;
+    // O que so o app tem (src/app/nativo.js). Na Poki nada disso existe: sem
+    // loja, sem opcoes de privacidade, sem botao voltar nem ciclo de vida de
+    // app, e o video nao tem veu. Os ganchos ficam aqui para main.js poder
+    // falar com as duas plataformas do mesmo jeito; eles nunca disparam.
+    this.loja = null;
+    this.privacidade = null;
+    /** @type {null|((on:boolean)=>void)} */
+    this.onAdLoading = null;
+    /** @type {null|(()=>void)} */
+    this.onSemVideo = null;
+    /** @type {null|(()=>void)} */
+    this.onVoltar = null;
+    /** @type {null|(()=>void)} */
+    this.onSegundoPlano = null;
+    /** @type {null|(()=>void)} */
+    this.onPrimeiroPlano = null;
   }
 
   /** @returns {Promise<void>} resolve mesmo quando o SDK nao carrega */
@@ -161,9 +177,11 @@ class Poki {
   /**
    * Intervalo comercial. So deve ser chamado ao sair de uma parada natural
    * rumo ao jogo. Nunca criar cooldown proprio: a Poki decide a frequencia.
+   * O ponto de onde o intervalo vem so importa ao app (src/app/nativo.js).
+   * @param {string} [_ponto]
    * @returns {Promise<void>}
    */
-  async commercialBreak() {
+  async commercialBreak(_ponto) {
     if (!COM_ANUNCIOS || this.inBreak || !this.ready) return;
     this.gameplayStop();
     this.inBreak = true;
@@ -278,6 +296,9 @@ class Poki {
     }
   }
 
+  /** So o app minimiza; no navegador nao ha para onde ir. */
+  minimizar() {}
+
   /** @returns {boolean} */
   isTablet() {
     return !!this.device && this.device.category === 'tablet';
@@ -291,3 +312,6 @@ class Poki {
 }
 
 export const poki = new Poki();
+
+/** O nome que main.js usa: `@plataforma` aponta para este arquivo fora do app. */
+export { poki as plataforma };

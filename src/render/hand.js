@@ -11,6 +11,8 @@
  * Nao toca no DOM: recebe o contexto ja na escala CSS da cena.
  */
 
+import { roundRectPath } from './draw2d.js';
+
 const PERIODO = 1.25;
 
 /** @param {number} t @returns {number} */
@@ -25,13 +27,13 @@ const suave = (t) => t * t * (3 - 2 * t);
 function formas(ctx, s) {
   ctx.beginPath();
   // indicador
-  ctx.roundRect(-0.1 * s, 0, 0.2 * s, 0.62 * s, 0.1 * s);
+  roundRectPath(ctx, -0.1 * s, 0, 0.2 * s, 0.62 * s, 0.1 * s);
   // palma, com os outros dedos dobrados por cima
-  ctx.roundRect(-0.1 * s, 0.4 * s, 0.56 * s, 0.56 * s, 0.16 * s);
-  ctx.roundRect(0.1 * s, 0.36 * s, 0.17 * s, 0.26 * s, 0.085 * s);
-  ctx.roundRect(0.27 * s, 0.4 * s, 0.17 * s, 0.24 * s, 0.085 * s);
+  roundRectPath(ctx, -0.1 * s, 0.4 * s, 0.56 * s, 0.56 * s, 0.16 * s);
+  roundRectPath(ctx, 0.1 * s, 0.36 * s, 0.17 * s, 0.26 * s, 0.085 * s);
+  roundRectPath(ctx, 0.27 * s, 0.4 * s, 0.17 * s, 0.24 * s, 0.085 * s);
   // polegar
-  ctx.roundRect(-0.3 * s, 0.56 * s, 0.34 * s, 0.17 * s, 0.085 * s);
+  roundRectPath(ctx, -0.3 * s, 0.56 * s, 0.34 * s, 0.17 * s, 0.085 * s);
 }
 
 /**
@@ -84,7 +86,7 @@ export function paintTapHand(ctx, x, y, s, tempo) {
   ctx.fill();
   // Unha: a pista de para onde o dedo aponta.
   ctx.beginPath();
-  ctx.roundRect(-0.055 * s, 0.05 * s, 0.11 * s, 0.13 * s, 0.05 * s);
+  roundRectPath(ctx, -0.055 * s, 0.05 * s, 0.11 * s, 0.13 * s, 0.05 * s);
   ctx.fillStyle = 'rgba(27, 21, 48, 0.14)';
   ctx.fill();
   ctx.restore();

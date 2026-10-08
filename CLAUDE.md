@@ -17,7 +17,27 @@ npm run check        # build + verify-build + sdkcheck
 npm run build:lisa   # dist-lisa/ (versao sem plataforma)
 npm run preview:lisa # serve dist-lisa em 127.0.0.1:4174
 npm run verify:lisa  # conformidade da versao lisa (precisa do preview:lisa no ar)
+
+npm run build:app            # dist-app/ (Android/iOS), anúncios de TESTE
+npm run build:app:producao   # dist-app/ com as unidades reais da AdMob
+npm run preview:app          # serve dist-app em 127.0.0.1:4175 (backend simulado)
+npm run verify:app           # conformidade do app (precisa do preview:app no ar)
+npm run verify:app:producao  # idem, e reprova unidade de teste ou unidade real vazia
+npm run appcheck             # política do app sobre o backend simulado (preview:app no ar)
+npm run android:sync         # build:app + cap sync android
+npm run android:run          # instala e abre no aparelho/emulador
+npm run android:aab          # build de produção + AAB assinado em android/app/build/outputs/bundle/
+npm run android:aab:teste    # o mesmo AAB com anúncios de TESTE, para o teste interno/fechado
+npm run ios:sync             # build:app + cap sync ios + versão do package.json no Xcode
+npm run icones               # ícone e splash (marketing/icone/) para assets/, android/ e ios/
 ```
+
+O app pede **Node 22** (`~/programas/node-v22.*`, no PATH pelo `~/.bashrc`; o
+`/usr/bin/node` do sistema é o 18), **JDK 21** (`~/programas/jdk-21.*`, apontado por
+`org.gradle.java.home` em `~/.gradle/gradle.properties`; o `JAVA_HOME` global
+continua no JDK 15) e o **Android SDK** em `~/Android/Sdk` (emulador `hexadrop`,
+Pixel 7 com Android 16 e Google Play). O WebView do app se depura pelo DevTools:
+`adb forward tcp:9339 localabstract:webview_devtools_remote_<pid>`.
 
 Geração de fases (grava `src/game/levels.gen.js`):
 
@@ -28,7 +48,7 @@ node tools/generate-levels.mjs --levels 1-20     # só um trecho; o resto do arq
 ```
 
 Verificação — **todas as ferramentas de `tools/` sobem `google-chrome --headless=new`
-em uma porta de debug fixa (9222/9333/9444/9555/9666/9777/9888), então rode uma por vez**,
+em uma porta de debug fixa (9222/9333/9444/9555/9666/9777/9888/9998/9999), então rode uma por vez**,
 e todas precisam de um servidor já no ar:
 
 ```bash
@@ -72,7 +92,7 @@ Não há framework de teste nem linter. A verificação é essa automação sobr
 
 **Camadas, da mais pura para a mais suja.** `core/` e `physics/` e `game/` não tocam
 no DOM — é isso que permite o validador offline rodar exatamente o mesmo código do
-jogo dentro do Node. Só `main.js`, `poki.js`, `render/` e `core/{input,loop,viewport,audio,storage,i18n}.js`
+jogo dentro do Node. Só `main.js`, `poki.js`, `app/`, `render/` e `core/{input,loop,viewport,audio,storage,i18n}.js`
 usam `window`/`document`. **Ao mexer em `src/physics/` ou `src/game/`, não introduza
 nenhuma referência a `window`, `document` ou `performance`**: `tools/generate-levels.mjs`
 importa esses módulos direto e quebra.
@@ -97,8 +117,10 @@ desenha e não fala com o DOM; comunica por callbacks (`onStar`, `onEnd`, `onFir
 `onDestroy`, `onImpact`). Quem quer efeito visual/sonoro embrulha esses callbacks — é
 o que `GameScene.load()` faz.
 
-**`main.js` é o único lugar que decide telas, progressão e quando falar com a Poki.**
-Nenhum outro módulo importa `poki.js`. Mantenha assim.
+**`main.js` é o único lugar que decide telas, progressão e quando falar com a plataforma.**
+Ele importa `@plataforma`, um alias de `vite.config.js` que aponta para `src/poki.js`
+(Poki e lisa) ou `src/app/nativo.js` (app), e nenhum outro módulo do jogo importa
+nenhum dos dois. Mantenha assim.
 
 ### Mundos e o tamanho de cada um
 
@@ -1264,12 +1286,15 @@ subconjunto latin, então **só levam letras do Latin-1**: um İ ou um ş turco 
 outra fonte no meio da palavra — por isso o turco não tem "HARİKA" nem "MÜTHİŞ". O
 francês leva o espaço fino antes do "!" como ` `.
 
-### Duas versoes: Poki e lisa
+### Tres versoes: Poki, lisa e app
 
-O alvo do build entra por `VITE_PLATAFORMA` e vive em `src/core/platform.js`.
+O alvo do build entra por `VITE_PLATAFORMA` e vive em `src/core/platform.js` (a mesma
+lista esta em `vite.config.js`; valor desconhecido vira `poki` nos dois).
 `poki` (padrao, sai em `dist/`) carrega o SDK, mostra intervalo comercial e oferece
 os videos recompensados. `lisa` (`npm run build:lisa`, sai em `dist-lisa/`) nao tem
-plataforma nenhuma — e a versao para hospedar em qualquer lugar.
+plataforma nenhuma — e a versao para hospedar em qualquer lugar. `app`
+(`npm run build:app`, sai em `dist-app/`) e o jogo empacotado pelo Capacitor para
+Android e iOS — ver "Versão app (Android/iOS)".
 
 O que muda na versao lisa:
 
@@ -1290,6 +1315,169 @@ O que muda na versao lisa:
 
 `sdkcheck`, `audiocheck` e `playsweep` continuam valendo para a versao Poki, que e
 a que precisa passar na QA.
+
+### Versão app (Android/iOS)
+
+O app é o mesmo jogo web dentro do **Capacitor 8** (WebView com os arquivos de
+`dist-app/`, servidos de `https://localhost` no Android e `capacitor://localhost` no
+iOS). Física, render, áudio sintetizado e save rodam sem mudar; o que muda é a camada
+de plataforma, `src/app/`, que só entra no build `app`:
+
+| arquivo | papel |
+|---|---|
+| `inicio.js` | a entrada do build `app` (o plugin `entradaDoApp` de `vite.config.js` troca o `main.js` do `index.html` por ele): hidrata o save e só então importa `main.js` |
+| `nativo.js` | a plataforma, com a mesma interface de `poki.js` mais `loja`, `privacidade` e os ganchos de ciclo de vida; decide a **frequência** dos anúncios |
+| `anuncios.js` | mecânica de anúncio: consentimento, carga, validade, exibição, vigia |
+| `analise.js` | `measure()` → Firebase Analytics |
+| `compras.js` | a compra que tira os anúncios |
+| `save.js` | a cópia do save no Preferences |
+| `backend.js` | o único que fala com os plugins (AdMob, Firebase, compras, App, splash) |
+| `simulado.js` | o mesmo formato de `backend.js`, falso, para o navegador local (`appcheck`) |
+| `config.js` | IDs da AdMob e os números da política |
+
+**Decisões do Evandro**: ID `br.com.emtech.hexadrop`; **AdMob já com mediação**
+(AppLovin e Unity Ads, em bidding); intersticial entre fases e vídeo recompensado,
+**sem banner**; Firebase Analytics; compra "Remover anúncios".
+
+**A frequência é nossa.** Na Poki quem decide é a Poki, e o jogo não pode ter cooldown
+próprio; a AdMob mostra o que pedirem. `Game.commercialBreak(ponto)` diz de onde o
+intervalo vem (`troca`, `proxima`, `recomeco`, `repetir`, `retomar`) — a Poki ignora — e
+`nativo.js` aplica, além da carência de `FASES_SEM_INTERVALO`:
+
+- `INTERSTICIAL_INTERVALO_S` (120 s) desde o último anúncio de **qualquer** tipo, e
+  desde a abertura do app. O funil da Poki mostra o jogador saindo pelo relógio (~0,3
+  por minuto); o valor começa alto e é para calibrar com o Firebase.
+- **nunca ao `retomar`** da pausa: a pausa abre sozinha quando o app vai para o
+  segundo plano, e um anúncio na volta é anúncio de abertura disfarçado (proibido pela
+  AdMob);
+- nada com o app escondido nem nos `CARENCIA_VOLTA_S` (20 s) depois de voltar: os
+  timers do fluxo (o "Quase!", a transição congelada) seguem correndo em segundo plano e
+  chegariam à troca de fase logo na volta;
+- sem anúncio carregado, **não espera**: a troca segue na hora e a carga recomeça;
+- nada para quem comprou "Remover anúncios".
+
+**Todo anúncio termina.** O jogo para tudo enquanto ele está na tela (`tr.anuncio`,
+`advancing`, toque e laço desligados), e um evento de fechar perdido prenderia o
+jogador. `Anuncios.mostrar()` resolve no `Dismissed`, no `FailedToShow`, na rejeição do
+`show()`, no **vigia** do Android (o app voltou a ficar ativo e visível com o anúncio
+ainda "aberto": no Android o anúncio é uma Activity própria) ou num prazo longo de
+segurança (no iOS o anúncio é um view controller por cima, sem evento de visibilidade, e
+um prazo curto soltaria o jogo por baixo de um vídeo). O prêmio do recompensado só vale
+com o evento `Rewarded`, e espera ~500 ms depois do fechar porque alguns adaptadores de
+mediação mandam o prêmio atrasado.
+
+**O véu do vídeo.** O recompensado nem sempre está carregado. O clique liga `inBreak` e
+o véu `#adVeil` ("carregando…") na hora, e espera até `ESPERA_RECOMPENSADO_S` (8 s);
+sem o véu a tela seguia viva e o vídeo podia abrir por cima de outra tela (`skipByAd`
+não confere a tela depois do `await`). Sem vídeo, toast `videoIndisponivel` e nenhum
+prêmio.
+
+**Consentimento antes de tudo.** UMP (GDPR e estados dos EUA) → ATT no iOS →
+`initialize` → pré-carga, e só depois que a splash sai (`gameLoadingFinished`): o
+`init()` do app não bloqueia o boot, e a primeira abertura offline não espera nada. Os
+ajustes ganham "Privacidade" quando o UMP diz que as opções são obrigatórias. AppLovin e
+Unity (4.19+) leem o consentimento do UMP sozinhos (TCF e AC string): não há código de
+consentimento por rede, mas as duas têm que estar na lista de parceiros da mensagem GDPR
+no painel da AdMob. O Firebase nasce com `ad_*` negado (manifesto e `Info.plist`) e
+`nativo.js` concede quando o UMP responde `NOT_REQUIRED`; com o formulário respondido, o
+Firebase lê as strings TCF que o UMP grava.
+
+**Telemetria.** `analise.js` traduz `measure(categoria, oque, acao)`: `level/N/start` vira
+`level_start {level_name, n}` e `complete`/`fail` viram `level_end {…, success}` (os
+eventos de jogo do GA4); o resto vira `<categoria>_<acao>` com `{oque, n}`, onde `n` é o
+número no fim de `oque`. São uns doze nomes, e o funil por fase sai do filtro em `n`.
+
+**O save tem cópia no Preferences** (UserDefaults/SharedPreferences): no iOS o sistema
+pode limpar o localStorage do WebView. `core/storage.js` continua o único que toca o
+localStorage, e ganhou `hidratar()` e `definirEspelho()`. A ordem em `inicio.js` é a
+regra: hidratar **antes** de qualquer módulo do jogo ser avaliado (o idioma e o som são
+lidos do storage na avaliação, o save no construtor do `Game`), e só **depois** ligar o
+espelho — ligado antes, o save novo de um `Progress` vazio sobrescreveria a cópia boa.
+Quem decide entre o local e a cópia é `rev`, que `Progress.flush()` incrementa (e
+`reset()` preserva): o Chromium grava o localStorage com atraso, e morto logo depois de
+uma fase o app voltava com o save mais velho. Medido no emulador: localStorage apagado,
+app morto e reaberto, as moedas voltaram.
+
+**"Remover anúncios"** (`remover_anuncios`, não consumível) tira só o intersticial; o
+vídeo recompensado continua, porque só existe quando o jogador escolhe. A flag mora na
+chave `semAnuncios`, **fora do save** (`reset()` zera o save, e apagar o progresso não
+pode devolver anúncio a quem pagou), e uma consulta à loja vazia ou com falha nunca a
+desliga. No Android a compra tem que ser reconhecida em 3 dias ou o Play estorna: o
+plugin reconhece na compra, e `Compras.verificar()` (no boot e a cada volta do segundo
+plano) reconhece a que escapou — uma compra pendente que se concluiu com o app fechado.
+"Restaurar compras" é exigência da Apple.
+
+**Voltar e segundo plano.** O botão voltar do Android chama `Game.voltar()` — pausa na
+fase, continua na pausa, `TECLA_VOLTA` nas outras telas, a home do cartão de fim de fase
+e, na home, o app vai para trás (`minimizeApp`). O Esc continua em `onKey` como era: na
+Poki ele não faz nada nos cartões. Ir para o segundo plano (o `pause` do Capacitor **e**
+o `visibilitychange`, porque no iOS o `pause` pode chegar só na volta) abre a pausa com a
+fase em jogo — nunca durante anúncio, que no Android dispara o mesmo `pause`. Depois de
+anúncio ou da volta, se o AudioContext não voltou a `running` (no iOS ele fica
+"interrupted"), o gesto que destrava o som é armado de novo (`rearmaSom`).
+
+**Tela.** Só retrato (`screenOrientation`, e `appCategory="game"`, sem o que o Android 16
+ignora a orientação em tela grande). Barras escondidas (`SystemBars.hidden`). O
+`MainActivity` chama `EdgeToEdge.enable()` **depois** do `super.onCreate()`: antes, a
+janela nascia com o tema da abertura e a ActionBar "Hexa Drop" cobria o HUD (aconteceu).
+Com WebView abaixo do 140 o Capacitor encolhe o WebView para baixo do recorte da câmera
+e zera o safe-area; do 140 em diante o WebView vai de borda a borda e o safe-area vem por
+`--safe-area-inset-*` (injetado, `insetsHandling: "css"`) ou `env()`. As `--safe-*` de
+`game.css` leem os dois, e **só no app** `aplicaHud()` soma o safe-area à margem da
+câmera, medido numa sonda com `ResizeObserver` (o valor chega depois do primeiro
+`startLevel` e não dispara `resize`). `setTextZoom(100)`: a fonte grande do sistema
+estourava o HUD de medidas fixas. O fundo da janela é o do jogo (`fundo_jogo`), senão a
+faixa do recorte ficava clara.
+
+**`window.__game` não existe no aparelho**: o app também roda em `localhost`, e a trava
+por endereço passou a exigir `!Capacitor.isNativePlatform()`. Fora do aparelho, no
+navegador local, os ganchos continuam — é por eles que o `appcheck` joga.
+
+**Builds e chaves.** IDs de anúncio de **teste** por padrão; os reais (`REAL` em
+`src/app/config.js`) só com `VITE_ANUNCIOS=producao` (`build:app:producao`, que o
+`android:aab` usa), e o `verify:app:producao` reprova unidade de teste ou real vazia. O
+ID do **app** na AdMob (com `~`) mora em `android/gradle.properties`
+(`hexadrop.admobAppId`) e no `GADApplicationIdentifier` do `Info.plist`; o release do
+Android recusa sair com o de demonstração (`-Phexadrop.permitirAdmobTeste=true` libera,
+para um AAB de teste interno antes de a conta existir) e sem `android/keystore.properties`
+(fora do git, com `storeFile`, `storePassword`, `keyAlias`, `keyPassword` da chave de
+upload; a chave em si fica fora do repositório, com backup). A chave existe desde
+08/10/2026: `~/chaves/hexadrop-upload.jks`, alias `upload`, senha em
+`android/keystore.properties`. Cada AAB enviado ao Play precisa de `versionCode` maior
+que o anterior, ou seja, de versão nova no `package.json`. `versionName` e
+`versionCode` saem do `package.json` (1.0.15 → 10015) no Gradle; no iOS, por
+`tools/versao-app.mjs`. O build web do app tira `console.*` (esbuild `drop`), porque as
+implementações web dos plugins falam por `console.log`, e desvia `firebase/analytics`
+para `src/app/firebase-web.js`, senão o SDK web do Firebase entraria no pacote.
+
+**iOS pronto para compilar, não publicado.** `ios/` foi gerado no Linux (SPM, sem
+CocoaPods). O `Info.plist` tem o ID de demonstração da AdMob, 156 SKAdNetwork (Google,
+AppLovin, Unity), o texto do ATT traduzido nos 7 idiomas (`xx.lproj/InfoPlist.strings`),
+`CFBundleLocalizations` (sem ele o `navigator.language` do WKWebView cai sempre em
+`en`), só retrato e `UIRequiresFullScreen`. Os adaptadores de mediação entram como
+pacotes SPM do próprio projeto Xcode (o `Package.swift` do CapApp é do Capacitor). O
+workflow `.github/workflows/ios.yml` compila para o simulador num runner macOS; assinar
+e mandar para o TestFlight pede a conta Apple Developer e um Mac ou segredos no CI.
+
+**Ícone e splash** saem de `marketing/icone/` com os pintores do jogo, como a capa: o
+hexágono da skin padrão sobre o céu do mundo 1 e a torre de gelatina cortada, em
+camadas (o ícone adaptativo do Android é frente + fundo, e a frente cabe no círculo
+seguro de 66%). `tools/icone.mjs` lê os pixels do canvas (com o alfa) para `assets/`, e
+o `@capacitor/assets` gera os tamanhos. A splash é fundo liso com o hexágono: com o céu,
+cada PNG passava de 0,5 MB, em dezenas de tamanhos.
+
+**Fora do código, para publicar** (`site/` tem a política de privacidade em pt e en e o
+modelo de `app-ads.txt`, os dois com campos `[[...]]` a preencher):
+- AdMob: o app, as unidades intersticial e recompensado, os grupos de mediação com
+  AppLovin e Unity, a mensagem GDPR (com as duas redes na lista de parceiros) e a de
+  estados dos EUA;
+- Firebase: o projeto, `google-services.json` em `android/app/` e
+  `GoogleService-Info.plist` no Xcode (sem eles o plugin só não liga a telemetria);
+- Play Console: público-alvo 13+ (abaixo disso a Families Policy restringe os SDKs de
+  anúncio), Data safety (ID de publicidade, analytics, compras), o produto
+  `remover_anuncios` e o teste fechado — conta **pessoal** criada depois de 11/2023 exige
+  12 testadores por 14 dias seguidos antes da produção;
+- o `app-ads.txt` na raiz do site informado como do desenvolvedor.
 
 ### Poki
 
@@ -1417,6 +1605,11 @@ Reflete a QA da Poki e roda sobre `dist/`:
   — `core/storage.js` é o único módulo que toca `localStorage` e já cai para memória;
 - canvas não cobrir a janela em 640x360, 836x470 e 1031x580;
 - build acima de 5 MB comprimido.
+
+No build do app (`DIST_DIR=dist-app`, reconhecido pelo plugin da AdMob registrado no
+bundle) ele cobra também: nada da Poki, nenhuma URL nem script externo, e com
+`EXIGE_PRODUCAO=1` nenhuma unidade de anúncio de teste e as reais preenchidas. No build
+da Poki, que nada do app entrou.
 
 `window.__game` e `window.__audio` são expostos no fim de `main.js` só para essa
 automação, e **só em `127.0.0.1`/`localhost`**: a Poki pede *"remove all development
