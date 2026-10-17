@@ -9,6 +9,7 @@
  *
  *   node tools/economia.mjs                  # fases 1 a 45, 3 partidas por perfil
  *   node tools/economia.mjs --runs 6 --ate 50
+ *   node tools/economia.mjs --sem-regras      # o jogo sem as regras de fase, para comparar
  *
  * Dois perfis: `competente` joga a politica `plan` do solucionador; `mediano`
  * troca ~35% dos toques por um ao acaso e recomeca ate vencer. O mediano e o
@@ -32,6 +33,7 @@ import { choosePiece, settle } from '../src/game/solver.js';
 import { Progress } from '../src/game/progress.js';
 import { faseDeOrigem } from '../src/game/alem.js';
 import { upgradeEffects, barraDoMundo, skin as getSkin } from '../src/game/content.js';
+import { comRegra, regraDaVariante, variantesPermitidas } from '../src/game/regras.js';
 
 /** Fracao dos toques do perfil mediano que sai ao acaso. */
 const ACASO = 0.35;
@@ -78,6 +80,11 @@ function joga(layout, upgrades, perfil, rng) {
     world.destroyPiece(peca, 'tap');
     taps++;
     settle(world);
+    // Com o limite de toques da regra esgotado, assenta ate o veredito em vez
+    // de tocar de novo (o mundo recusaria o toque).
+    for (let k = 0; k < 600 && world.toquesRestantes() <= 0 && world.evaluate() === 'playing'; k++) {
+      world.step(1 / 60);
+    }
     if (n >= 2) {
       comboScore += n * n;
       comboPieces += n;
@@ -85,7 +92,8 @@ function joga(layout, upgrades, perfil, rng) {
   }
   if (estado === 'playing') estado = world.evaluate();
   const stars = world.starsCrossed;
-  const sobraram = world.destructibleCount;
+  // A joia nao estoura na rajada (Session.startBonus): nao conta como sobra.
+  const sobraram = world.destructibleCount - (world._joia && world._joia.alive ? 1 : 0);
   world.destroy();
   // `stuck` com estrela e vitoria para o jogador (onLevelEnd em main.js).
   const venceu = estado === 'won' || (estado === 'stuck' && stars >= 1);
@@ -94,7 +102,7 @@ function joga(layout, upgrades, perfil, rng) {
 
 /**
  * Um jogador do zero ate a fase `ate`.
- * @param {{perfil:'competente'|'mediano', run:number, ate:number}} t
+ * @param {{perfil:'competente'|'mediano', run:number, ate:number, semRegras?:boolean}} t
  */
 function jogador(t) {
   save('save', null);
@@ -104,19 +112,28 @@ function jogador(t) {
   for (let level = 1; level <= t.ate; level++) {
     const rec = LEVELS[level - 1];
     const config = levelConfig(level - 1, rec.s);
-    let vi = Math.floor(rng.next() * rec.v.length);
+    // Como o jogo: fase com regra so sorteia entre as variantes aprovadas.
+    const permitidas = t.semRegras ? rec.v.map((_, i) => i) : variantesPermitidas(level - 1, rec.v);
+    let k = Math.floor(rng.next() * permitidas.length);
+    let vi = permitidas[k];
     let r = null;
     let tentativas = 0;
     while (tentativas < TENTATIVAS) {
       tentativas++;
       const variante = rec.v[vi];
-      const jogo = joga(generateLayout(config, variante[0]), p.data.upgrades, t.perfil, rng);
+      let layout = generateLayout(config, variante[0]);
+      const regra = t.semRegras ? null : regraDaVariante(level - 1, vi, variante[0], layout);
+      if (regra) layout = comRegra(layout, regra);
+      const jogo = joga(layout, p.data.upgrades, t.perfil, rng);
       if (jogo.venceu) {
         r = { ...jogo, par: variante[1] };
         break;
       }
       // O jogo repete o layout duas vezes e depois troca; aqui basta trocar.
-      if (tentativas >= 2) vi = (vi + 1) % rec.v.length;
+      if (tentativas >= 2) {
+        k = (k + 1) % permitidas.length;
+        vi = permitidas[k];
+      }
     }
     if (!r) {
       linhas.push({ level, coins: 0, saldo: p.data.coins, barra: 0, skin: p.data.skin, tentativas, desistiu: true });
@@ -144,6 +161,7 @@ function jogador(t) {
       tentativas,
       prize: res.prize ? `${res.prize.kind}:${res.prize.id || res.prize.coins}` : '',
       unlock: res.unlock ? res.unlock.id : '',
+      perfeita: res.perfeita,
     });
   }
   return { ...t, linhas };
@@ -162,7 +180,7 @@ if (!isMainThread) {
   /** @type {{perfil:'competente'|'mediano', run:number, ate:number}[]} */
   const tarefas = [];
   for (const perfil of /** @type {const} */ (['competente', 'mediano'])) {
-    for (let run = 0; run < runs; run++) tarefas.push({ perfil, run, ate });
+    for (let run = 0; run < runs; run++) tarefas.push({ perfil, run, ate, semRegras: args.includes('--sem-regras') });
   }
   const t0 = Date.now();
   const resultados = await Promise.all(
@@ -190,6 +208,13 @@ if (!isMainThread) {
   const rendaDoMundo = (r, w) =>
     r.linhas.filter((/** @type {*} */ l) => worldOf(l.level - 1) === w).reduce((s, /** @type {*} */ l) => s + l.coins, 0);
 
+  for (const perfil of ['competente', 'mediano']) {
+    const ns = resultados
+      .filter((/** @type {*} */ r) => r.perfil === perfil)
+      .map((/** @type {*} */ r) => r.linhas.filter((/** @type {*} */ l) => l.perfeita).length);
+    console.log(`jogadas perfeitas por jogador (${perfil}): mediana ${mediana(ns)} de ${ate}`);
+  }
+  console.log('');
   console.log('renda por mundo (mediana / p25)');
   console.log('mundo  competente   mediano    barra');
   for (let w = 0; w < mundos; w++) {

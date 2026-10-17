@@ -11,6 +11,7 @@ import { generateLayout, levelConfig } from './levelgen.js';
 import { upgradeEffects } from './content.js';
 import { Rng } from '../core/rng.js';
 import { choosePiece } from './solver.js';
+import { comRegra, regraDaVariante } from './regras.js';
 
 // --- celebracao de fim de fase -------------------------------------------
 /**
@@ -97,6 +98,15 @@ export class Session {
     /** @type {SessionState} */
     this.state = 'ready';
     this.taps = 0;
+    /** @type {*|null} regra de fase (game/regras.js), so para quem desenha */
+    this.regra = this.layout.regra || null;
+    /** @type {string|null} por que a regra derrubou a ultima queda */
+    this.motivo = null;
+    /**
+     * Segundos sem toque. Diferente de `idle`, a dica nao o zera: e por ele que
+     * o chamariz do primeiro toque cresce com o tempo parado.
+     */
+    this.parado = 0;
     this.starsShown = 0;
     this.elapsed = 0;
     this.endedAt = 0;
@@ -215,7 +225,11 @@ export class Session {
    */
   startBonus() {
     if (this.bonus) return this.bonusTotal;
-    const vivas = this.world.alivePieces().filter((p) => getMaterial(p.material).destructible);
+    // A joia salva nao estoura: e o premio da regra, e a rajada so comemora.
+    const vivas = this.world
+      .alivePieces()
+      .filter((p) => getMaterial(p.material).destructible && !p.joia);
+    this.world.celebrando = true;
     // De cima para baixo: a torre desmonta de cima, e o hexagono ja pousado
     // nao leva o primeiro estouro na cara.
     vivas.sort((a, b) => b.body.getPosition().y - a.body.getPosition().y);
@@ -292,6 +306,11 @@ export class Session {
     if (!piece) return null;
     const mat = getMaterial(piece.material);
     if (!mat.destructible) return { piece, ok: false, reason: 'indestructible' };
+    // Recusa ANTES de tudo: um toque na joia nao pode ser o primeiro toque da
+    // partida (gameplayStart), nem contar, nem mover o ponto de volta.
+    if (piece.joia) return { piece, ok: false, reason: 'joia' };
+    if (piece.presa) return { piece, ok: false, reason: 'presa' };
+    if (this.world.toquesRestantes() <= 0) return { piece, ok: false, reason: 'limite' };
 
     if (this.state === 'ready') {
       this.state = 'playing';
@@ -300,6 +319,7 @@ export class Session {
     this.taps++;
     this.hintPiece = null;
     this.idle = 0;
+    this.parado = 0;
     // Abre a jogada ANTES de destruir: a propria peca tocada e a primeira da
     // conta, e o que a queda dela derrubar entra na mesma.
     this.comboOpen = true;
@@ -347,6 +367,7 @@ export class Session {
       return;
     }
     this.elapsed += dt;
+    this.parado += dt;
     if (this.hintTimer > 0) {
       this.hintTimer -= dt;
       if (this.hintTimer <= 0) this.hintPiece = null;
@@ -363,8 +384,14 @@ export class Session {
     }
 
     const verdict = this.world.evaluate();
+    // Copiado antes da volta: rewind() restaura o mundo, e o motivo iria junto.
+    this.motivo = verdict === 'lost' ? this.world.motivo : null;
     const perdeu = verdict === 'lost' || (verdict === 'stuck' && this.world.starsCrossed === 0);
-    if (perdeu && this.rewindOnLoss && this.rewinds < this.rewindLimit && this.rewind()) {
+    // Sem toques nao ha volta: ela devolveria um toque so, e o jogador ficava
+    // num laco de perder de novo ate o recomeco trocar o layout. A fase
+    // recomeca do zero (main.js, onLevelEnd).
+    const volta = this.motivo !== 'toques';
+    if (perdeu && volta && this.rewindOnLoss && this.rewinds < this.rewindLimit && this.rewind()) {
       if (this.onRewind) this.onRewind();
       return;
     }
@@ -389,6 +416,8 @@ export class Session {
    */
   _updateAutoHint(dt) {
     if (this.autoHintAfter <= 0 || this.hintPiece) return;
+    // Sem toque sobrando nao ha o que indicar: a fase so espera o veredito.
+    if (this.world.toquesRestantes() <= 0) return;
     this.idle += dt;
     if (this.idle < this.autoHintAfter) return;
     if (this.idle < this.autoHintAfter + 3 && !this.world.everythingAtRest()) return;
@@ -445,13 +474,19 @@ export class Session {
  * @param {number} opts.levelIndex 0 a 99
  * @param {number} opts.soften degrau gravado em levels.gen.js
  * @param {number} opts.seed seed da variante
+ * @param {number} [opts.variantIndex] com ele, a regra aprovada da variante vale
+ * @param {boolean} [opts.semRegra] joga a variante sem a regra (automacao)
  * @param {Record<string, number>} [opts.upgrades]
  * @param {*} [opts.hooks]
  * @returns {Session}
  */
 export function createSession(opts) {
   const config = levelConfig(opts.levelIndex, opts.soften);
-  const layout = generateLayout(config, opts.seed);
+  let layout = generateLayout(config, opts.seed);
+  if (opts.variantIndex !== undefined && !opts.semRegra) {
+    const regra = regraDaVariante(opts.levelIndex, opts.variantIndex, opts.seed, layout);
+    if (regra) layout = comRegra(layout, regra);
+  }
   return new Session({
     layout,
     upgrades: opts.upgrades,

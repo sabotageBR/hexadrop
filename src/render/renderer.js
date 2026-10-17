@@ -13,6 +13,7 @@ import { tracePiece, TUBO, usaTubo, pieceHighlight } from './sprites.js';
 import { outlineLoops } from '../physics/shapes.js';
 import { material as getMaterial } from '../physics/materials.js';
 import { PEDESTAL_HALF_H } from '../physics/world.js';
+import { celulaCentral, paintJoia, paintCadeado, paintFaixaDourada } from './regras.js';
 
 export class Renderer {
   /**
@@ -125,14 +126,20 @@ export class Renderer {
       }
     }
 
+    // --- regra de fase: joia e cadeado por cima da peca --------------------
+    if (world.regra) this.drawRegraMarks(ctx, world, toScreen, px, scene.time);
+
     // --- realce de dica e de peca sob o ponteiro --------------------------
     if (session.hintPiece && session.hintPiece.alive) {
-      this.outlinePiece(ctx, session.hintPiece, toScreen, px, theme.accent2, 0.5 + 0.5 * Math.sin(scene.time * 6), theme.corner, tubo);
+      // O chamariz do primeiro toque (GameScene.chamariz) acelera e engrossa o
+      // pulso: a peca que se clica tem que saltar aos olhos de quem esta parado.
+      const ch = scene.chamariz || 0;
+      const pulso = 0.5 + 0.5 * Math.sin(scene.time * (6 + ch * 4));
+      this.outlinePiece(ctx, session.hintPiece, toScreen, px, theme.accent2, pulso, theme.corner, tubo, 1 + ch);
     }
     if (scene.hovered && scene.hovered.alive && scene.hovered !== session.hintPiece) {
-      const mat = getMaterial(scene.hovered.material);
       const cor =
-        !mat.destructible
+        !world.tocavel(scene.hovered)
           ? '#ff5050'
           : tubo
             ? pieceHighlight(theme, scene.hovered.material, scene.hovered.spawnX, scene.hovered.spawnY)
@@ -165,8 +172,9 @@ export class Renderer {
    * @param {number} alpha
    * @param {number} corner raio dos cantos do tema, em fracao da celula
    * @param {boolean} [tubo] tema que desenha a peca como tubo de neon
+   * @param {number} [grossura] multiplica a largura do traco
    */
-  outlinePiece(ctx, piece, toScreen, px, color, alpha, corner, tubo = false) {
+  outlinePiece(ctx, piece, toScreen, px, color, alpha, corner, tubo = false, grossura = 1) {
     const pos = piece.body.getPosition();
     const angle = piece.body.getAngle();
     const [sx, sy] = toScreen(pos.x, pos.y);
@@ -187,13 +195,13 @@ export class Renderer {
       tracePiece(ctx, outlineLoops(piece.cells), px, px * TUBO.raio, ox, oy);
       ctx.clip('evenodd');
       tracePiece(ctx, outlineLoops(piece.cells), px, px * TUBO.raio, ox, oy);
-      ctx.lineWidth = 2 * px * (TUBO.vao + TUBO.fio);
+      ctx.lineWidth = 2 * px * (TUBO.vao + TUBO.fio) * grossura;
       ctx.stroke();
       ctx.restore();
       return;
     }
 
-    ctx.lineWidth = Math.max(2, px * 0.06);
+    ctx.lineWidth = Math.max(2, px * 0.06) * grossura;
     ctx.shadowColor = color;
     ctx.shadowBlur = px * 0.3;
     ctx.lineJoin = 'round';
@@ -237,6 +245,33 @@ export class Renderer {
       theme,
     });
     ctx.restore();
+    if (world.regra && world.regra.tipo === 'dourado') {
+      const meia = (world.regra.meia + world.hexHalfWidth() * 0.5) * px;
+      paintFaixaDourada(ctx, sx, sy, meia, px, world.time);
+    }
+  }
+
+  /**
+   * Joia e cadeado desenhados por cima da peca, na celula do meio dela.
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {*} world
+   * @param {(x:number,y:number)=>number[]} toScreen
+   * @param {number} px
+   * @param {number} time
+   */
+  drawRegraMarks(ctx, world, toScreen, px, time) {
+    const s = px * 0.82;
+    for (const piece of world.pieces) {
+      if (!piece.alive || (!piece.joia && !piece.presa)) continue;
+      const [wx, wy] = celulaCentral(piece);
+      const [sx, sy] = toScreen(wx, wy);
+      if (piece.joia) {
+        // Sem halo borrado (o Evandro recusa): o que chama o olho e a centelha.
+        paintJoia(ctx, sx, sy, s, Math.max(0, Math.sin(time * 2.6)));
+      } else {
+        paintCadeado(ctx, sx, sy, s);
+      }
+    }
   }
 
   /**

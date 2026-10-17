@@ -54,3 +54,46 @@ const probe = await js(`(async () => {
 })()`);
 console.log('audio:', probe);
 sock.close(); chrome.kill();
+await sleep(400);
+
+// Segunda sonda, SEM a flag de autoplay: o navegador de verdade. O primeiro
+// clique com o mouse tem que destravar o audio no proprio mousedown (core/
+// input.js) e sair com som - ate a 1.0.15 o clique e a quebra do primeiro toque
+// do desktop saiam mudos, porque o destravamento esperava o pointerup.
+const PORT2 = PORT + 1;
+const chrome2 = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${PORT2}`, '--no-sandbox', '--disable-gpu', 'about:blank'], { stdio: 'ignore' });
+process.on('exit', () => chrome2.kill());
+let ws2 = '';
+for (let i = 0; i < 60 && !ws2; i++) {
+  try { ws2 = (await (await fetch(`http://127.0.0.1:${PORT2}/json/version`)).json()).webSocketDebuggerUrl; } catch { await sleep(250); }
+}
+const sock2 = new WebSocket(ws2);
+await new Promise((r, j) => { sock2.onopen = r; sock2.onerror = j; });
+let id2 = 0; const pend2 = new Map();
+sock2.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pend2.has(m.id)) { pend2.get(m.id)(m); pend2.delete(m.id); } };
+const send2 = (method, params = {}, sid) => new Promise((res) => { const mid = ++id2; pend2.set(mid, res); sock2.send(JSON.stringify({ id: mid, method, params, ...(sid ? { sessionId: sid } : {}) })); });
+const t2 = (await send2('Target.createTarget', { url: 'about:blank' })).result.targetId;
+const s2 = (await send2('Target.attachToTarget', { targetId: t2, flatten: true })).result.sessionId;
+await send2('Runtime.enable', {}, s2);
+await send2('Page.enable', {}, s2);
+await send2('Emulation.setDeviceMetricsOverride', { width: 1031, height: 580, deviceScaleFactor: 1, mobile: false }, s2);
+await send2('Page.navigate', { url: (process.env.AUDIO_URL || 'http://127.0.0.1:4173') + '/index.html' }, s2);
+await sleep(3500);
+const js2 = async (e) => (await send2('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, s2)).result?.result?.value;
+// Escuta o barramento antes do clique, e so o mousedown: sem mouseup nenhum.
+await js2(`(() => { window.__pico = 0; const a = window.__audio; a.init(); const an = a.ctx.createAnalyser(); an.fftSize = 2048;
+  a.sfxBus.connect(an); const buf = new Float32Array(2048);
+  const ler = () => { an.getFloatTimeDomainData(buf); for (let i = 0; i < buf.length; i++) window.__pico = Math.max(window.__pico, Math.abs(buf[i])); requestAnimationFrame(ler); };
+  ler(); return a.ctx.state; })()`);
+const antes = await js2('window.__audio.ctx.state');
+const alvo = await js2(`(() => { const g = window.__game.scene; const w = g.session.world;
+  const p = w.alivePieces().find((q) => w.tocavel(q)); const c = p.body.getPosition(); const [x, y] = g.camera.toScreen(c.x, c.y);
+  return { x: Math.round(x), y: Math.round(y) }; })()`);
+await send2('Input.dispatchMouseEvent', { type: 'mousePressed', x: alvo.x, y: alvo.y, button: 'left', clickCount: 1 }, s2);
+await sleep(700);
+const depois = await js2('({ estado: window.__audio.ctx.state, pico: Number(window.__pico.toFixed(4)), toques: window.__game.scene.session.taps })');
+console.log('primeiro clique sem autoplay:', JSON.stringify({ antes, ...depois }));
+const okClique = antes !== 'running' && depois.estado === 'running' && depois.pico > 0.001 && depois.toques === 1;
+console.log(okClique ? '  ok    o mousedown destrava o audio e o primeiro clique sai com som' : ' FALHA  o primeiro clique ainda sai mudo');
+sock2.close(); chrome2.kill();
+process.exit(okClique ? 0 : 1);

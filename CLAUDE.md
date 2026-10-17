@@ -42,6 +42,19 @@ node tools/shot.mjs '[{"name":"home","url":"...","w":430,"h":880,"mobile":true}]
 npm run thumbnail        # thumbnails da Poki em marketing/thumbnail/ (~60 s)
 node tools/savecheck.mjs # saves de exemplo pela migracao e a sequencia exata dos hexagonos; Node puro
 node tools/economia.mjs  # renda de cada mundo jogada pelo solucionador e preco da barra (~100 s)
+node tools/economia.mjs --sem-regras    # o mesmo, com as regras de fase desligadas, para comparar
+node tools/regrascheck.mjs              # regras de fase: casos e assinatura das fases sem regra; Node puro
+node tools/regrascheck.mjs --base       # grava a assinatura (rode ANTES de mexer em world.js ou solver.js)
+```
+
+Regras de fase (grava `src/game/regras.gen.js`, ~8 min com 16 workers; rode sozinha,
+sem Chrome nem thumbnail ao mesmo tempo):
+
+```bash
+npm run regras                                    # todas as fases que a agenda marca
+node tools/validate-rules.mjs --levels 21-25      # so um trecho; o resto e preservado
+node tools/validate-rules.mjs --retomar           # continua de onde parou (~/.cache/hexadrop-regras/)
+node tools/validate-rules.mjs --conferir          # so confere seeds e assinaturas; entra no npm run check
 ```
 
 `npm run thumbnail` é a exceção à regra do servidor no ar: copia o projeto para uma
@@ -207,6 +220,28 @@ funis da Poki guiaram as trocas:
   3 s, 90% em 8 s — e conclui a fase 1 como no celular (~92%). Esses 16% não estavam
   jogando, e mudança de jogo não os alcança. O desktop ainda perde ~14% por fase nas 2 a
   10, contra ~10% no celular.
+- **1.0.12 e 1.0.15, um Player Fit Test cada, e o segundo Web Fit Test** (a 1.0.13 e a
+  1.0.14 nunca foram enviadas). A 1.0.12 fez **5:31**, mas a média aparada foi de 202 s, a
+  pior das recentes: duas sessões de 9,9 h e 4,7 h puxaram a média. A 1.0.15 fez 4:10,
+  com aparada de 220 s. Sete testes de cinco versões ficaram entre 202 e 229 s. O **Web
+  Fit Test da 1.0.15** (08 a 15/10, reprovado em 16/10) deu C2P de 71,9% contra ~66,7%,
+  **6:10 contra ~8:27** e CTR de 0,15%. Oito versões renderam +16 s sobre a 1.0.7. O funil
+  dos jogadores novos por aparelho ficou praticamente igual ao do Web Fit Test da 1.0.7:
+  - celular, fase 10: 40,9% → 40,3%; desktop: 26,4% → 24,8%;
+  - só o trecho 11 a 20 melhorou (o mundo 3 consertado: 12 e 13 em 10% e 9%);
+  - o desktop subiu de 32% para 40% dos novos.
+
+  Prêmio, barra, chuva, skins e a transição do stringcut não mexeram na perda por fase.
+  Nos marcos do Web Fit Test, 40,2% passam de 3 min, 13,5% de 10 e 8,5% de 15, e um terço
+  da média vem de quem passa dos 15 min. Até 3 min o Player Fit Test é igual ao Web Fit
+  Test; depois o público real segura mais gente (10 min: 13,5% contra 9,4%), e o Web Fit
+  Test deu 1,68 vez a aparada do Player Fit Test. O que levaria a 8:27 é uma saída por
+  minuto ~18% menor na sessão inteira, ou ~8% de perda por fase em vez de ~10%. O
+  jogador sai aos poucos, sem muro, e a recompensa já foi tentada: a aposta seguinte é
+  **desafio novo a cada mundo**, porque até a 1.0.15 tudo estreava até a fase 11. A
+  análise completa está na nota do Hexa Drop no vault do Obsidian
+  (`POKI/40 Projetos/Hexa Drop.md`). Daí a 1.0.16: as regras de fase, a jogada perfeita,
+  o primeiro clique do desktop e as edições de ouro (ver "Regras de fase").
 
 **Como ler o painel.** A perda de uma fase é **1 − Completed**, e não *Left*: *Left* só
 conta quem sai com a fase começada e nada depois, e quem sai depois de uma volta de
@@ -217,8 +252,9 @@ hora; a lista com a duração de cada partida vem na API que a própria página 
 chama (`player_fit_tests`, campo `durations`), e a comparação justa é a média aparada
 em 15 min e as frações acima de 3, 5 e 10 min. E só se compara teste com o mesmo
 público (categorias e aparelhos): o filtro de categoria sozinho muda o começo do funil.
-Para pedir outra revisão, a barra é média aparada de **~290 s** e **10%** das partidas
-passando de 10 min, num Player Fit Test com o público da 1.0.9.
+Para pedir outra revisão, a barra é média aparada de **~300 s** e **11%** das partidas
+passando de 10 min, em dois Player Fit Tests com o público da 1.0.9. A conta vem do fator
+de 1,68 entre a aparada do Player Fit Test e o Web Fit Test da 1.0.15: 507 s ÷ 1,68 ≈ 300.
 
 **A mistura de aparelhos muda de um teste para outro** (28% de desktop na 1.0.10, 43%
 na 1.0.11), e o desktop perde mais: a média de dois testes só se compara com a mesma
@@ -342,8 +378,10 @@ Duas regras que nasceram de medição:
   apoio. Ali o objetivo é só a fase existir, e um degrau 3 feito de gelo sairia mais
   difícil que o original.
 
-**Tudo estreia até a fase 11** — `MATERIAL_DEBUT` (`physics/materials.js`) para as
-peças e `HAZARD_DEBUT` (`levelgen.js`) para as mecânicas que não são material:
+**Peças e mecânicas estreiam até a fase 11** — `MATERIAL_DEBUT` (`physics/materials.js`)
+para as peças e `HAZARD_DEBUT` (`levelgen.js`) para as mecânicas que não são material.
+Desde a 1.0.16 as **regras de fase** continuam a fila, uma por mundo: toques contados na
+16, joia na 21, cadeado na 26 e dourado na 31 (ver "Regras de fase"):
 
 | fase | estreia |
 |---|---|
@@ -407,7 +445,10 @@ Consequências práticas:
   `physics/materials.js` ou nas constantes de `physics/world.js` invalida as seeds
   assadas.** Rode `npm run levels` depois — senão fases validadas viram fases
   possivelmente impossíveis. Isso inclui `WORLD_SIZES`, `MATERIAL_DEBUT`,
-  `THEME_MATERIALS` e a regra de impacto do `pre-solve`.
+  `THEME_MATERIALS` e a regra de impacto do `pre-solve`. **E rode `npm run regras` logo
+  depois**: `regras.gen.js` guarda a seed e a assinatura de cada peça, e com as seeds novas
+  as regras deixam de bater e são descartadas no jogo (`--conferir` acusa, e está no
+  `npm run check`). Nunca edite `regras.gen.js` à mão.
 - Bumpar `GENERATOR_VERSION` em `tools/generate-levels.mjs` troca todas as seeds.
 - O validador aceita uma variante só quando ela vence por caminhos diferentes e
   continua vencendo com as posições iniciais perturbadas. É essa folga que permite
@@ -587,7 +628,9 @@ moram em `core/audio.js`. A tela inicial tem tema próprio (`MAIN_THEME`): antes
 herdava a música do mundo em cartaz, e deslizar o carrossel trocava a trilha — a
 identidade sonora do jogo dependia de onde o jogador tinha parado. `holdMusic()` na
 pausa e `releaseMusic()` ao voltar: quem pulsa o sequenciador é o passo da cena, que
-segue rodando, e ele não sabia de pausa nenhuma.
+segue rodando, e ele não sabia de pausa nenhuma. **Desde a 1.0.16 a música começa
+desligada** (`musicOn` em `core/audio.js`, decisão do Evandro): só toca para quem a liga
+nos ajustes ou na pausa, e a escolha fica salva. Os efeitos continuam ligados.
 
 **Pausa.** O cartão diz onde o jogador está (mundo, fase, estrelas, toques e meta) e
 traz os botões de som e música. Nada disso é decoração: pausar é o momento em que o
@@ -679,8 +722,14 @@ da 11, em que só mudavam céu e dificuldade. Só no jogo corrido: o `playsweep`
 hora** — o jogador vê a peça trocar na própria cena e entra na fase seguinte com ela —,
 e os pares dão um nível de melhoria, nove prêmios que são exatamente os 3×3 níveis de
 `UPGRADES`, com a estabilidade primeiro (fase 10), que firma o hexágono antes do
-pedestal que balança estrear na 11. A fase 100 dá um baú de 500 moedas e cada mundo
-depois dela um de 300. É a meta longa que a 1.0.7 não tinha (ver o funil acima): a
+pedestal que balança estrear na 11. A fase 100 dá um baú de 500 moedas. Depois dela,
+os mundos 21 a 34 (fases 101 a 170) dão as **edições de ouro** (1.0.16, `TRILHA_OURO` e
+`PREMIOS_ALEM` em `content.js`): os mesmos quatorze desenhos da trilha, com o corpo em ouro
+velho, o miolo seguindo o contraste do original e uma marca por cima (reflexo e centelha)
+que separa a dourada do Feliz e do Queijo, que já são amarelos. Também se compram na loja,
+e o nome é montado pelo i18n (`skinOuro`). Quem já tinha passado desses mundos as recebe
+sem equipar (`migrarDouradas`). Do mundo 35 em diante volta o baú de 300. A vitrine para
+conferir é `prototypes/douradas.html` (no `npm run dev`). É a meta longa que a 1.0.7 não tinha (ver o funil acima): a
 Poki pede metas curtas e longas, e o jogador saía em ritmo constante sem nada pela
 frente.
 
@@ -924,7 +973,11 @@ na 6; com a bolsa cheia não compra na 7 nem na 12, e compra na 10 e na 20, com 
 melhoria na mesma revelação), confere que só a 100 para o fluxo, e segue do cartão da
 100 para a 101 e a 102. A vitória forçada grava as estrelas em
 `world.starsCrossed` — `Session.stars` é só um getter — e dispara o `onFirstTap`, senão
-a partida nunca teria `gameplayStart`.
+a partida nunca teria `gameplayStart`. Da 1.0.16 ele confere também: o cartão "Clique"
+de pé na fase 1 e o par `entrada/mouse`; a rampa com duas voltas nas estreias de regra (16,
+19 e 21) e nenhuma na 25; a dourada equipada no fim do mundo 21 (fase 105); na 16, o chip
+com os toques que sobram, o cartão de estreia e a derrota pela regra (`fail`, motivo no
+selo, `regra/toques/perdeu`); na 21, o toque na joia recusado sem começar a partida.
 
 ### Além da fase 100
 
@@ -1242,6 +1295,89 @@ pancada forte". A cera é assinatura da lava e tempero raro nos outros mundos, p
 em `levelConfig`, e não por uma bandeira no `LevelLayout` — assim `PhysicsWorld` segue
 sem conhecer tema.
 
+### Regras de fase
+
+**Um objetivo novo por mundo depois do ensino** (1.0.16, `game/regras.js`), sem mudar o
+layout. O Web Fit Test da 1.0.15 mostrou o jogador indo embora aos poucos, sem muro, e a
+página de engajamento da Poki separa os dois casos: travar é dificuldade, ir embora aos
+poucos pede *"a reward or a new challenge"*. Recompensa já tinha sido medida (prêmio,
+barra, chuva, skins); desafio novo não existia depois da fase 11.
+
+| regra | estreia | o que é |
+|---|---|---|
+| `toques` | 16 | limite = meta (`par`) da variante + folga de 50% na estreia, 40% até a 60 e 30% depois, nunca menos de 3 |
+| `joia` | 21 | uma peça da torre vira joia: não se toca, e destruída ou abaixo de y = −1 perde a fase |
+| `cadeado` | 26 | duas a quatro peças presas: não se tocam (continuam dinâmicas e estouram por explosão) |
+| `dourado` | 31 | o hexágono tem que repousar na faixa dourada do pedestal; nunca com pedestal que balança |
+
+**A agenda** (`regraDaFase`): nada até a 15, na última fase de cada mundo nem em fase
+afrouxada; no mundo de estreia as quatro primeiras levam a regra; do mundo 8 em diante três
+das quatro primeiras, em rodízio, com a fase livre mudando de lugar a cada mundo. Depois
+da 100 a regra vem da fase de origem (51 a 100). O cartão de estreia sai na primeira fase
+em que a regra aparece de fato (`PRIMEIRA_FASE`), nunca com `origem.alem`.
+
+**A regra mora no mundo, e não na `Session`.** `comRegra` anexa `layout.regra` DEPOIS de
+`generateLayout`, sem consumir sorteio; `PhysicsWorld.build` só marca `piece.joia` e
+`piece.presa`, e `step()` não muda. Por isso o validador (`rollout`, `evaluateVariant`), a
+dica (`requestHint`) e a `Session` enxergam a regra sem código paralelo, e as seeds de
+`levels.gen.js` continuam valendo. Sem regra, `evaluate()` é o texto de sempre: o ramo com
+regra é `_evaluateComRegra`, e `tools/regrascheck.mjs` confere bit a bit, em doze fases, que
+o rollout sem regra não mudou. Invariantes:
+
+- **A regra só transforma `playing` em `lost`, nunca em `stuck`**: `stuck` com estrela é
+  vitória em `onLevelEnd`. A ordem do `evaluate` com regra é queda, joia, vitória (no
+  dourado, dentro da faixa), acabaram as tocáveis, encalhe e, por último, o limite de
+  toques — encalhar dentro do limite não é perder.
+- **O limite espera 0,1 s depois do último toque** (no passo seguinte à remoção o que vai
+  cair anda a 1/6 m/s, abaixo do repouso) e nunca vale com o hexágono no pedestal. Sobre o
+  pedestal que balança a torre nunca assenta: 4 s com `_restAboveHex`, ou 7 s sempre, que
+  cabem nos 420 passos do `MAX_SETTLE`.
+- **Os toques da regra são do mundo** (`toquesUsados`, `ultimoToque`, no `snapshot`): a
+  dica simula sem gastar toque e a volta de jogada devolve o toque. `Session.taps` continua
+  contando o que a volta desfez — é ele que decide a jogada perfeita. `destroyPiece(..., 'tap')`
+  recusa peça não tocável e toque além do limite, e o `rollout` e o `economia.mjs` assentam
+  até o veredito quando o limite acaba.
+- **O motivo da derrota** (`world.motivo`) é copiado para `session.motivo` antes do rewind,
+  e o `restore` o limpa (senão vazava dos ramos que o solucionador simula).
+- **Sem toques não há volta de jogada nem cartão.** A volta devolveria um toque só, e o
+  jogador ficava num laço de perder de novo até o recomeço trocar o layout. Na derrota
+  por falta de toques a `Session` não volta jogada (mesmo com voltas sobrando), e
+  `onLevelEnd` recomeça a fase do zero pelo selo, em qualquer número de derrotas
+  seguidas — o cartão, com o "voltar uma jogada", nunca abre por ela. Joia e dourado
+  continuam voltando jogada: ali a jogada anterior ainda é uma saída.
+- **`_travado`**: peça presa ou joia parada sobre o estático conta como apoio imóvel, senão
+  o hexágono em cima dela deixaria a fase em `playing` para sempre.
+- **A rajada da vitória poupa a joia**: fora da fila, e com `world.celebrando` a explosão
+  e o `burstAt` passam por cima dela.
+- **Só variantes aprovadas** (`variantesPermitidas`): sorteio, `visita` depois da 100,
+  embaralhar e a troca automática da 3ª derrota andam só dentro delas; `regrasLigadas =
+  false` (thumbnail) joga a variante como o gerador a validou.
+- **No mundo de estreia da regra, duas voltas por tentativa** (`mundoDeEstreia`, em
+  `startLevel`): no `economia.mjs` o jogador mediano desistia das estreias da joia três
+  vezes mais que sem regra.
+
+**A validação** (`tools/validate-rules.mjs`) roda, por variante, os seis rollouts
+competentes sem regra e tenta os candidatos (`candidatosDaRegra`, de um Rng próprio) com
+`evaluateVariant(..., {naiveRuns: 0})`; aceita o primeiro com `smartWins ≥ max(2, base − 2)` e
+robustez. Fase com menos de duas variantes aprovadas tenta a regra seguinte do rodízio, e
+sem nenhuma fica sem regra. Na 1.0.16: 54 fases com regra, 38 das 65 do mundo 8 em diante.
+Medido: com folga fixa (meta + 4) os toques zeravam o perdão das fases 16 a 19 — quem toca
+ao acaso nunca vence com limite nenhum, e esse é o desafio da regra; o competente perde
+pouco (3,3 → 2,8 vitórias em 6). Na estreia da joia as candidatas vão da mais baixa para a
+mais alta, e o perdão ficou igual ao da fase sem regra (0,13 → 0,13 na 22).
+
+**Desenho** (`render/regras.js`): a gema e o cadeado por cima da peça, na célula do meio
+(o sprite é cacheado e não pode mudar); a faixa dourada desce pela face do pedestal, porque
+o topo fica escondido atrás da torre; o chip `#gameRegra` (só exibição) mostra o ícone e os
+toques que sobram, sacode no toque recusado e pisca no último. Sem halo borrado em nada.
+
+**Jogada perfeita** (toques ≤ `par`, `jogadaPerfeita` em `content.js`): toda vitória
+continua com três estrelas, e a perfeita paga `BONUS_PERFEITA` (15; até a 1.0.15 eram 6
+somados sem aviso), ganha a coroa sobre a estrela do meio na transição, a coroa no nó do
+mapa e na pausa, e entra na **coleção de perfeitas** (`perfeitas` no save, sem trocar
+`SAVE_VERSION`), com baú nos marcos de 10, 25, 50 e 100 (`BAUS_PERFEITAS`). Contam fases
+distintas, inclusive depois da 100.
+
 ### Idiomas
 
 Sete: `en`, `pt`, `es`, `fr`, `it`, `de` e `tr` (`core/i18n.js`), escolhidos pela ordem
@@ -1357,6 +1493,11 @@ bloqueado: a passagem de fase caiu para 200 ms.
 
 ### Telemetria: progresso e interação
 
+Da 1.0.16: `regra / <id> / visible` ao começar fase com regra e `regra / <motivo> / perdeu`
+na derrota pela regra; `entrada / mouse / visible|interact`; `perfeitas / marco-N / ganho`.
+**Nada novo na categoria `level/N`**: o `sdkcheck` cobra a lista branca (`start`,
+`complete`, `fail`, `rewind`, `tap1`).
+
 `measure(categoria, oque, acao)` alimenta as três abas de Game Events da Poki. A ação é
 que decide qual delas: `start`/`complete`/`fail` caem em **Progress**,
 `visible`/`interact` em **Interaction**, e qualquer outra em **Other**. Nem `/` nem `^`
@@ -1471,6 +1612,19 @@ dica com a mão vem em 0,6 s no desktop (`DICA_ROTEIRO_DESKTOP_S`), e não depoi
 da direita. O cursor vira mãozinha sobre peça clicável (`GameScene.handleMove`). O
 primeiro toque das fases 1 a 3 sai como `measure('level', N, 'tap1')`, na aba Other,
 para o funil separar "começou e não tocou" de "tocou e saiu".
+
+**A 1.0.16 cuida do primeiro clique.** O áudio só destravava no pointerup, então o clique
+e a quebra do primeiro toque do desktop saíam **mudos**: agora o pointerdown do mouse já é
+gesto (`core/input.js`), o `ready` do áudio aceita agendar enquanto o `resume()` responde
+e o destravamento tenta a cada gesto até o contexto rodar (o `audiocheck` confere num
+Chrome sem a flag de autoplay). Na fase 1 do desktop o cartão diz "Clique numa peça" e
+**fica até o primeiro toque**, em vez de sumir aos 6,8 s; com 4 s parado antes do primeiro
+toque a mão cresce de 40 para ~64 px e o realce da peça engrossa e acelera
+(`GameScene.chamariz`). O hover, a mãozinha e a folga do dedo vão pelo `pointerType` do
+evento, e não por `isTouchDevice()`, que marcava notebook com tela sensível como dedo.
+`entrada / mouse / visible` sai no primeiro movimento do mouse sobre a cena e `interact` no
+primeiro toque depois dele: dentro dos que nunca clicam, separa quem nem mexeu de quem
+olhou e não entendeu.
 
 **A dica acende sozinha quando o jogador para** (`Session.autoHintAfter`, desligada por
 padrão para o validador): 2,5 s na fase 1 — com a mão tocando a peça até a fase 3 —, 6 s até a

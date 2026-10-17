@@ -80,7 +80,7 @@ const js = async (e) => (await send('Runtime.evaluate', { expression: e, returnB
  */
 async function tocar() {
   const info = await js(`(() => { const g=window.__game.scene; if(!g.session||g.session.finished) return null;
-    const w=g.session.world; const dest=w.alivePieces().filter(p=>p.body.isDynamic()&&p.material!=='obsidian');
+    const w=g.session.world; const dest=w.alivePieces().filter(p=>p.body.isDynamic()&&w.tocavel(p));
     if(!dest.length) return null;
     const naTela=(p)=>{const cell=p.cells[Math.floor(p.cells.length/2)];
       const lx=cell[0]+0.5-p.cw/2, ly=cell[1]+0.5-p.ch/2;
@@ -220,6 +220,13 @@ if ((await js('window.__game.screen')) !== 'game') {
   await sleep(1500);
 }
 const entrouJogando = await js('window.__game.level');
+// Desktop (1.0.16): o mouse andando sobre a cena antes do primeiro clique sai
+// como entrada/mouse/visible, e o cartao da fase 1 diz "clique" e fica de pe
+// ate o primeiro toque - nao some mais aos 6,8 s.
+await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 200, y: 300 }, sessionId);
+await sleep(4600);
+const tutClique = await js(`({ fino: matchMedia('(pointer: fine)').matches, texto: document.getElementById('tut').textContent,
+  oculto: document.getElementById('tut').classList.contains('hide') })`);
 // A barra de moedas so existe nos mundos pares 2 a 8: na fase 1 ela nao aparece.
 const metaNaFase1 = await js(`!document.getElementById('gameMeta').hidden`);
 // Fluxo continuo: a fase 1 nao abre cartao nenhum e a 2 entra sozinha, sem
@@ -303,7 +310,7 @@ await sleep(1200);
 // `Infinity` vira null no JSON, por isso o limite volta como texto.
 /** @type {Record<number, {volta:boolean, limite:string, mao:boolean}>} */
 const rampa = {};
-for (const n of [10, 11, 15, 16, 20, 21]) {
+for (const n of [10, 11, 15, 16, 19, 20, 21, 25]) {
   await js(`window.__game.startLevel(${n})`);
   await sleep(500);
   rampa[n] = await js(`(() => { const s = window.__game.scene.session;
@@ -429,6 +436,52 @@ await js('window.__game.quitLevel()');
 await sleep(900);
 const botaoHome = await js('document.getElementById("btnPlay").textContent');
 
+// Edicoes de ouro (1.0.16): o fim do mundo 21 (fase 105) da o Feliz de ouro,
+// equipado na hora, no lugar do bau.
+await js('window.__game.startLevel(105)');
+await sleep(1500);
+await ganharEsperando(105);
+const dourada105 = await js('window.__game.progress.data.skin');
+
+// Regras de fase (game/regras.js). A 16 estreia os toques contados: o chip
+// mostra quantos sobram e o cartao de estreia apresenta a regra.
+await js('window.__game.startLevel(16)');
+await sleep(1600);
+const regra16 = await js(`(() => { const s = window.__game.scene.session; const b = document.querySelector('#gameRegra b');
+  return { tipo: s.regra && s.regra.tipo, chip: !document.getElementById('gameRegra').hidden, num: b ? b.textContent : '',
+    resta: s.world.toquesRestantes(), tut: document.getElementById('tut').textContent }; })()`);
+// Sem toque nenhum ainda, esgotar o limite e esperar: a derrota pela regra e
+// `fail` (nunca 'stuck'), sai `regra/toques/perdeu` e o selo diz por que.
+// Um toque de verdade antes: e ele que cria o ponto de volta (e o
+// gameplayStart). Com a sequencia de derrotas ja no limite do cartao, a falta
+// de toques tem que recomecar a fase do zero assim mesmo: sem voltar jogada (a
+// volta devolveria um toque so) e sem abrir o cartao.
+await tocar();
+await sleep(1500);
+const corteToques = await js('window.__sdkLog.length');
+await js(`(() => { const g = window.__game; g.lossStreak = 5; const w = g.scene.session.world;
+  w.toquesUsados = w.regra.limite; w.ultimoToque = w.time - 8; })()`);
+let perdaRegra = null;
+for (let t = 0; t < 20 && !(perdaRegra && perdaRegra.estado === 'lost'); t++) {
+  await sleep(150);
+  perdaRegra = await js(`({ motivo: window.__game.scene.session.motivo, estado: window.__game.scene.session.state,
+    voltas: window.__game.scene.session.rewinds, ponto: !!window.__game.scene.session.checkpoint,
+    selo: document.getElementById('flowCoins').textContent })`);
+}
+await sleep(2600);
+const aposSemToques = await js(`({ screen: window.__game.screen, level: window.__game.level,
+  toques: window.__game.scene.session.world.toquesRestantes(), limite: window.__game.scene.session.regra && window.__game.scene.session.regra.limite,
+  log: window.__sdkLog.slice(${corteToques}).filter((e) => e.name === 'measure').map((e) => e.extra) })`);
+// A 21 estreia a joia: tocar nela e recusado e nao comeca a partida.
+await js('window.__game.startLevel(21)');
+await sleep(1600);
+const joia21 = await js(`(() => { const s = window.__game.scene.session; const j = s.world.pieces.find((p) => p.joia);
+  if (!j) return { tipo: s.regra && s.regra.tipo };
+  const pos = j.body.getPosition(); const r = s.tap(pos.x, pos.y);
+  return { tipo: s.regra && s.regra.tipo, ok: !!(r && r.ok), reason: r && r.reason, estado: s.state }; })()`);
+await js('window.__game.quitLevel()');
+await sleep(900);
+
 const log = await js('JSON.stringify(window.__sdkLog)');
 sock.close(); chrome.kill();
 
@@ -538,9 +591,10 @@ check(
   const r = rampa;
   const ok = (n, volta, limite) => !!r[n] && r[n].volta === volta && r[n].limite === limite;
   check(
-    'rampa de derrota: 10 sem limite e sem a mao, 11 e 15 com duas voltas, 16 e 20 com uma, 21 sem volta',
+    'rampa de derrota: 10 sem limite e sem a mao, 11 e 15 com duas voltas, 20 com uma, 25 sem volta; estreia de regra (16, 19, 21) com duas',
     ok(10, true, 'Infinity') && r[10].mao === false && ok(11, true, '2') && ok(15, true, '2') &&
-      ok(16, true, '1') && ok(20, true, '1') && !!r[21] && r[21].volta === false,
+      ok(20, true, '1') && !!r[25] && r[25].volta === false &&
+      ok(16, true, '2') && ok(19, true, '2') && ok(21, true, '2'),
     JSON.stringify(r),
   );
 }
@@ -658,6 +712,50 @@ check(
     measures.includes('premio/desbloqueio/visible') && measures.includes('premio/mundo-2/visible'),
   JSON.stringify({ skinAntesDaCompra, semCompraNa7, compraNo2, extra10: fimDoMundo2 && fimDoMundo2.extra, semCompraNo3, compra }),
 );
+check(
+  'desktop: a fase 1 diz "clique" e o cartao fica ate o primeiro toque',
+  !!tutClique && (!tutClique.fino || (/click/i.test(tutClique.texto) && !tutClique.oculto)),
+  JSON.stringify(tutClique),
+);
+check(
+  'entrada/mouse: visible antes do primeiro toque e interact depois, uma vez cada',
+  measures.filter((m) => m === 'entrada/mouse/visible').length === 1 &&
+    measures.filter((m) => m === 'entrada/mouse/interact').length === 1 &&
+    measures.indexOf('entrada/mouse/visible') < measures.indexOf('entrada/mouse/interact'),
+  measures.filter((m) => m.startsWith('entrada/')).join(' ') || 'nenhum',
+);
+check('o fim do mundo 21 (fase 105) da a dourada, equipada', dourada105 === 'smiley-ouro', String(dourada105));
+check(
+  'fase 16: toques contados, com chip e cartao de estreia',
+  !!regra16 && regra16.tipo === 'toques' && regra16.chip && String(regra16.num) === String(regra16.resta) && regra16.tut.length > 0,
+  JSON.stringify(regra16),
+);
+check(
+  'sem toques: derrota pela regra, com motivo no selo e regra/toques/perdeu',
+  !!perdaRegra && perdaRegra.estado === 'lost' && perdaRegra.motivo === 'toques' && perdaRegra.selo.length > 0 &&
+    measures.includes('regra/toques/perdeu') && measures.includes('regra/toques/visible'),
+  JSON.stringify(perdaRegra),
+);
+check(
+  'sem toques nao volta jogada e recomeca a fase do zero, sem cartao (mesmo na 6a derrota)',
+  !!perdaRegra && perdaRegra.ponto === true && perdaRegra.voltas === 0 &&
+    !!aposSemToques && aposSemToques.screen === 'game' && aposSemToques.level === 16 &&
+    aposSemToques.toques === aposSemToques.limite &&
+    !aposSemToques.log.includes('level/16/rewind') && aposSemToques.log.includes('level/16/fail') && aposSemToques.log.includes('level/16/start'),
+  JSON.stringify({ perdaRegra, aposSemToques }),
+);
+check(
+  'fase 21: tocar na joia e recusado e nao comeca a partida',
+  !!joia21 && joia21.tipo === 'joia' && joia21.ok === false && joia21.reason === 'joia' && joia21.estado === 'ready',
+  JSON.stringify(joia21),
+);
+{
+  // A categoria `level` so leva as acoes que o painel e este teste conhecem: o
+  // que e novo (regra, entrada, perfeitas) mora em categoria propria.
+  const LEVEL_OK = new Set(['start', 'complete', 'fail', 'rewind', 'tap1']);
+  const estranhas = measures.filter((m) => m.startsWith('level/') && !LEVEL_OK.has(m.split('/')[2]));
+  check('level/N so com start, complete, fail, rewind e tap1', !estranhas.length, estranhas.slice(0, 4).join(' '));
+}
 check('a home oferece a fase depois da 101', typeof botaoHome === 'string' && botaoHome.includes('102'), String(botaoHome));
 {
   const i100 = measures.indexOf('level/100/complete');

@@ -85,9 +85,19 @@ export class GameScene {
     this.onTapAfterEnd = null;
     /** Desenha a mao tocando a peca da dica. Quem liga e main.js, nas fases de ensino. */
     this.tapHand = false;
+    /** @type {((reason:string)=>void)|null} toque recusado pela regra da fase */
+    this.onDenied = null;
+    /** @type {(()=>void)|null} o mouse andou sobre a cena antes do primeiro toque */
+    this.onMouseAntes = null;
     this.input.onDown((p) => this.handleDown(p));
     this.input.onMove((p) => this.handleMove(p));
-    this.input.onFirstGesture(() => audio.unlock());
+    // Gesto a gesto ate o contexto rodar: o resume() do primeiro pode nao pegar
+    // (o mousedown e o pointerup chegam juntos, e um deles ja basta).
+    const destrava = () => {
+      audio.unlock();
+      if (!audio.unlocked) this.input.onFirstGesture(destrava);
+    };
+    this.input.onFirstGesture(destrava);
   }
 
   /**
@@ -241,7 +251,7 @@ export class GameScene {
     const q = this.desfazZoom(p);
     if (!q) return;
     const [wx, wy] = this.camera.toWorld(q.x, q.y);
-    const finger = this.touch ? 0.32 : 0;
+    const finger = this.dedo(p) ? 0.32 : 0;
     const result = this.session.tap(wx, wy, finger);
     if (!result) return;
     if (result.ok) {
@@ -249,15 +259,29 @@ export class GameScene {
     } else {
       audio.denied();
       this.camera.addTrauma(0.06);
+      if (result.reason !== 'indestructible' && this.onDenied) this.onDenied(result.reason || '');
     }
+  }
+
+  /**
+   * O toque veio de dedo? Decide pelo proprio evento, e nao pelo aparelho: um
+   * notebook com tela sensivel e "touch" para isTouchDevice() e era tratado
+   * como dedo tambem quando o jogador usava o mouse - sem realce de hover, sem
+   * maozinha e com folga de dedo no clique.
+   * @param {{tipo?:string}|null} p
+   */
+  dedo(p) {
+    if (p && p.tipo) return p.tipo === 'touch';
+    return this.touch || !hasFinePointer();
   }
 
   /** @param {{x:number,y:number}|null} p */
   handleMove(p) {
-    if (!this.session || !p || this.touch) {
+    if (!this.session || !p || this.dedo(p)) {
       this.hovered = null;
       return;
     }
+    if (this.session.state === 'ready' && this.onMouseAntes) this.onMouseAntes();
     const q = this.desfazZoom(p);
     if (!q) {
       this.hovered = null;
@@ -266,8 +290,9 @@ export class GameScene {
     const [wx, wy] = this.camera.toWorld(q.x, q.y);
     this.hovered = this.session.world.pickAt(wx, wy, 0);
     // A mao do mouse sobre a peca diz que ela se clica: no desktop ninguem ve o
-    // dedo de ninguem tocando.
-    const cursor = this.hovered ? 'pointer' : '';
+    // dedo de ninguem tocando. Sobre joia, cadeado e peca indestrutivel o cursor
+    // diz o contrario.
+    const cursor = !this.hovered ? '' : this.session.world.tocavel(this.hovered) ? 'pointer' : 'not-allowed';
     if (this.canvas.style.cursor !== cursor) this.canvas.style.cursor = cursor;
   }
 
@@ -317,16 +342,33 @@ export class GameScene {
         skin: this.skin,
         time: this.time,
         hovered: this.hovered,
+        chamariz: this.chamariz(),
       });
       if (fx && fx.z !== 1) ctx.restore();
     }
     const s = this.session;
     if (this.tapHand && s && s.hintPiece && s.hintPiece.alive && !s.finished) {
       const [x, y] = this.hintSpot(s.hintPiece);
-      const tam = Math.max(40, Math.min(72, this.camera.pxPerMeter * 1.05));
-      paintTapHand(ctx, x, y, tam, this.time);
+      const base = Math.max(40, Math.min(72, this.camera.pxPerMeter * 1.05));
+      paintTapHand(ctx, x, y, base * (1 + 0.6 * this.chamariz()), this.time);
     }
     if (this.onOverlay) this.onOverlay(ctx);
+  }
+
+  /**
+   * Quanto o chamariz do primeiro toque cresceu, de 0 a 1.
+   *
+   * No desktop 15,8% dos jogadores abriam a fase 1 e nunca clicavam (1.0.11),
+   * e quem clicava clicava logo - metade em 3 s, 90% em 8 s. Quem passou de
+   * 4 s parado sem tocar ganha uma mao maior e um realce mais forte, que
+   * crescem ate os 7 s. So nas fases com a mao (`tapHand`) e so antes do
+   * primeiro toque.
+   * @returns {number}
+   */
+  chamariz() {
+    const s = this.session;
+    if (!this.tapHand || !s || s.state !== 'ready') return 0;
+    return Math.max(0, Math.min(1, (s.parado - 4) / 3));
   }
 
   /**

@@ -15,7 +15,7 @@
  */
 import { save } from '../src/core/storage.js';
 import { Progress } from '../src/game/progress.js';
-import { SKINS, UPGRADES, WORLD_PRIZES, barraDoMundo, worldPrize, CHEST_FINAL, CHEST_COINS, skin as getSkin, xpForRank } from '../src/game/content.js';
+import { SKINS, UPGRADES, WORLD_PRIZES, barraDoMundo, worldPrize, CHEST_FINAL, CHEST_COINS, skin as getSkin, xpForRank, TRILHA_OURO, PREMIOS_ALEM, prizeWorldOfSkin, BONUS_PERFEITA, BAUS_PERFEITAS } from '../src/game/content.js';
 import { LEVEL_COUNT, WORLD_COUNT, worldStart, worldSize } from '../src/game/levelgen.js';
 import { faseDeOrigem } from '../src/game/alem.js';
 
@@ -96,9 +96,18 @@ console.log('trilha');
     'barraDoMundo le a trilha');
   confere(new Set([...skins, ...daBarra]).size === 14, `quatorze hexagonos distintos (${new Set([...skins, ...daBarra]).size})`);
   const fim = worldPrize(WORLD_COUNT - 1, WORLD_COUNT);
-  const depois = worldPrize(WORLD_COUNT + 3, WORLD_COUNT);
   confere('coins' in fim && fim.coins === CHEST_FINAL, 'mundo 20 da o bau final');
-  confere('coins' in depois && depois.coins === CHEST_COINS, 'mundo depois do 20 da o bau');
+  // 1.0.16: os mundos 21 a 34 dao as edicoes de ouro; o bau so volta no 35.
+  const douradas = PREMIOS_ALEM.map((/** @type {*} */ p) => p.skin);
+  confere(douradas.length === 14 && douradas.every((id) => ids.has(id) && getSkin(id).ouroDe), 'quatorze douradas, todas em SKINS');
+  confere(TRILHA_OURO.every((id, i) => getSkin(`${id}-ouro`).model === getSkin(id).model && douradas[i] === `${id}-ouro`),
+    'cada dourada usa o modelo do original, na ordem da trilha');
+  const m21 = worldPrize(WORLD_COUNT, WORLD_COUNT);
+  const m34 = worldPrize(WORLD_COUNT + 13, WORLD_COUNT);
+  const m35 = worldPrize(WORLD_COUNT + 14, WORLD_COUNT);
+  confere('skin' in m21 && m21.skin === 'smiley-ouro' && 'skin' in m34 && m34.skin === 'skully-ouro', 'mundos 21 e 34 dao a primeira e a ultima dourada');
+  confere('coins' in m35 && m35.coins === CHEST_COINS, 'mundo 35 volta ao bau');
+  confere(prizeWorldOfSkin('smiley-ouro') === WORLD_COUNT && prizeWorldOfSkin('smiley') === 0, 'prizeWorldOfSkin acha a dourada no mundo 21');
 }
 
 console.log('perfil novo');
@@ -277,9 +286,42 @@ console.log('quem ja venceu a 100');
   confere(r.prize === null, 'meio do mundo 21 sem premio');
   const moedas = p.data.coins;
   const fim = p.finishLevel({ level: LEVEL_COUNT + 5, stars: 3, won: true, taps: 9, par: 8 });
-  confere(!!fim.prize && fim.prize.kind === 'coins' && fim.prize.coins === CHEST_COINS, 'fim do mundo 21 da o bau');
-  confere(p.data.coins >= moedas + CHEST_COINS, 'o bau entra na bolsa');
+  confere(!!fim.prize && fim.prize.kind === 'skin' && fim.prize.id === 'smiley-ouro', 'fim do mundo 21 da o Feliz de ouro');
+  confere(p.data.skin === 'smiley-ouro' && p.ownsSkin('smiley-ouro'), 'a dourada entra equipada');
+  confere(p.data.coins > moedas, 'as moedas da fase entram na bolsa');
   confere(p.isUnlocked(LEVEL_COUNT + 6) && !p.isUnlocked(LEVEL_COUNT + 7), 'isUnlocked depois da 100 segue o alem');
+}
+
+console.log('veterano depois da 100, antes das douradas');
+{
+  // Ja tinha passado dos mundos 21 e 22, e recebeu um bau em cada.
+  const premios = Array.from({ length: WORLD_COUNT + 2 }, (_, w) => w);
+  const p = carrega(save107({ unlocked: LEVEL_COUNT, stars: estrelasAte(LEVEL_COUNT), prizes: premios, alem: LEVEL_COUNT + 11, coins: 1000, skin: 'skully' }));
+  confere(p.ownsSkin('smiley-ouro') && p.ownsSkin('shades-ouro') && !p.ownsSkin('watermelon-ouro'), 'ganha as douradas dos mundos 21 e 22, e so elas');
+  confere(p.data.skin === 'skully' && p.data.coins === 1000, 'sem equipar e sem mexer nas moedas');
+  const de = carrega(p.data);
+  confere(de.data.skins.filter((/** @type {string} */ id) => id.endsWith('-ouro')).length === 2, 'migracao idempotente');
+}
+
+console.log('jogada perfeita');
+{
+  const p = carrega(save107({ unlocked: 12, stars: estrelasAte(11) }));
+  // A primeira vitoria da fase ainda leva o +4 do recorde; a comparacao e com
+  // a segunda.
+  p.finishLevel({ level: 12, stars: 3, won: true, taps: 9, par: 8 });
+  const comum = p.finishLevel({ level: 12, stars: 3, won: true, taps: 9, par: 8 });
+  const perf = p.finishLevel({ level: 12, stars: 3, won: true, taps: 8, par: 8 });
+  confere(!comum.perfeita && perf.perfeita && perf.perfeitaNova, 'toques <= meta e perfeita, uma vez por fase');
+  confere(perf.coins - comum.coins === BONUS_PERFEITA, `paga +${BONUS_PERFEITA}`);
+  const de = p.finishLevel({ level: 12, stars: 3, won: true, taps: 7, par: 8 });
+  confere(de.perfeita && !de.perfeitaNova && p.totalPerfeitas === 1 && p.perfeitaEm(12), 'repetir nao conta de novo');
+  const encalhe = p.finishLevel({ level: 13, stars: 2, won: false, taps: 3, par: 8 });
+  confere(!encalhe.perfeita, 'encalhe nunca e perfeita');
+  let bau = null;
+  for (let l = 13; l <= 21 && !bau; l++) bau = p.finishLevel({ level: l, stars: 3, won: true, taps: 1, par: 8 }).bauPerfeitas;
+  confere(!!bau && bau.n === BAUS_PERFEITAS[0].n && p.totalPerfeitas === BAUS_PERFEITAS[0].n, `o bau sai na ${BAUS_PERFEITAS[0].n}a perfeita`);
+  const antigo = carrega(save107({ unlocked: 5 }));
+  confere(Array.isArray(antigo.data.perfeitas) && antigo.totalPerfeitas === 0, 'save antigo ganha a lista vazia');
 }
 
 console.log('save de outra versao');

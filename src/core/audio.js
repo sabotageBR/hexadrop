@@ -80,7 +80,9 @@ export class AudioEngine {
     this.unlocked = false;
     this.adMuted = false;
     this.sfxOn = load('sfxOn', true) !== false;
-    this.musicOn = load('musicOn', true) !== false;
+    // A musica comeca desligada (1.0.16): so toca para quem a liga nos ajustes
+    // ou na pausa, e a escolha fica salva. Os efeitos continuam ligados.
+    this.musicOn = load('musicOn', false) === true;
     /** @type {number} */
     this.lastImpactAt = 0;
     this._music = null;
@@ -93,6 +95,8 @@ export class AudioEngine {
     this._musicHold = false;
     this._hidden = false;
     this._visBound = false;
+    /** resume() pedido por um gesto e ainda nao resolvido. */
+    this._retomando = false;
   }
 
   /** Cria o contexto. Fica suspenso ate o primeiro gesto do usuario. */
@@ -139,12 +143,18 @@ export class AudioEngine {
     this.init();
     if (!this.ctx) return;
     if (this.ctx.state !== 'running') {
+      // resume() e assincrono: o som pedido no mesmo gesto (o clique do
+      // primeiro toque) chegava com o contexto ainda suspenso e era jogado
+      // fora. Enquanto retoma, `ready` aceita agendar - num contexto suspenso o
+      // som espera e toca quando ele volta.
+      this._retomando = true;
       this.ctx.resume().then(
         () => {
+          this._retomando = false;
           this.unlocked = true;
         },
         () => {
-          /* ignora */
+          this._retomando = false;
         },
       );
     } else {
@@ -159,7 +169,7 @@ export class AudioEngine {
 
   /** @returns {boolean} */
   get ready() {
-    return !!this.ctx && this.ctx.state === 'running' && !this.adMuted;
+    return !!this.ctx && (this.ctx.state === 'running' || !!this._retomando) && !this.adMuted;
   }
 
   /** @param {boolean} on */

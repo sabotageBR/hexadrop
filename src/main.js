@@ -13,10 +13,12 @@ import {
 } from './game/levelgen.js';
 import { LEVELS } from './game/levels.gen.js';
 import { faseDeOrigem } from './game/alem.js';
+import { variantesPermitidas, PRIMEIRA_FASE, mundoDeEstreia } from './game/regras.js';
+import { regraIcon } from './render/regras.js';
 import { Progress } from './game/progress.js';
 import {
   UPGRADES, BOOSTS, gateStars, xpForRank, skin as getSkin, BONUS_COINS_PER_PIECE,
-  CHUVA_COINS_PER_PIECE, WORLD_PRIZES, worldPrize, notaDaJogada,
+  CHUVA_COINS_PER_PIECE, WORLD_PRIZES, worldPrize, notaDaJogada, BONUS_PERFEITA,
 } from './game/content.js';
 import { THEMES } from './render/themes.js';
 import { applyUiTheme } from './render/uitheme.js';
@@ -39,6 +41,14 @@ import { hudLateral, hasFinePointer } from './core/viewport.js';
 const HAZARD_TEXT = {
   swing: ['hazardSwing', 'hintSwing'],
   wind: ['hazardWind', 'hintWind'],
+};
+
+/** Nome e dica das regras de fase (game/regras.js), e o motivo da derrota. */
+const REGRA_TEXT = {
+  toques: ['regraToques', 'dicaToques', 'motivoToques'],
+  joia: ['regraJoia', 'dicaJoia', 'motivoJoia'],
+  cadeado: ['regraCadeado', 'dicaCadeado', ''],
+  dourado: ['regraDourado', 'dicaDourado', 'motivoDourado'],
 };
 
 /**
@@ -86,6 +96,18 @@ function hazardIcon(id) {
     }
   }
   return cv;
+}
+
+/**
+ * Nome de uma skin no idioma do jogador. A edicao de ouro e "<nome> de ouro"
+ * montado pelo i18n (`skinOuro`), e nao uma chave por skin: em cada lingua a
+ * forma muda ("Altin {0}" no turco, "{0} (Gold)" no alemao).
+ * @param {*} s Skin
+ * @returns {string}
+ */
+function nomeDaSkin(s) {
+  if (s && s.ouroDe) return t('skinOuro', t(getSkin(s.ouroDe).nameKey));
+  return t(s.nameKey);
 }
 
 /** Margens que a HUD de jogo reserva no enquadramento da cena. */
@@ -370,6 +392,18 @@ class Game {
      */
     this.flowLevels = true;
     /**
+     * Regras de fase (game/regras.js). A automacao que precisa da fase como o
+     * gerador a validou - thumbnail, sondagens - desliga.
+     */
+    this.regrasLigadas = true;
+    /** @type {number[]} variantes que a fase em cartaz pode sortear */
+    this.variantesPermitidas = [];
+    /** O cartao "Clique numa peca" fica ate o primeiro toque. */
+    this.tutAteTocar = false;
+    /** O mouse ja andou sobre a cena antes do primeiro toque, neste carregamento. */
+    this.mouseVisto = false;
+    this.mouseContado = false;
+    /**
      * Ofertas ja contadas como vistas na tela em cartaz. Zerado a cada
      * `show()`, para que um botao de video valha uma impressao por abertura de
      * tela e nao uma por vez que alguem olhe para ele.
@@ -501,9 +535,31 @@ class Game {
     });
     this.scene.input.onKey((code) => this.onKey(code));
     this.scene.onTapAfterEnd = () => this.skipWait();
+    // Toque recusado pela regra (joia, cadeado, sem toques): o chip da regra
+    // sacode, que e onde o jogador le por que.
+    this.scene.onDenied = () => {
+      const chip = $('gameRegra');
+      chip.classList.remove('nao');
+      void chip.offsetWidth;
+      chip.classList.add('nao');
+    };
+    this.scene.onMouseAntes = () => {
+      if (this.mouseVisto || this.screen !== 'game') return;
+      this.mouseVisto = true;
+      poki.measure('entrada', 'mouse', 'visible');
+    };
     // A transicao de fim de fase anda no passo fixo da cena: o laco para no
     // intervalo comercial, e ela para junto, como no stringcut.
-    this.scene.onUpdate = (dt) => this.passoTransicao(dt);
+    this.scene.onUpdate = (dt) => {
+      this.passoTransicao(dt);
+      // O contador do chip anda com o mundo (a volta de jogada devolve o
+      // toque); so escreve no DOM quando muda.
+      const s = this.scene.session;
+      if (s && s.regra && s.regra.tipo === 'toques' && s.world.toquesUsados !== this._toquesNoChip) {
+        this._toquesNoChip = s.world.toquesUsados;
+        this.atualizaRegra();
+      }
+    };
     this.scene.onOverlay = (ctx) => this.desenhaTransicao(ctx);
     this.scene.zoomFx = () => this.zoomTransicao();
     // O reenquadramento da home vem depois do refit da cena, senao mede o
@@ -1005,17 +1061,29 @@ class Game {
     // custar um consumivel. Depois da 100 ela nao e sorteada: cada volta pelo
     // mesmo tema traz a variante seguinte, para o jogador nao reencontrar o
     // layout que acabou de jogar na mesma origem.
-    const padrao = origem.alem ? origem.visita : Math.floor(this.rng.next() * record.v.length);
+    //
+    // Fase com regra (game/regras.js) so sorteia entre as variantes que a
+    // validacao aprovou com a regra: um layout sem ela no meio da fase trocaria
+    // o objetivo no "tentar de novo". O indice continua o de levels.gen.js.
+    const permitidas = this.regrasLigadas
+      ? variantesPermitidas(index, record.v)
+      : record.v.map((_, i) => i);
+    const n = permitidas.length;
+    const padrao = origem.alem ? permitidas[origem.visita % n] : permitidas[Math.floor(this.rng.next() * n)];
     const pedida = variantIndex === undefined ? padrao : variantIndex;
-    const vi = ((pedida % record.v.length) + record.v.length) % record.v.length;
+    let vi = ((pedida % record.v.length) + record.v.length) % record.v.length;
+    if (!permitidas.includes(vi)) vi = permitidas[vi % n];
     this.variantIndex = vi;
-    this.variantCount = record.v.length;
+    this.variantesPermitidas = permitidas;
+    this.variantCount = n;
     const variant = record.v[vi];
     const config = levelConfig(index, record.s);
     const session = createSession({
       levelIndex: index,
       soften: record.s,
       seed: variant[0],
+      variantIndex: vi,
+      semRegra: !this.regrasLigadas,
       upgrades: this.progress.data.upgrades,
       hooks: {
         onStar: (n) => this.onStar(n),
@@ -1026,6 +1094,17 @@ class Game {
           // tocou e saiu: o funil da Poki so via os dois juntos, e no desktop a
           // fase 1 perdia 26% contra 10% no celular (1.0.10).
           if (this.level <= FASES_COM_MAO) poki.measure('level', String(this.level), 'tap1');
+          // Quem mexeu o mouse e depois clicou: o par visible/interact separa,
+          // dentro dos que nunca clicam no desktop, quem nem interagiu de quem
+          // olhou e nao entendeu. Uma vez por carregamento.
+          if (this.mouseVisto && !this.mouseContado) {
+            this.mouseContado = true;
+            poki.measure('entrada', 'mouse', 'interact');
+          }
+          if (this.tutAteTocar) {
+            this.tutAteTocar = false;
+            $('tut').classList.add('hide');
+          }
         },
         onCombo: (n, x, y) => this.onCombo(n, x, y),
         onBonusPiece: (done, total, x, y) => this.onBonusPiece(done, total, x, y),
@@ -1208,7 +1287,14 @@ class Game {
     const { session, theme } = this.makeSession(this.level, variantIndex);
     session.autoHintAfter = this.autoHintFor(this.level, this.hintOnStart);
     session.onAutoHint = () => this.ofertaVisivel('dica-auto');
-    const voltas = voltasNaFase(this.level);
+    let voltas = voltasNaFase(this.level);
+    // No mundo em que a regra estreia, duas voltas por tentativa: a regra e o
+    // desafio novo, e nao pode chegar como a parede da fase 11 da 1.0.9. No
+    // economia.mjs o jogador mediano desistia das estreias da joia tres vezes
+    // mais que sem regra.
+    if (session.regra && !this.origem.alem && mundoDeEstreia(this.origem.index, session.regra.tipo)) {
+      voltas = Math.max(voltas, 2);
+    }
     session.rewindOnLoss = voltas > 0;
     session.rewindLimit = voltas;
     session.onRewind = () => this.onRewind();
@@ -1243,8 +1329,47 @@ class Game {
     // o que tem o par -, e o "saiu no meio" ficava impossivel de separar.
     this.ofertaVisivel('sair-da-fase');
     if (showHelp) this.ofertaVisivel('reiniciar');
+    this.atualizaRegra();
     this.showTutorial();
     poki.measure('level', String(this.level), 'start');
+    // Depois do `start`, e fora da categoria `level`: o sdkcheck le as
+    // sequencias de `level/N`, e a aba Interaction so lista evento com visible.
+    if (session.regra) poki.measure('regra', session.regra.tipo, 'visible');
+  }
+
+  /**
+   * Por que a regra derrubou a fase, numa frase curta; vazio quando foi queda.
+   * @param {string|null} motivo
+   * @returns {string}
+   */
+  motivoTexto(motivo) {
+    const chave = motivo && REGRA_TEXT[motivo] ? REGRA_TEXT[motivo][2] : '';
+    return chave ? t(chave) : '';
+  }
+
+  /**
+   * O chip da regra no HUD: icone e, nos toques contados, quantos sobram.
+   * So exibicao - fica fora da excecao de `.screen.pass`.
+   */
+  atualizaRegra() {
+    const chip = $('gameRegra');
+    const session = this.scene.session;
+    const regra = session ? session.regra : null;
+    chip.hidden = !regra;
+    if (!regra || !session) return;
+    const tinta = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#ffffff';
+    const chave = `${regra.tipo}|${tinta}`;
+    if (chip.dataset.chave !== chave) {
+      chip.dataset.chave = chave;
+      chip.dataset.regra = regra.tipo;
+      chip.replaceChildren(regraIcon(regra.tipo, 22, tinta, 'regra-ico'), document.createElement('b'));
+    }
+    this._toquesNoChip = session.world.toquesUsados;
+    const num = /** @type {HTMLElement} */ (chip.lastElementChild);
+    const resta = session.world.toquesRestantes();
+    num.textContent = Number.isFinite(resta) ? String(resta) : '';
+    chip.classList.toggle('ultimo', resta <= 1);
+    chip.title = t(REGRA_TEXT[regra.tipo][0]);
   }
 
   showTutorial() {
@@ -1253,13 +1378,21 @@ class Game {
     // laterais: la na faixa da direita ele passava sem ser lido.
     tut.classList.toggle('perto', this.level <= FASES_COM_MAO);
     const config = levelConfig(this.origem.index);
-    /** @type {{texto:string, titulo?:string, icone?:HTMLCanvasElement}[]} */
+    /** @type {{texto:string, titulo?:string, icone?:HTMLCanvasElement, ateTocar?:boolean}[]} */
     const msgs = [];
+    this.tutAteTocar = false;
     // A fase 1 diz o objetivo antes do gesto. So "toque nas pecas" deixava o
     // jogador quebrando a torre sem saber para que - e no desktop, onde o
     // pedestal nem aparecia na tela, 18% sairam no meio da fase 1 da 1.0.3.
-    if (this.level === 1) msgs.push({ texto: t('tutorialGoal') }, { texto: t('tutorialTap') });
-    else if (this.level === 2) {
+    //
+    // No desktop o gesto se diz "clique", e o cartao fica ate o primeiro
+    // clique: com ele sumindo aos 6,8 s, 15,8% abriam a fase 1 e nunca
+    // clicavam, e quem clicava clicava em ate 8 s (1.0.11).
+    if (this.level === 1) {
+      msgs.push({ texto: t('tutorialGoal') });
+      if (hasFinePointer()) msgs.push({ texto: t('tutorialClick'), ateTocar: true });
+      else msgs.push({ texto: t('tutorialTap') });
+    } else if (this.level === 2) {
       msgs.push({ texto: t('tutorialGoal') });
       // O primeiro premio a vista antes de ele chegar: a meta longa so funciona
       // se o jogador souber que ela existe, e na fase 5 ele ja e dele.
@@ -1288,6 +1421,15 @@ class Game {
         const [nome, dica] = HAZARD_TEXT[id] || [];
         if (nome) msgs.push({ titulo: t(nome), texto: t(dica), icone: hazardIcon(id) });
       }
+      // A regra estreia na primeira fase em que ela aparece de fato depois da
+      // validacao (PRIMEIRA_FASE), e nunca de novo: depois da 100 as fases
+      // reusam as de 51 a 100, e uma estreia ali reapareceria a cada volta.
+      const regra = this.scene.session ? this.scene.session.regra : null;
+      if (regra && !this.origem.alem && PRIMEIRA_FASE[regra.tipo] === this.origem.index) {
+        const [nome, dica] = REGRA_TEXT[regra.tipo];
+        const tinta = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#ffffff';
+        msgs.push({ titulo: t(nome), texto: t(dica), icone: regraIcon(regra.tipo, 40, tinta) });
+      }
     }
     window.clearTimeout(this.tutTimer);
     if (!msgs.length) {
@@ -1302,6 +1444,12 @@ class Game {
         return;
       }
       const msg = msgs[k];
+      // Quem ja clicou durante o objetivo nao precisa ouvir "clique".
+      const session = this.scene.session;
+      if (msg.ateTocar && session && session.state !== 'ready') {
+        tut.classList.add('hide');
+        return;
+      }
       tut.replaceChildren();
       if (msg.icone) tut.append(msg.icone);
       const corpo = document.createElement('span');
@@ -1314,6 +1462,11 @@ class Game {
       tut.append(corpo);
       tut.classList.toggle('com-icone', !!msg.icone);
       tut.classList.remove('hide');
+      if (msg.ateTocar) {
+        // Sem temporizador: quem esconde e o onFirstTap.
+        this.tutAteTocar = true;
+        return;
+      }
       this.tutTimer = window.setTimeout(() => mostra(k + 1), porMsg);
     };
     mostra(0);
@@ -1396,8 +1549,14 @@ class Game {
     } else {
       this.lossStreak++;
       poki.measure('level', String(this.level), 'fail');
+      // Perdeu pela regra, e nao pela queda: aba Other, fora de `level/N`.
+      if (session.motivo) poki.measure('regra', session.motivo, 'perdeu');
       window.clearTimeout(this.loseTimer);
-      if (this.flowLevels && this.lossStreak <= RETRIES_SEM_CARTAO) {
+      // Sem toques a fase sempre recomeca do zero, sem cartao: o "voltar uma
+      // jogada" do cartao devolveria um toque so, e a fase inteira e a unica
+      // saida de verdade.
+      const semToques = session.motivo === 'toques';
+      if (this.flowLevels && (this.lossStreak <= RETRIES_SEM_CARTAO || semToques)) {
         this.flowRetry();
         return;
       }
@@ -1465,9 +1624,10 @@ class Game {
     const box = $('flowSeal');
     this.resetSeal();
     box.classList.add('miss');
-    $('flowCoins').textContent = t('retryAutoTitle');
+    $('flowCoins').textContent = this.motivoTexto(session.motivo) || t('retryAutoTitle');
     $('flowWhat').textContent = '';
     box.hidden = false;
+    this.atualizaRegra();
     window.clearTimeout(this.rewindTimer);
     this.rewindTimer = window.setTimeout(() => {
       if (!this.flowTimer) this.hideFlowSeal();
@@ -1544,7 +1704,8 @@ class Game {
     const box = $('flowSeal');
     this.resetSeal();
     box.classList.add('miss');
-    $('flowCoins').textContent = t('retryAutoTitle');
+    const session = this.scene.session;
+    $('flowCoins').textContent = this.motivoTexto(session ? session.motivo : null) || t('retryAutoTitle');
     $('flowWhat').textContent = t(trocar ? 'shuffleUsed' : 'retryAuto');
     box.hidden = false;
     /** @type {HTMLButtonElement} */ ($('gameBack')).disabled = true;
@@ -1752,6 +1913,16 @@ class Game {
     const moedas = result.coins + (result.bonusCoins || 0);
     tr.moedas = moedas;
     tr.pulo = 1;
+    // A coroa da perfeita leva o bonus ao lado (render/transicoes.js).
+    tr.bonusPerfeita = result.perfeita ? BONUS_PERFEITA : 0;
+    // Marco da colecao de perfeitas: o bau entra no contador junto e o recado
+    // vai num toast, sem parar nada.
+    const bau = result.bauPerfeitas ? result.bauPerfeitas.coins : 0;
+    if (result.bauPerfeitas) {
+      const n = result.bauPerfeitas.n;
+      window.setTimeout(() => this.toast(`${t('perfeitasMarco', n)} · +${bau}`), 1100);
+      poki.measure('perfeitas', `marco-${n}`, 'ganho');
+    }
     if (tr.tipo === 'final') {
       // A fase 100 fecha a campanha no cartao, que abre na troca e conta as
       // moedas ele mesmo.
@@ -1770,7 +1941,7 @@ class Game {
     const moedasDoPremio = result.prize && result.prize.kind === 'coins' ? result.prize.coins || 0 : 0;
     // O desbloqueio ja gastou o preco: o contador sobe com as moedas da fase,
     // a barra enche, e so depois a compra desconta.
-    const bolsaAntes = this.progress.data.coins + gasto - moedas - moedasDoPremio;
+    const bolsaAntes = this.progress.data.coins + gasto - moedas - moedasDoPremio - bau;
     const vp = this.scene.viewport;
     const p = pontoDasMoedas(tr.t, vp.width, vp.height);
     const base = this.canvas.getBoundingClientRect();
@@ -1990,12 +2161,12 @@ class Game {
    * @returns {{titulo:string, nome:string}}
    */
   prizeTexts(premio) {
-    if (premio.kind === 'skin') return { titulo: t('prizeSkin'), nome: t(getSkin(premio.id).nameKey) };
+    if (premio.kind === 'skin') return { titulo: t('prizeSkin'), nome: nomeDaSkin(getSkin(premio.id)) };
     if (premio.kind === 'upgrade') {
       const def = UPGRADES.find((u) => u.id === premio.id);
       return { titulo: t('prizeUpgrade'), nome: `${def ? t(def.nameKey) : ''} \u00b7 ${t('upgLevelN', premio.level)}` };
     }
-    if (premio.why === 'owned') return { titulo: t('prizeOwned', premio.coins), nome: t(getSkin(premio.id).nameKey) };
+    if (premio.why === 'owned') return { titulo: t('prizeOwned', premio.coins), nome: nomeDaSkin(getSkin(premio.id)) };
     return { titulo: t('prizeCoins'), nome: `+${premio.coins}` };
   }
 
@@ -2503,7 +2674,8 @@ class Game {
     audio.lose();
     $('loseTitle').textContent = t('gameOver');
     const p = this.progress;
-    $('loseNote').textContent = '';
+    const perdida = this.scene.session;
+    $('loseNote').textContent = this.motivoTexto(perdida ? perdida.motivo : null);
     // Embaralhar: so faz sentido quando a fase tem mais de um layout aprovado.
     // Cinco das cem tem um so; ali o botao nao aparece em vez de gastar um
     // consumivel para devolver a mesma coisa.
@@ -2567,7 +2739,13 @@ class Game {
     $('pauseWhere').textContent = `${themeLabel(this.origem.tema)} \u00b7 ${t('level')} ${this.level}`;
     this.setStars('pauseStars', session ? session.stars : 0);
     const par = session && session.par ? ` \u00b7 ${t('par')} ${session.par}` : '';
-    $('pauseTaps').textContent = session ? `${t('taps')} ${session.taps}${par}` : '';
+    // Com toques contados, quanto sobra: e o numero que importa ali. Os toques
+    // da fase continuam contando o que a volta de jogada desfez; o que sobra e
+    // o do mundo, que a volta devolve.
+    const resta = session ? session.world.toquesRestantes() : Infinity;
+    const sobra = Number.isFinite(resta) ? ` \u00b7 ${t('tapsLeft')} ${resta}` : '';
+    $('pauseTaps').textContent = session ? `${t('taps')} ${session.taps}${par}${sobra}` : '';
+    $('pauseTaps').classList.toggle('perfeita', this.progress.perfeitaEm(this.level));
     const toggle = (/** @type {string} */ id, /** @type {boolean} */ on) => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -2686,9 +2864,10 @@ class Game {
    * @returns {number}
    */
   outraVariante() {
-    const n = this.variantCount || 1;
-    if (n < 2) return this.variantIndex;
-    return (this.variantIndex + 1 + Math.floor(this.rng.next() * (n - 1))) % n;
+    const lista = this.variantesPermitidas || [this.variantIndex];
+    if (lista.length < 2) return this.variantIndex;
+    const pos = Math.max(0, lista.indexOf(this.variantIndex));
+    return lista[(pos + 1 + Math.floor(this.rng.next() * (lista.length - 1))) % lista.length];
   }
 
   /** @param {boolean} fromPause */
@@ -2864,7 +3043,7 @@ class Game {
     const p = this.progress;
     const chave = [
       p.data.unlocked, getLang(), p.totalStars, this.level, (p.data.skipped || []).length,
-      p.data.alem || 0, (p.data.prizes || []).length,
+      p.data.alem || 0, (p.data.prizes || []).length, p.totalPerfeitas,
     ].join('|');
     const host = $('mapScroll');
     if (host.dataset.built === chave) return;
@@ -2991,6 +3170,13 @@ class Game {
       // cadeados iguais em fila nao dizem para onde se esta indo.
       rotulo.textContent = String(level);
       node.appendChild(rotulo);
+      // Vencida dentro da meta: a coroa da colecao de perfeitas. E o que diz,
+      // de longe, para qual fase antiga vale a pena voltar.
+      if (p.perfeitaEm(level)) {
+        const coroa = document.createElement('i');
+        coroa.className = 'coroa';
+        node.appendChild(coroa);
+      }
       if (comEstrelas) {
         const pips = document.createElement('div');
         pips.className = 'pips';
@@ -3303,7 +3489,7 @@ class Game {
         const info = document.createElement('div');
         info.className = 'info';
         const name = document.createElement('b');
-        name.textContent = t(s.nameKey);
+        name.textContent = nomeDaSkin(s);
         const sub = document.createElement('span');
         // Skin da trilha diz em que mundo ela sai de graca. Comprar antes e
         // adiantar, nunca perder: quando o mundo chegar, as moedas voltam.
