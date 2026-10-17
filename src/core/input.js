@@ -10,6 +10,7 @@
  * @property {number} x em pixels CSS relativos ao canvas
  * @property {number} y
  * @property {number} id
+ * @property {string} [tipo] pointerType do evento: 'mouse', 'touch' ou 'pen'
  */
 
 /**
@@ -69,6 +70,11 @@ export class Input {
     canvas.style.touchAction = 'none';
 
     this._onDown = (/** @type {PointerEvent} */ e) => {
+      // Com mouse o pointerdown ja e gesto valido para o navegador destravar o
+      // audio. Esperando o pointerup, o clique e a quebra do PRIMEIRO toque
+      // saiam mudos - e no desktop o primeiro toque e o momento que decide se o
+      // jogador fica. No toque o pointerup continua sendo o gesto (iOS).
+      if (e.pointerType === 'mouse') this._fireGesture();
       if (!this.enabled) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (this._activeId !== null) return;
@@ -163,7 +169,7 @@ export class Input {
    */
   _toLocal(e) {
     const rect = this.canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top, id: e.pointerId };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top, id: e.pointerId, tipo: e.pointerType };
   }
 
   /** Dispara uma unica vez por gesto: usado para destravar o AudioContext. */

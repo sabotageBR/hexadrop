@@ -21,6 +21,7 @@
  * @property {string} [core]
  * @property {boolean} [halo] false = sem o halo borrado do contorno em tema escuro
  * @property {boolean} [retired] fora da loja; so quem ja tem ve e equipa
+ * @property {string} [ouroDe] edicao de ouro deste hexagono da trilha (TRILHA_OURO)
  * @property {(ctx:CanvasRenderingContext2D, cx:number, cy:number, r:number, theme:*)=>void} [mark]
  */
 
@@ -201,6 +202,105 @@ export const SKINS = [
 ];
 
 /**
+ * Edicoes de ouro (1.0.16): os mesmos quatorze desenhos da trilha, em ouro.
+ *
+ * Depois da fase 95 o jogador ja tinha todos os hexagonos e todas as melhorias,
+ * e a moeda so comprava o embaralhar; depois da 100 cada mundo dava um bau de
+ * moedas sem destino. E quem passa dos 15 min responde por um terco do tempo
+ * medio (Web Fit Test da 1.0.15). As douradas sao o premio dos mundos 21 a 34
+ * (`PREMIOS_ALEM`) e tambem se compram na loja.
+ *
+ * Nenhum desenho novo: o modelo e o mesmo (`DESENHOS` em hexmodels.js), o corpo
+ * vira ouro velho e o miolo segue o contraste do original (miolo escuro fica
+ * ouro escuro, claro fica ouro claro), para o rosto e as manchas continuarem
+ * lendo. A marca por cima - um reflexo diagonal e uma centelha - e o que separa
+ * a dourada do Feliz e do Queijo, que ja sao amarelos.
+ */
+export const TRILHA_OURO = [
+  'smiley', 'shades', 'watermelon', 'basketball', 'robot', 'pizza', 'soccer',
+  'gamepad', 'cheese', 'grumpy', 'friedegg', 'clock', 'tartan', 'skully',
+];
+
+/** @param {string} hex `#rrggbb` @returns {boolean} cor escura */
+function escura(hex) {
+  const n = parseInt(String(hex || '#ffffff').slice(1, 7), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.42;
+}
+
+/**
+ * O metal por cima do modelo: reflexo diagonal e centelha, recortados pela
+ * silhueta (seis vertices em PI/3*i, a mesma de hexPath e do corpo fisico).
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} r
+ */
+function marcaOuro(ctx, cx, cy, r) {
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i;
+    const x = cx + r * Math.cos(a);
+    const y = cy - r * Math.sin(a);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.clip();
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = '#fff7d1';
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 1.0, cy - r * 0.05);
+  ctx.lineTo(cx - r * 0.45, cy - r * 0.95);
+  ctx.lineTo(cx - r * 0.22, cy - r * 0.95);
+  ctx.lineTo(cx - r * 0.78, cy - r * 0.05);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  // Centelha de quatro pontas no ombro direito.
+  const sx = cx + r * 0.55;
+  const sy = cy - r * 0.55;
+  const k = r * 0.2;
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - k);
+  ctx.lineTo(sx + k * 0.24, sy);
+  ctx.lineTo(sx, sy + k);
+  ctx.lineTo(sx - k * 0.24, sy);
+  ctx.closePath();
+  ctx.moveTo(sx - k, sy);
+  ctx.lineTo(sx, sy + k * 0.24);
+  ctx.lineTo(sx + k, sy);
+  ctx.lineTo(sx, sy - k * 0.24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+TRILHA_OURO.forEach((id, i) => {
+  const base = SKINS.find((s) => s.id === id);
+  if (!base) return;
+  SKINS.push({
+    id: `${id}-ouro`,
+    ouroDe: id,
+    nameKey: base.nameKey,
+    name: `${base.name} de ouro`,
+    cost: 900 + i * 60,
+    rank: 0,
+    model: base.model,
+    fill: '#e3a816',
+    stroke: '#7a5200',
+    core: escura(base.core || '') ? '#8a5a00' : '#fff0a8',
+    halo: false,
+    mark: marcaOuro,
+  });
+});
+
+/**
  * Premio por peca que sobrou intacta no fim da fase.
  *
  * E o que transforma "sobrou peca" de sobra em meta: quem resolve com menos
@@ -219,6 +319,36 @@ export const BONUS_XP_PER_PIECE = 2;
 export const CHUVA_COINS_PER_PIECE = BONUS_COINS_PER_PIECE * 2;
 
 /**
+ * A jogada perfeita: venceu com toques ate a meta (`par`) da variante.
+ *
+ * Toda vitoria cruza as tres linhas de estrela, entao a estrela nunca mediu a
+ * jogada - e o Evandro escolheu manter assim (1.0.16) e premiar a perfeita a
+ * parte: moeda extra, marca no mapa e na pausa, e a colecao de perfeitas com
+ * bau nos marcos (BAUS_PERFEITAS). E a meta de quem joga bem, e o motivo de
+ * voltar a uma fase antiga.
+ * @param {{won:boolean, taps:number, par:number}} o
+ * @returns {boolean}
+ */
+export function jogadaPerfeita(o) {
+  return !!o.won && o.par > 0 && o.taps <= o.par;
+}
+
+/** Moedas extras da jogada perfeita. Ate a 1.0.15 eram 6, somadas sem aviso. */
+export const BONUS_PERFEITA = 15;
+
+/**
+ * Marcos da colecao de jogadas perfeitas: passar por um deles entrega o bau.
+ * Contam as fases distintas vencidas dentro da meta, inclusive depois da 100 -
+ * e a meta longa de quem ja ganhou todos os hexagonos.
+ */
+export const BAUS_PERFEITAS = [
+  { n: 10, coins: 200 },
+  { n: 25, coins: 400 },
+  { n: 50, coins: 700 },
+  { n: 100, coins: 1200 },
+];
+
+/**
  * Quao boa foi a jogada, para o grito do fim de fase (main.js, gritoBoa,
  * gritoOtima e gritoPerfeita no i18n).
  *
@@ -233,7 +363,7 @@ export const CHUVA_COINS_PER_PIECE = BONUS_COINS_PER_PIECE * 2;
  */
 export function notaDaJogada(o) {
   if (o.estado !== 'won') return 'boa';
-  if (o.par > 0 && o.taps <= o.par) return 'perfeita';
+  if (jogadaPerfeita({ won: true, taps: o.taps, par: o.par })) return 'perfeita';
   if ((o.par > 0 && o.taps <= o.par + 2) || o.bestCombo >= 4) return 'otima';
   return 'boa';
 }
@@ -374,8 +504,21 @@ export const WORLD_PRIZES = [
 
 /** Bau do fim da campanha (mundo 20, fase 100). */
 export const CHEST_FINAL = 500;
-/** Bau de cada mundo depois do 20 - perto da renda de um mundo inteiro. */
+/** Bau de cada mundo depois do 34 - perto da renda de um mundo inteiro. */
 export const CHEST_COINS = 300;
+
+/**
+ * Mundo (0-based) do primeiro premio depois da campanha: o 21, fases 101 a
+ * 105. WORLD_PRIZES vai ate o mundo 19, e o 20 e o bau final.
+ */
+export const ALEM_INICIO = WORLD_PRIZES.length + 1;
+
+/**
+ * Premios dos mundos 21 a 34: as edicoes de ouro, na ordem em que o jogador
+ * ganhou os originais. Depois do 34 volta o bau de CHEST_COINS.
+ * @type {Prize[]}
+ */
+export const PREMIOS_ALEM = TRILHA_OURO.map((id) => ({ skin: `${id}-ouro` }));
 
 /**
  * Premio nominal do mundo `world` (0-based). Ainda nao considera o que o
@@ -388,16 +531,22 @@ export function worldPrize(world, worldCount) {
   const w = Math.max(0, world | 0);
   if (w < WORLD_PRIZES.length) return WORLD_PRIZES[w];
   if (w === worldCount - 1) return { coins: CHEST_FINAL };
+  const alem = w - ALEM_INICIO;
+  if (alem >= 0 && alem < PREMIOS_ALEM.length) return PREMIOS_ALEM[alem];
   return { coins: CHEST_COINS };
 }
 
 /**
- * Em que mundo (0-based) uma skin e premio, ou -1 se ela so se compra.
+ * Em que mundo (0-based) uma skin e premio, ou -1 se ela so se compra. As
+ * douradas sao premio dos mundos 21 a 34.
  * @param {string} id
  * @returns {number}
  */
 export function prizeWorldOfSkin(id) {
-  return WORLD_PRIZES.findIndex((p) => 'skin' in p && p.skin === id);
+  const w = WORLD_PRIZES.findIndex((p) => 'skin' in p && p.skin === id);
+  if (w >= 0) return w;
+  const a = PREMIOS_ALEM.findIndex((p) => 'skin' in p && p.skin === id);
+  return a >= 0 ? ALEM_INICIO + a : -1;
 }
 
 /**

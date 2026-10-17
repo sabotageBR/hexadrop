@@ -27,7 +27,9 @@ const MAX_SETTLE = 420;
  * @returns {import('../physics/world.js').PieceState[]}
  */
 function destructible(world) {
-  return world.alivePieces().filter((p) => getMaterial(p.material).destructible);
+  // `tocavel` e "destrutivel" sem regra de fase; com regra, tira joia e peca
+  // presa - o solucionador prova a fase que o jogador de fato joga.
+  return world.alivePieces().filter((p) => world.tocavel(p));
 }
 
 /**
@@ -493,7 +495,15 @@ export function rollout(layout, opts) {
     world.destroyPiece(piece, 'tap');
     taps++;
     steps += settle(world);
-    const after = world.evaluate();
+    let after = world.evaluate();
+    // Com o limite de toques esgotado nao ha mais jogada: deixa a torre
+    // terminar de cair ate o veredito, em vez de tocar de novo. A regra
+    // garante um veredito em ate sete segundos (world._evaluateComRegra).
+    for (let k = 0; after === 'playing' && world.toquesRestantes() <= 0 && k < 600; k++) {
+      world.step(STEP);
+      steps++;
+      after = world.evaluate();
+    }
     if (after !== 'playing') {
       outcome = after;
       break;
@@ -541,7 +551,8 @@ export function rollout(layout, opts) {
  */
 export function evaluateVariant(layout, seed, opts = {}) {
   const smartRuns = opts.smartRuns || 6;
-  const naiveRuns = opts.naiveRuns || 3;
+  // `??` e nao `||`: a validacao das regras pede zero partidas ingenuas.
+  const naiveRuns = opts.naiveRuns ?? 3;
   const minSmartWins = opts.minSmartWins === undefined ? 2 : opts.minSmartWins;
 
   let smartWins = 0;

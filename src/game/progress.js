@@ -10,7 +10,7 @@
 
 import { load, save, isPersistent } from '../core/storage.js';
 import { LEVEL_COUNT, WORLD_COUNT, worldOf, worldStart, worldSize } from './levelgen.js';
-import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE, CHUVA_COINS_PER_PIECE, barraDoMundo, worldPrize, prizeWorldOfSkin, skin as getSkin } from './content.js';
+import { rankFromXp, upgradeEffects, UPGRADES, SKINS, BOOSTS, boost as getBoost, gateStars, BONUS_COINS_PER_PIECE, BONUS_XP_PER_PIECE, CHUVA_COINS_PER_PIECE, barraDoMundo, worldPrize, prizeWorldOfSkin, skin as getSkin, jogadaPerfeita, BONUS_PERFEITA, BAUS_PERFEITAS } from './content.js';
 import { faseDeOrigem } from './alem.js';
 
 /**
@@ -53,6 +53,7 @@ const SAVE_VERSION = 3;
  * @property {number} alem proxima fase depois da 100 a jogar; 0 = ainda nao venceu a 100
  * @property {boolean} shopNews ha premio novo para ver na loja
  * @property {number} [rev] gravacoes ate aqui; no app decide entre o localStorage e a copia do Preferences (src/app/save.js)
+ * @property {number[]} perfeitas fases (base 1, inclusive depois da 100) ja vencidas dentro da meta
  */
 
 /**
@@ -95,6 +96,9 @@ function blank() {
     prizes: [],
     alem: 0,
     shopNews: false,
+    // 1.0.16, sem trocar SAVE_VERSION: o save antigo ganha a lista vazia pelo
+    // `{...blank(), ...stored}` do construtor.
+    perfeitas: [],
   };
 }
 
@@ -128,6 +132,7 @@ export class Progress {
     // contador do mundo. O campo velho nao diz nada a regra nova.
     delete (/** @type {*} */ (this.data)).barraMundo;
     if (valido && !Array.isArray(stored.prizes)) this.migrarPremios();
+    this.migrarDouradas();
     // Quem ja venceu a 100 antes de existir o depois dela comeca na 101, senao a
     // home continuaria oferecendo "Jogar 100".
     if (!this.data.alem && this.starsOf(LEVEL_COUNT) >= 1) this.data.alem = LEVEL_COUNT + 1;
@@ -150,6 +155,29 @@ export class Progress {
     }
     if (this.retroativos.length) d.shopNews = true;
     this.flush();
+  }
+
+  /**
+   * Quem passou dos mundos 21 a 34 antes das edicoes de ouro (1.0.16) recebeu
+   * um bau de moedas em cada um. Agora esses mundos dao a dourada: ela entra na
+   * colecao, sem equipar e sem tirar as moedas que ja vieram. Idempotente - so
+   * acrescenta o que falta.
+   */
+  migrarDouradas() {
+    const d = this.data;
+    if (!Array.isArray(d.prizes)) return;
+    let nova = false;
+    for (const w of d.prizes) {
+      const p = worldPrize(w, WORLD_COUNT);
+      if ('skin' in p && getSkin(p.skin).ouroDe && !d.skins.includes(p.skin)) {
+        d.skins.push(p.skin);
+        nova = true;
+      }
+    }
+    if (nova) {
+      d.shopNews = true;
+      this.flush();
+    }
   }
 
   // ---------------------------------------------------------------- premios
@@ -337,7 +365,7 @@ export class Progress {
    * @param {boolean} o.won
    * @param {number} o.taps
    * @param {number} o.par
-   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, chuvaPieces:number, best:boolean, rankUp:boolean, prize:PrizeResult|null, unlock:BarraResult|null}}
+   * @returns {{coins:number, xp:number, bonusCoins:number, bonusXp:number, bonusPieces:number, chuvaPieces:number, best:boolean, rankUp:boolean, prize:PrizeResult|null, unlock:BarraResult|null, perfeita:boolean, perfeitaNova:boolean, bauPerfeitas:{n:number, coins:number}|null}}
    */
   finishLevel(o) {
     const d = this.data;
@@ -359,11 +387,23 @@ export class Progress {
     const nivel = Math.min(o.level, LEVEL_COUNT);
     let coins = 0;
     let xp = 0;
+    const perfeita = o.stars > 0 && jogadaPerfeita(o);
     if (o.stars > 0) {
       coins = 6 + o.stars * 4 + Math.floor(nivel / 8);
-      if (o.won && o.par > 0 && o.taps <= o.par) coins += 6;
+      if (perfeita) coins += BONUS_PERFEITA;
       xp = 8 + o.stars * 5 + Math.floor(nivel / 5);
       if (best) coins += 4;
+    }
+    // A colecao de perfeitas conta fases distintas, inclusive depois da 100, e
+    // paga o bau ao passar por cada marco (sem o multiplicador da Fortuna: o
+    // bau e o mesmo para todo mundo).
+    if (!Array.isArray(d.perfeitas)) d.perfeitas = [];
+    const perfeitaNova = perfeita && !d.perfeitas.includes(o.level);
+    let bauPerfeitas = null;
+    if (perfeitaNova) {
+      d.perfeitas.push(o.level);
+      bauPerfeitas = BAUS_PERFEITAS.find((b) => b.n === d.perfeitas.length) || null;
+      if (bauPerfeitas) d.coins += bauPerfeitas.coins;
     }
 
     // Pericia: cada peca que o jogador NAO precisou gastar rende. E o que faz
@@ -402,7 +442,20 @@ export class Progress {
       unlock = this.compraDaBarra(origem.mundo);
     }
     this.flush();
-    return { coins, xp, bonusCoins, bonusXp, bonusPieces, chuvaPieces, best, rankUp, prize, unlock };
+    return {
+      coins, xp, bonusCoins, bonusXp, bonusPieces, chuvaPieces, best, rankUp, prize, unlock,
+      perfeita, perfeitaNova, bauPerfeitas,
+    };
+  }
+
+  /** @param {number} level base 1 @returns {boolean} a fase ja foi vencida dentro da meta */
+  perfeitaEm(level) {
+    return Array.isArray(this.data.perfeitas) && this.data.perfeitas.includes(level);
+  }
+
+  /** @returns {number} jogadas perfeitas da colecao */
+  get totalPerfeitas() {
+    return Array.isArray(this.data.perfeitas) ? this.data.perfeitas.length : 0;
   }
 
   /**

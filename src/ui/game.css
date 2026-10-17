@@ -1386,3 +1386,66 @@ html[data-hud='lateral'] .tut.perto {
   font: 800 13px/1 var(--font); color: var(--ink);
   text-decoration: line-through; text-decoration-thickness: 2px;
 }
+
+/* ------------------------------------------------------------ regra da fase
+   O chip da regra (game/regras.js), no canto esquerdo, espelhando a barra do
+   proximo hexagono no direito: o icone e, nos toques contados, quantos sobram.
+   Sacode quando o toque e recusado e pisca no ultimo toque. */
+.regra-chip {
+  position: absolute;
+  top: calc(52px + var(--safe-t));
+  left: calc(14px + var(--safe-l));
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 5px;
+  border-radius: 999px;
+  background: rgba(var(--sheet-rgb), 0.55);
+  color: var(--ink);
+  font: 800 16px/1 var(--font);
+  pointer-events: none;
+  z-index: 2;
+}
+.regra-chip[hidden] { display: none; }
+.regra-chip .regra-ico { width: 22px; height: 22px; flex: none; }
+.regra-chip b:empty { display: none; }
+.regra-chip:has(b:empty) { padding-right: 5px; }
+.regra-chip.ultimo b { color: #ff5a5a; animation: regraUltimo 0.8s ease-in-out infinite; }
+.regra-chip.nao { animation: regraNao 0.36s ease; }
+@keyframes regraNao {
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+@keyframes regraUltimo { 50% { transform: scale(1.22); } }
+/* O atelier poe as estrelas numa coluna nesse canto. */
+html[data-kit="atelier"] .regra-chip { left: calc(50px + var(--safe-l)); }
+/* Com o HUD nas laterais o canto esquerdo ja tem nome, fita e estrelas. */
+html[data-hud='lateral'] .regra-chip { left: calc(14px + var(--safe-l)); top: calc(100px + var(--safe-t)); }
+@media (prefers-reduced-motion: reduce) {
+  .regra-chip.ultimo b, .regra-chip.nao { animation: none; }
+}
+/* Fase ja vencida dentro da meta: a coroa ao lado de "Meta" na pausa. */
+.pause-taps.perfeita::after {
+  content: "";
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  margin-left: 6px;
+  vertical-align: -1px;
+  background: var(--gold);
+  clip-path: polygon(0 100%, 0 20%, 25% 55%, 50% 0, 75% 55%, 100% 20%, 100% 100%);
+}
+/* Coroa da jogada perfeita no no do mapa (colecao de perfeitas, 1.0.16). */
+.node .coroa {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  width: 18px;
+  height: 12px;
+  transform: translateX(-50%);
+  background: var(--w-star, #ffd54a);
+  clip-path: polygon(0 100%, 0 20%, 25% 55%, 50% 0, 75% 55%, 100% 20%, 100% 100%);
+  z-index: 3;
+}

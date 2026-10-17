@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Hexa Drop — edicoes de ouro</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #07102c; color: #f4f7ff; font: 16px/1.45 system-ui, sans-serif; }
+  header { padding: 18px 22px 6px; }
+  header h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -0.02em; }
+  header p { margin: 0; color: rgba(244,247,255,0.65); font-size: 14px; max-width: 760px; }
+  .ceus { display: grid; grid-template-columns: 1fr; gap: 16px; padding: 16px 22px 28px; }
+  .ceu { border-radius: 20px; padding: 14px; }
+  .ceu h2 { margin: 0 0 10px; font: 700 12px/1 system-ui; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.7; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px 8px; }
+  .par { display: grid; gap: 2px; justify-items: center; }
+  .par canvas { width: 64px; height: 64px; }
+  .par small { font: 600 10px/1.1 system-ui; opacity: 0.75; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Edicoes de ouro</h1>
+  <p>Os quatorze hexagonos da trilha (em cima) e a edicao de ouro de cada um (embaixo), com o mesmo pintor do jogo
+    (paintHexModel + a marca da skin). Premio dos mundos 21 a 34, fases 101 a 170, e a venda na loja.
+    O Feliz e o Queijo ja sao amarelos: o que os separa da dourada e o reflexo e a centelha.</p>
+</header>
+<main class="ceus" id="ceus"></main>
+<script type="module">
+  import { THEMES } from '../src/render/themes.js';
+  import { SKINS, TRILHA_OURO } from '../src/game/content.js';
+  import { paintHexModel } from '../src/render/hexmodels.js';
+  import { brilhoDaSkin } from '../src/render/sprites.js';
+
+  const ceus = [
+    ['Mundo 1 (puzzle)', 'puzzle'],
+    ['Neon (escuro)', 'neon'],
+    ['Lava', 'lava'],
+  ];
+  const host = document.getElementById('ceus');
+
+  /** @param {HTMLCanvasElement} cv @param {*} s @param {*} th */
+  function pinta(cv, s, th) {
+    const lado = 64;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = lado * dpr;
+    cv.height = lado * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const r = lado * 0.4;
+    paintHexModel(ctx, lado / 2, lado / 2, r, s.model || 'joia',
+      { fill: s.fill || th.hexagon.fill, stroke: s.stroke || th.hexagon.stroke, core: s.core || th.hexagon.core },
+      brilhoDaSkin(s, th.glow));
+    if (s.mark) s.mark(ctx, lado / 2, lado / 2, r, th);
+  }
+
+  for (const [nome, id] of ceus) {
+    const th = THEMES[id] || THEMES.neon;
+    const ceu = document.createElement('section');
+    ceu.className = 'ceu';
+    const cs = th.sky;
+    ceu.style.background = `linear-gradient(170deg, ${cs[Math.min(2, cs.length - 1)]}, ${cs[1] || cs[0]} 46%, ${cs[0]})`;
+    ceu.style.color = th.ink;
+    ceu.innerHTML = `<h2>${nome}</h2>`;
+    const grade = document.createElement('div');
+    grade.className = 'grade';
+    for (const sid of TRILHA_OURO) {
+      const orig = SKINS.find((s) => s.id === sid);
+      const ouro = SKINS.find((s) => s.id === `${sid}-ouro`);
+      const par = document.createElement('div');
+      par.className = 'par';
+      const a = document.createElement('canvas');
+      const b = document.createElement('canvas');
+      pinta(a, orig, th);
+      pinta(b, ouro, th);
+      const rot = document.createElement('small');
+      rot.textContent = orig.name;
+      par.append(a, b, rot);
+      grade.append(par);
+    }
+    ceu.append(grade);
+    host.append(ceu);
+  }
+</script>
+</body>
+</html>

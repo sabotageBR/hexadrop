@@ -57,7 +57,8 @@ for (const level of LEVELS) {
     if (screen !== 'game') break;
     const info = await js(`(() => { const g=window.__game.scene; if(!g.session||g.session.finished) return null;
       const w=g.session.world; const alive=w.alivePieces().filter(p=>p.body.isDynamic() && !p.body.isStatic?false:p.body.isDynamic());
-      const dest = alive.filter(p => p.material !== 'obsidian');
+      // Joia e peca presa nao se tocam (game/regras.js): o clique seria recusado.
+      const dest = alive.filter(p => w.tocavel(p));
       if(!dest.length) return null;
       // So peca NA TELA: a camera segue o hexagono, e numa torre de dezoito
       // linhas a primeira peca da lista fica fora do quadro - o clique nao
@@ -92,10 +93,10 @@ for (const level of LEVELS) {
   // Nas fases com volta de jogada (main.js, VOLTAS_POR_FASE: o ensino inteiro
   // e, limitada, os mundos 3 e 4) a queda volta e a fase segue: sem esta
   // contagem, vencer ali depois de tres voltas pareceria vencer de primeira.
-  const res = await js('({screen: window.__game.screen, state: window.__game.scene.session ? window.__game.scene.session.state : "?", stars: window.__game.scene.session ? window.__game.scene.session.stars : 0, voltas: window.__game.scene.session ? window.__game.scene.session.rewinds : 0})');
+  const res = await js('(() => { const s = window.__game.scene.session; return {screen: window.__game.screen, state: s ? s.state : "?", stars: s ? s.stars : 0, voltas: s ? s.rewinds : 0, regra: s && s.regra ? s.regra.tipo : "-", motivo: s && s.motivo ? s.motivo : ""}; })()');
   const avgFps = fps.length ? Math.round(fps.reduce((a, b) => a + b, 0) / fps.length) : 0;
   if (res.screen === 'win') wins++; else if (res.screen === 'lose') losses++;
-  rows.push(`fase ${String(level).padStart(3)}  ${res.screen.padEnd(5)}  estado=${String(res.state).padEnd(7)} estrelas=${res.stars} toques=${String(taps).padStart(2)} voltas=${res.voltas} fps~${avgFps}${errors.length ? '  ERRO: ' + errors[0] : ''}`);
+  rows.push(`fase ${String(level).padStart(3)}  ${res.screen.padEnd(5)}  estado=${String(res.state).padEnd(7)} estrelas=${res.stars} toques=${String(taps).padStart(2)} voltas=${res.voltas} regra=${res.regra.padEnd(7)}${res.motivo ? ' perdeu=' + res.motivo : ''} fps~${avgFps}${errors.length ? '  ERRO: ' + errors[0] : ''}`);
   console.log(rows[rows.length - 1]);
   // volta ao menu para a proxima
   await js('window.__game.showAmbient(); window.__game.show("home");');

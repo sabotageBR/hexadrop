@@ -43,6 +43,8 @@ const HOLD_DECAY = 2;
  * @property {number} spawnX posicao inicial em coluna
  * @property {number} spawnY posicao inicial em linha
  * @property {number} holdTimer segundos acumulados com o hexagono apoiado em cima
+ * @property {boolean} [joia] regra `joia`: nao se toca, e perde-la perde a fase
+ * @property {boolean} [presa] regra `cadeado`: nao se toca
  */
 
 /**
@@ -55,6 +57,7 @@ const HOLD_DECAY = 2;
  * @property {number[]} starLines alturas em metros, do topo para a base
  * @property {number} wind forca lateral constante
  * @property {number} [hexScale]
+ * @property {*} [regra] regra de fase, anexada por game/regras.js (comRegra)
  */
 
 /**
@@ -117,6 +120,19 @@ export class PhysicsWorld {
     this.destructibleCount = 0;
     this.restTimer = 0;
     this.nextPieceId = 1;
+
+    // Regra de fase (game/regras.js). Sem ela, nenhum dos campos abaixo muda
+    // nada na simulacao.
+    /** @type {*|null} */
+    this.regra = null;
+    this.toquesUsados = 0;
+    this.ultimoToque = -Infinity;
+    /** @type {string|null} por que a regra derrubou a fase */
+    this.motivo = null;
+    /** A rajada da vitoria esta rodando: ela nao pode levar a joia. */
+    this.celebrando = false;
+    /** @type {PieceState|null} */
+    this._joia = null;
 
     /** @type {{piece: PieceState, cause: string}[]} */
     this._pendingDestroy = [];
@@ -243,6 +259,47 @@ export class PhysicsWorld {
     this.destructibleCount = this.pieces.filter(
       (p) => p.alive && getMaterial(p.material).destructible,
     ).length;
+
+    // Regra de fase. Ela chega anexada ao layout DEPOIS de generateLayout
+    // (regras.js, comRegra): nao cria peca, nao move nada e nao consome
+    // sorteio. So marca bandeiras, e quem as le e evaluate() e tocavel() - a
+    // fisica de step() e a mesma, entao a fase sem regra fica identica bit a
+    // bit a que o validador certificou.
+    this.regra = layout.regra || null;
+    this.toquesUsados = 0;
+    this.ultimoToque = -Infinity;
+    this.motivo = null;
+    this.celebrando = false;
+    this._joia = null;
+    if (this.regra && this.regra.tipo === 'joia') {
+      const p = this.pieces[this.regra.peca];
+      if (p) {
+        p.joia = true;
+        this._joia = p;
+      }
+    }
+    if (this.regra && this.regra.tipo === 'cadeado') {
+      for (const i of this.regra.pecas || []) {
+        const p = this.pieces[i];
+        if (p) p.presa = true;
+      }
+    }
+  }
+
+  /**
+   * A peca pode ser tocada: viva, destrutivel e sem joia nem cadeado.
+   * Sem regra e exatamente "destrutivel e viva".
+   * @param {PieceState} p
+   * @returns {boolean}
+   */
+  tocavel(p) {
+    return !!p && p.alive && getMaterial(p.material).destructible && !p.joia && !p.presa;
+  }
+
+  /** @returns {number} toques que a regra ainda deixa; Infinity sem limite */
+  toquesRestantes() {
+    if (!this.regra || this.regra.tipo !== 'toques') return Infinity;
+    return Math.max(0, this.regra.limite - this.toquesUsados);
   }
 
   /**
@@ -415,6 +472,8 @@ export class PhysicsWorld {
     const r2 = radius * radius;
     for (const p of this.pieces) {
       if (!p.alive || !p.body.isDynamic()) continue;
+      // A joia salva fica: a rajada comemora, nao a joga para fora.
+      if (p.joia && this.celebrando) continue;
       const c = p.body.getPosition();
       const dx = c.x - x;
       const dy = c.y - y;
@@ -449,6 +508,14 @@ export class PhysicsWorld {
   }
   destroyPiece(piece, cause = 'tap') {
     if (!piece || !piece.alive) return;
+    if (cause === 'tap') {
+      // Quem toca direto no mundo (o solucionador, a economia, a automacao)
+      // tambem respeita a regra: peca presa, joia e toque alem do limite nao
+      // existem.
+      if (this.regra && (!this.tocavel(piece) || this.toquesRestantes() <= 0)) return;
+      this.toquesUsados++;
+      this.ultimoToque = this.time;
+    }
     if (this._stepping) {
       this._queueDestroy(piece, cause);
       return;
@@ -508,6 +575,9 @@ export class PhysicsWorld {
       const r2 = boom.radius * boom.radius;
       for (const p of this.pieces) {
         if (!p.alive) continue;
+        // Na rajada da vitoria a bomba da fila ainda explode, e levaria junto a
+        // joia que o jogador acabou de salvar.
+        if (p.joia && this.celebrando) continue;
         const mat = getMaterial(p.material);
         const c = p.body.getPosition();
         const dx = c.x - boom.x;
@@ -724,10 +794,51 @@ export class PhysicsWorld {
       if (!abaixo) continue;
       // Cinematico conta como vivo: o pedestal que balanca carrega quem esta
       // em cima dele.
-      if (!edge.other.isStatic()) return 'dynamic';
+      if (!edge.other.isStatic() && !(this.regra && this._travado(edge.other, new Set()))) {
+        return 'dynamic';
+      }
       apoio = 'static';
     }
     return apoio;
+  }
+
+  /**
+   * Um corpo que o jogador nao consegue mais tirar do lugar.
+   *
+   * So existe com regra: peca presa e joia nao se tocam, entao uma delas parada
+   * sobre o pedestal ou sobre obsidiana e tao imovel quanto a propria
+   * obsidiana. Sem isto o hexagono apoiado nela contaria como apoio vivo e a
+   * fase ficaria em 'playing' para sempre - o encalhe que `hexStranded` existe
+   * para fechar. Ela continua viva se qualquer apoio dela for tocavel: tirar
+   * aquele apoio ainda a derruba.
+   *
+   * @param {import('planck').Body} body
+   * @param {Set<import('planck').Body>} vistos
+   * @returns {boolean}
+   */
+  _travado(body, vistos) {
+    if (body.isStatic()) return true;
+    if (body.isKinematic()) return false;
+    const peca = this.byBody.get(body);
+    if (!peca || this.tocavel(peca)) return false;
+    if (vistos.has(body) || vistos.size > 24) return false;
+    vistos.add(body);
+    const cy = body.getPosition().y;
+    let apoiada = false;
+    for (let edge = body.getContactList(); edge; edge = edge.next) {
+      const contact = edge.contact;
+      if (!contact || !contact.isTouching() || edge.other === this.hexBody) continue;
+      const wm = contact.getWorldManifold(null);
+      if (!wm) continue;
+      let abaixo = false;
+      for (let k = 0; k < wm.pointCount; k++) {
+        if (wm.points[k].y < cy) abaixo = true;
+      }
+      if (!abaixo) continue;
+      apoiada = true;
+      if (!this._travado(edge.other, vistos)) return false;
+    }
+    return apoiada;
   }
 
   /**
@@ -811,6 +922,7 @@ export class PhysicsWorld {
   /** @returns {'playing'|'won'|'lost'|'stuck'} */
   evaluate() {
     if (!this.hexBody) return 'playing';
+    if (this.regra) return this._evaluateComRegra();
     const p = this.hexBody.getPosition();
     const pedX = this.pedestalX();
     const onPedestalX = Math.abs(p.x - pedX) <= this.pedestalHalfWidth + this.hexRadius * 0.55;
@@ -834,6 +946,88 @@ export class PhysicsWorld {
     // conta como vitoria, sem estrela e derrota.
     if (this.hexStranded()) return 'stuck';
     return 'playing';
+  }
+
+  /**
+   * evaluate() de uma fase com regra.
+   *
+   * Separado de proposito: o caminho sem regra continua sendo o mesmo texto de
+   * sempre. A regra so transforma 'playing' em 'lost', nunca em 'stuck' - e
+   * 'stuck' com estrela e vitoria em main.js (onLevelEnd), entao uma regra que
+   * derrubasse com 'stuck' daria a fase de presente.
+   *
+   * A ordem importa:
+   * 1. a queda de sempre;
+   * 2. a joia: destruida ou caindo, perdeu, antes de qualquer vitoria;
+   * 3. a vitoria, que no dourado tem que ser dentro da faixa;
+   * 4. acabaram as pecas tocaveis;
+   * 5. o encalhe (com estrela continua vitoria, como sem regra);
+   * 6. o limite de toques, por ultimo: encalhar dentro do limite nao e perder.
+   *
+   * @returns {'playing'|'won'|'lost'|'stuck'}
+   */
+  _evaluateComRegra() {
+    this.motivo = null;
+    const hex = /** @type {import('planck').Body} */ (this.hexBody);
+    const p = hex.getPosition();
+    const pedX = this.pedestalX();
+    const onPedestalX = Math.abs(p.x - pedX) <= this.pedestalHalfWidth + this.hexRadius * 0.55;
+    if (p.y < -this.hexRadius && !onPedestalX) return 'lost';
+    if (p.y < -PEDESTAL_HALF_H * 2 - 0.8) return 'lost';
+    const sideLimit = (this.towerWidth * CELL) / 2 + this.pedestalHalfWidth + 3;
+    if (Math.abs(p.x - this.towerCenterX) > sideLimit) return 'lost';
+
+    const regra = this.regra;
+    const joia = this._joia;
+    // Abaixo do topo do pedestal ela ja saiu da torre e nao volta.
+    if (joia && (!joia.alive || joia.body.getPosition().y < -1)) return this._perde('joia');
+
+    const noPedestal = p.y <= this.winLineY() && onPedestalX;
+    const naFaixa = regra.tipo !== 'dourado' || Math.abs(p.x - pedX) <= regra.meia;
+    if (noPedestal && this.hexAtRest()) {
+      if (naFaixa) return 'won';
+      // Fora da faixa so perde DORMINDO. hexAtRest aceita 0,16 m/s, e com
+      // essa velocidade o hexagono ainda escorrega para dentro dela.
+      return hex.isAwake() ? 'playing' : this._perde('dourado');
+    }
+    if (this._tocaveisVivas() <= 0 && this.everythingAtRest()) {
+      if (noPedestal) return naFaixa ? 'won' : this._perde('dourado');
+      return 'stuck';
+    }
+    if (this.hexStranded()) return 'stuck';
+
+    if (regra.tipo === 'toques' && this.toquesUsados >= regra.limite && !noPedestal) {
+      // A guarda de 0,1 s e o que separa "o ultimo toque nao derrubou nada" de
+      // "o ultimo toque ainda nao teve efeito": no passo seguinte a remocao, o
+      // que vai cair anda a 1/6 m/s, abaixo do repouso de everythingAtRest.
+      // Com 0,1 s, quem cai ja passa de 1 m/s.
+      const desde = this.time - this.ultimoToque;
+      if (desde >= 0.1 - 1e-6) {
+        // Sobre o pedestal que balanca a torre nunca repousa: quatro segundos
+        // com tudo parado da altura do hexagono para cima bastam, e sete sempre
+        // bastam - cabe nos 420 passos do MAX_SETTLE do solucionador.
+        if (this.everythingAtRest() || (desde >= 4 && this._restAboveHex()) || desde >= 7) {
+          return this._perde('toques');
+        }
+      }
+    }
+    return 'playing';
+  }
+
+  /**
+   * @param {string} motivo
+   * @returns {'lost'}
+   */
+  _perde(motivo) {
+    this.motivo = motivo;
+    return 'lost';
+  }
+
+  /** @returns {number} pecas que o jogador ainda pode tocar */
+  _tocaveisVivas() {
+    let n = 0;
+    for (const p of this.pieces) if (this.tocavel(p)) n++;
+    return n;
   }
 
   /**
@@ -872,6 +1066,9 @@ export class PhysicsWorld {
   exposedPieces() {
     const alive = this.alivePieces().filter((p) => getMaterial(p.material).destructible);
     return alive.filter((p) => {
+      // Joia e peca presa cobrem as de baixo como qualquer outra, mas nao
+      // entram na lista: a politica ingenua tambem nao pode toca-las.
+      if (p.joia || p.presa) return false;
       const c = p.body.getPosition();
       for (const other of alive) {
         if (other === p) continue;
@@ -922,6 +1119,10 @@ export class PhysicsWorld {
       time: this.time,
       starsCrossed: this.starsCrossed,
       destructibleCount: this.destructibleCount,
+      // Os toques da regra voltam com a fotografia: o solucionador experimenta
+      // um toque e desfaz, e a volta de jogada devolve o toque que desfez.
+      toquesUsados: this.toquesUsados,
+      ultimoToque: this.ultimoToque,
       pieces,
       hex: {
         x: hp.x,
@@ -945,6 +1146,11 @@ export class PhysicsWorld {
     this.time = snap.time;
     this.starsCrossed = snap.starsCrossed;
     this.destructibleCount = snap.destructibleCount;
+    this.toquesUsados = snap.toquesUsados ?? 0;
+    this.ultimoToque = snap.ultimoToque ?? -Infinity;
+    // O motivo de um ramo que o solucionador simulou nao pode vazar para o
+    // mundo de verdade.
+    this.motivo = null;
 
     for (let i = 0; i < this.pieces.length; i++) {
       const piece = this.pieces[i];

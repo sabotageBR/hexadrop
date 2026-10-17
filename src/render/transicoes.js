@@ -262,6 +262,50 @@ function desenharEstrelas(ctx, t, info) {
 }
 
 /**
+ * A coroa da jogada perfeita (toques ate a meta), em cima da estrela do meio,
+ * com o bonus ao lado. So icone e numero: nada a traduzir.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} t
+ * @param {*} info
+ */
+function desenharCoroa(ctx, t, info) {
+  if (info.nota !== 'perfeita' || t < 0.56 || t > 1.65) return;
+  const { W, H } = info;
+  const tam = tamEstrela(W, H);
+  const u = (t - 0.56) / 0.25;
+  const esc = u < 1 && !info.reduzido ? backOut(u) : 1;
+  const y = linhaDeBaixo(t, W, H) - tam * 0.18 - tam * 0.78;
+  ctx.save();
+  ctx.translate(W / 2, y);
+  ctx.scale(esc, esc);
+  const w = tam * 0.9;
+  const h = tam * 0.55;
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, h / 2);
+  ctx.lineTo(-w / 2, -h * 0.3);
+  ctx.lineTo(-w * 0.25, h * 0.05);
+  ctx.lineTo(0, -h / 2);
+  ctx.lineTo(w * 0.25, h * 0.05);
+  ctx.lineTo(w / 2, -h * 0.3);
+  ctx.lineTo(w / 2, h / 2);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(31,26,46,0.35)';
+  ctx.save();
+  ctx.translate(0, tam * 0.05);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = DOURADO;
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.5, tam * 0.05);
+  ctx.strokeStyle = '#a86f00';
+  ctx.stroke();
+  if (info.bonusPerfeita) {
+    textoBlumgi(ctx, `+${info.bonusPerfeita}`, w * 1.05, -h * 0.1, tam * 0.5, DOURADO);
+  }
+  ctx.restore();
+}
+
+/**
  * A moeda do contador, a mesma do icone de premio: disco chapado, aro escuro.
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} x
@@ -522,6 +566,7 @@ export function desenhar(ctx, tipo, t, info) {
   }
   desenharGrito(ctx, t, info);
   desenharEstrelas(ctx, t, info);
+  desenharCoroa(ctx, t, info);
   desenharMoedas(ctx, t, info);
   if (mundo) {
     const m = temposDoMundo(!!info.premio);

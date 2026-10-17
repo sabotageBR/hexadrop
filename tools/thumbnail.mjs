@@ -523,6 +523,9 @@ function paginaAjudante(opts) {
   H.abrir = (fase, variante, cfg) => {
     H.cfg = cfg || {};
     g.flowLevels = false;
+    // A thumbnail filma a fase como o gerador a validou: sem joia, cadeado nem
+    // chip de regra, e as candidatas da explosao continuam as mesmas.
+    g.regrasLigadas = false;
     // A thumbnail e sempre o hexagono padrao: os premios de mundo (1.0.8)
     // trocariam a skin no meio do roteiro, e o video tem que sair igual a cada
     // execucao.
