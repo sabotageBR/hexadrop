@@ -9,6 +9,8 @@
  * de um L.
  */
 
+import { roundRectPath } from './draw2d.js';
+
 /** Ouro da regra: o mesmo em todo tema, para a faixa e a joia lerem igual. */
 export const OURO = '#ffd23f';
 const OURO_FUNDO = '#b8860b';
@@ -133,7 +135,7 @@ export function paintCadeado(ctx, x, y, s, cor = '#f2f2f2', fundo = '#2b2b36') {
   ctx.strokeStyle = fundo;
   ctx.lineWidth = Math.max(1.2, s * 0.06);
   ctx.beginPath();
-  ctx.roundRect(-w / 2, -h * 0.3, w, h, s * 0.08);
+  roundRectPath(ctx, -w / 2, -h * 0.3, w, h, s * 0.08);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = fundo;
@@ -167,7 +169,7 @@ export function paintRegraIcon(ctx, id, lado, tinta) {
     ctx.fillStyle = tinta;
     ctx.globalAlpha = 0.85;
     ctx.beginPath();
-    ctx.roundRect(4 * u, 24 * u, 28 * u, 7 * u, 2 * u);
+    roundRectPath(ctx, 4 * u, 24 * u, 28 * u, 7 * u, 2 * u);
     ctx.fill();
     ctx.globalAlpha = 1;
     ctx.fillStyle = OURO;
@@ -257,7 +259,7 @@ export function paintFaixaDourada(ctx, sx, sy, meiaPx, px, time) {
   g.addColorStop(1, OURO_FUNDO);
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.roundRect(sx - meiaPx, topo, meiaPx * 2, alto, h * 0.4);
+  roundRectPath(ctx, sx - meiaPx, topo, meiaPx * 2, alto, h * 0.4);
   ctx.fill();
   // Um reflexo correndo pela faixa, em vez de halo borrado: chapado, como o
   // resto da arte.
