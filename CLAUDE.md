@@ -1034,6 +1034,14 @@ fora da tela, com o brilho embutido; cada quadro é `drawImage` sob transformaç
 (`render/sprites.js`). **Isso só funciona porque o zoom é fixo durante a fase** — o
 cache é remontado em `GameScene.refit()`, que roda no resize e ao carregar a fase.
 
+**Nunca use o `ctx.roundRect` nativo**: ele só existe do Chrome 99 e do Safari/iOS 16 em
+diante, e onde falta o desenho lança erro no meio do quadro. Use `roundRect` ou
+`roundRectPath` de `render/draw2d.js`. A mão do tutorial quebrava no iOS 15, e as marcas
+das regras de fase (1.0.17) fizeram o mesmo: no Chrome sem `roundRect` a fase 26 abria sem
+o hexágono e o `startLevel` parava no meio. Para conferir, carregue a página com
+`delete CanvasRenderingContext2D.prototype.roundRect` antes do jogo (o `pre` do
+`tools/shot.mjs`) e veja se sai algum erro.
+
 O material é um **estilo de pintura**, escolhido em `lookFor()` (`render/sprites.js`).
 São cinco, e cada um existe porque um material precisava dele:
 
