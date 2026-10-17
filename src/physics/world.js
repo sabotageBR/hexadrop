@@ -125,8 +125,6 @@ export class PhysicsWorld {
     // nada na simulacao.
     /** @type {*|null} */
     this.regra = null;
-    this.toquesUsados = 0;
-    this.ultimoToque = -Infinity;
     /** @type {string|null} por que a regra derrubou a fase */
     this.motivo = null;
     /** A rajada da vitoria esta rodando: ela nao pode levar a joia. */
@@ -266,8 +264,6 @@ export class PhysicsWorld {
     // fisica de step() e a mesma, entao a fase sem regra fica identica bit a
     // bit a que o validador certificou.
     this.regra = layout.regra || null;
-    this.toquesUsados = 0;
-    this.ultimoToque = -Infinity;
     this.motivo = null;
     this.celebrando = false;
     this._joia = null;
@@ -294,12 +290,6 @@ export class PhysicsWorld {
    */
   tocavel(p) {
     return !!p && p.alive && getMaterial(p.material).destructible && !p.joia && !p.presa;
-  }
-
-  /** @returns {number} toques que a regra ainda deixa; Infinity sem limite */
-  toquesRestantes() {
-    if (!this.regra || this.regra.tipo !== 'toques') return Infinity;
-    return Math.max(0, this.regra.limite - this.toquesUsados);
   }
 
   /**
@@ -508,14 +498,9 @@ export class PhysicsWorld {
   }
   destroyPiece(piece, cause = 'tap') {
     if (!piece || !piece.alive) return;
-    if (cause === 'tap') {
-      // Quem toca direto no mundo (o solucionador, a economia, a automacao)
-      // tambem respeita a regra: peca presa, joia e toque alem do limite nao
-      // existem.
-      if (this.regra && (!this.tocavel(piece) || this.toquesRestantes() <= 0)) return;
-      this.toquesUsados++;
-      this.ultimoToque = this.time;
-    }
+    // Quem toca direto no mundo (o solucionador, a economia, a automacao)
+    // tambem respeita a regra: peca presa e joia nao se tocam.
+    if (cause === 'tap' && this.regra && !this.tocavel(piece)) return;
     if (this._stepping) {
       this._queueDestroy(piece, cause);
       return;
@@ -961,8 +946,7 @@ export class PhysicsWorld {
    * 2. a joia: destruida ou caindo, perdeu, antes de qualquer vitoria;
    * 3. a vitoria, que no dourado tem que ser dentro da faixa;
    * 4. acabaram as pecas tocaveis;
-   * 5. o encalhe (com estrela continua vitoria, como sem regra);
-   * 6. o limite de toques, por ultimo: encalhar dentro do limite nao e perder.
+   * 5. o encalhe (com estrela continua vitoria, como sem regra).
    *
    * @returns {'playing'|'won'|'lost'|'stuck'}
    */
@@ -995,22 +979,6 @@ export class PhysicsWorld {
       return 'stuck';
     }
     if (this.hexStranded()) return 'stuck';
-
-    if (regra.tipo === 'toques' && this.toquesUsados >= regra.limite && !noPedestal) {
-      // A guarda de 0,1 s e o que separa "o ultimo toque nao derrubou nada" de
-      // "o ultimo toque ainda nao teve efeito": no passo seguinte a remocao, o
-      // que vai cair anda a 1/6 m/s, abaixo do repouso de everythingAtRest.
-      // Com 0,1 s, quem cai ja passa de 1 m/s.
-      const desde = this.time - this.ultimoToque;
-      if (desde >= 0.1 - 1e-6) {
-        // Sobre o pedestal que balanca a torre nunca repousa: quatro segundos
-        // com tudo parado da altura do hexagono para cima bastam, e sete sempre
-        // bastam - cabe nos 420 passos do MAX_SETTLE do solucionador.
-        if (this.everythingAtRest() || (desde >= 4 && this._restAboveHex()) || desde >= 7) {
-          return this._perde('toques');
-        }
-      }
-    }
     return 'playing';
   }
 
@@ -1119,10 +1087,6 @@ export class PhysicsWorld {
       time: this.time,
       starsCrossed: this.starsCrossed,
       destructibleCount: this.destructibleCount,
-      // Os toques da regra voltam com a fotografia: o solucionador experimenta
-      // um toque e desfaz, e a volta de jogada devolve o toque que desfez.
-      toquesUsados: this.toquesUsados,
-      ultimoToque: this.ultimoToque,
       pieces,
       hex: {
         x: hp.x,
@@ -1146,8 +1110,6 @@ export class PhysicsWorld {
     this.time = snap.time;
     this.starsCrossed = snap.starsCrossed;
     this.destructibleCount = snap.destructibleCount;
-    this.toquesUsados = snap.toquesUsados ?? 0;
-    this.ultimoToque = snap.ultimoToque ?? -Infinity;
     // O motivo de um ramo que o solucionador simulou nao pode vazar para o
     // mundo de verdade.
     this.motivo = null;

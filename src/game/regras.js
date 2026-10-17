@@ -16,10 +16,15 @@
  * cada variante de novo com a regra, com o mesmo solucionador, e grava o
  * parametro aprovado em regras.gen.js.
  *
- * - `toques`: limite de toques = meta da variante + folga.
  * - `joia`: uma peca da torre vira joia; nao se toca, e se cair ou quebrar perde.
  * - `cadeado`: duas a quatro pecas presas, que nao se tocam.
  * - `dourado`: o hexagono tem que repousar na faixa dourada do pedestal.
+ *
+ * Havia uma quarta, `toques` (limite = meta + folga), que estreava na fase 16 e
+ * saiu na 1.0.19. No Player Fit Test da 1.0.18 a fase 16 perdeu 53% de quem
+ * chegou nela (65% no celular), contra ~13% das vizinhas e 10% na mesma fase da
+ * 1.0.15, e 49 das 68 partidas que viram o limite perderam por ele: quem toca
+ * sem planejar nunca vence com limite nenhum, e esse e o jogador do funil.
  *
  * Puro: nada de window, document ou performance (o validador roda no Node).
  */
@@ -30,15 +35,14 @@ import { worldOf, worldStart, worldSize, indexInWorld } from './levelgen.js';
 import { REGRAS } from './regras.gen.js';
 
 /** Na ordem em que estreiam. */
-export const REGRA_IDS = ['toques', 'joia', 'cadeado', 'dourado'];
+export const REGRA_IDS = ['joia', 'cadeado', 'dourado'];
 
 /**
- * Indice (base 0) da fase em que cada regra estreia: uma por mundo, do 4 ao 7.
+ * Indice (base 0) da fase em que cada regra estreia: uma por mundo, do 5 ao 7.
  * O mundo 3 fica de fora porque e o da estreia do pedestal que balanca (fase
- * 11) e o primeiro com derrota.
+ * 11) e o primeiro com derrota; o 4 ficou livre quando o limite de toques saiu.
  */
 export const ESTREIA = {
-  toques: worldStart(3),
   joia: worldStart(4),
   cadeado: worldStart(5),
   dourado: worldStart(6),
@@ -48,32 +52,15 @@ export const ESTREIA = {
 const JOIA_FRAGIL = new Set(['glass', 'crystal', 'wax', 'tnt', 'bomb']);
 
 /**
- * Toques alem da meta. A meta (`par`) e o minimo de seis partidas do
- * solucionador competente, entao e dura: a folga e o que deixa a regra ser um
- * desafio e nao um quebra-cabeca de solucao unica.
- *
- * Proporcional a meta, e nao fixa: com meta + 4 a validacao das fases 16 a 19
- * deu perdao ZERO - quem toca ao acaso nunca vencia, e sem a regra vencia de
- * 17% a 33%. Metade da meta na estreia, 40% ate a fase 60 e 30% depois, nunca
- * menos de tres toques.
- * @param {number} par
- * @param {number} index
- * @returns {number}
- */
-export function folgaDeToques(par, index) {
-  const fator = index < worldStart(4) ? 0.5 : index < 60 ? 0.4 : 0.3;
-  return Math.max(3, Math.round(par * fator));
-}
-
-/**
  * A regra que a agenda pede para esta fase, antes da validacao.
  *
- * - nada antes do mundo 4, nem na ultima fase de cada mundo (a da chuva de
+ * - nada antes do mundo 5, nem na ultima fase de cada mundo (a da chuva de
  *   moedas e do premio), nem em fase afrouxada;
  * - no mundo de estreia, as quatro primeiras fases levam a regra nova;
  * - do mundo 8 em diante, tres das quatro primeiras levam uma regra, em
  *   rodizio, e a fase livre muda de posicao a cada mundo;
- * - o dourado nunca vai em pedestal que balanca: o alvo se mexeria.
+ * - o dourado nunca vai em pedestal que balanca: o alvo se mexeria, e no lugar
+ *   dele vai o cadeado.
  *
  * O mundo vem de worldOf/indexInWorld, nunca de /5.
  * @param {number} index base 0, da campanha (0 a 99)
@@ -81,7 +68,7 @@ export function folgaDeToques(par, index) {
  * @returns {string|null}
  */
 export function regraDaFase(index, config) {
-  if (index < ESTREIA.toques) return null;
+  if (index < ESTREIA.joia) return null;
   if (config && config.softened) return null;
   const w = worldOf(index);
   const pos = indexInWorld(index);
@@ -93,7 +80,7 @@ export function regraDaFase(index, config) {
     if (pos === (w * 3) % 4) return null;
     id = REGRA_IDS[(w + pos) % REGRA_IDS.length];
   }
-  if (id === 'dourado' && config && config.oscillate) id = 'toques';
+  if (id === 'dourado' && config && config.oscillate) id = 'cadeado';
   return id;
 }
 
@@ -137,20 +124,13 @@ export function assinaturaDaPeca(p) {
  * @param {string} id
  * @param {import('../physics/world.js').LevelLayout} layout
  * @param {number} seed seed da variante
- * @param {number} par meta da variante
  * @param {number} index
  * @returns {*[]}
  */
-export function candidatosDaRegra(id, layout, seed, par, index) {
+export function candidatosDaRegra(id, layout, seed, index) {
   const rng = new Rng(hashSeed(`regra|v1|${index}|${seed}|${id}`));
   const ped = layout.pedestal;
   const hexX = layout.hexagon.x;
-
-  if (id === 'toques') {
-    if (!(par > 0)) return [];
-    const folga = folgaDeToques(par, index);
-    return [{ limite: par + folga }, { limite: par + folga + 3 }];
-  }
 
   if (id === 'dourado') {
     if (ped.oscillate) return [];
@@ -249,7 +229,6 @@ export function regraDaVariante(index, vi, seed, layout) {
     );
     return ok ? { tipo: 'cadeado', pecas: v.pecas.slice() } : null;
   }
-  if (rec.r === 'toques') return { tipo: 'toques', limite: v.limite };
   if (rec.r === 'dourado') return { tipo: 'dourado', meia: v.meia };
   return null;
 }

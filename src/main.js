@@ -46,7 +46,6 @@ const HAZARD_TEXT = {
 
 /** Nome e dica das regras de fase (game/regras.js), e o motivo da derrota. */
 const REGRA_TEXT = {
-  toques: ['regraToques', 'dicaToques', 'motivoToques'],
   joia: ['regraJoia', 'dicaJoia', 'motivoJoia'],
   cadeado: ['regraCadeado', 'dicaCadeado', ''],
   dourado: ['regraDourado', 'dicaDourado', 'motivoDourado'],
@@ -553,7 +552,7 @@ class Game {
     });
     this.scene.input.onKey((code) => this.onKey(code));
     this.scene.onTapAfterEnd = () => this.skipWait();
-    // Toque recusado pela regra (joia, cadeado, sem toques): o chip da regra
+    // Toque recusado pela regra (joia, cadeado): o chip da regra
     // sacode, que e onde o jogador le por que.
     this.scene.onDenied = () => {
       const chip = $('gameRegra');
@@ -568,16 +567,7 @@ class Game {
     };
     // A transicao de fim de fase anda no passo fixo da cena: o laco para no
     // intervalo comercial, e ela para junto, como no stringcut.
-    this.scene.onUpdate = (dt) => {
-      this.passoTransicao(dt);
-      // O contador do chip anda com o mundo (a volta de jogada devolve o
-      // toque); so escreve no DOM quando muda.
-      const s = this.scene.session;
-      if (s && s.regra && s.regra.tipo === 'toques' && s.world.toquesUsados !== this._toquesNoChip) {
-        this._toquesNoChip = s.world.toquesUsados;
-        this.atualizaRegra();
-      }
-    };
+    this.scene.onUpdate = (dt) => this.passoTransicao(dt);
     this.scene.onOverlay = (ctx) => this.desenhaTransicao(ctx);
     this.scene.zoomFx = () => this.zoomTransicao();
     // O reenquadramento da home vem depois do refit da cena, senao mede o
@@ -1411,8 +1401,8 @@ class Game {
   }
 
   /**
-   * O chip da regra no HUD: icone e, nos toques contados, quantos sobram.
-   * So exibicao - fica fora da excecao de `.screen.pass`.
+   * O chip da regra no HUD: o icone dela. So exibicao - fica fora da excecao
+   * de `.screen.pass`.
    */
   atualizaRegra() {
     const chip = $('gameRegra');
@@ -1425,13 +1415,8 @@ class Game {
     if (chip.dataset.chave !== chave) {
       chip.dataset.chave = chave;
       chip.dataset.regra = regra.tipo;
-      chip.replaceChildren(regraIcon(regra.tipo, 22, tinta, 'regra-ico'), document.createElement('b'));
+      chip.replaceChildren(regraIcon(regra.tipo, 22, tinta, 'regra-ico'));
     }
-    this._toquesNoChip = session.world.toquesUsados;
-    const num = /** @type {HTMLElement} */ (chip.lastElementChild);
-    const resta = session.world.toquesRestantes();
-    num.textContent = Number.isFinite(resta) ? String(resta) : '';
-    chip.classList.toggle('ultimo', resta <= 1);
     chip.title = t(REGRA_TEXT[regra.tipo][0]);
   }
 
@@ -1615,11 +1600,7 @@ class Game {
       // Perdeu pela regra, e nao pela queda: aba Other, fora de `level/N`.
       if (session.motivo) plataforma.measure('regra', session.motivo, 'perdeu');
       window.clearTimeout(this.loseTimer);
-      // Sem toques a fase sempre recomeca do zero, sem cartao: o "voltar uma
-      // jogada" do cartao devolveria um toque so, e a fase inteira e a unica
-      // saida de verdade.
-      const semToques = session.motivo === 'toques';
-      if (this.flowLevels && (this.lossStreak <= RETRIES_SEM_CARTAO || semToques)) {
+      if (this.flowLevels && this.lossStreak <= RETRIES_SEM_CARTAO) {
         this.flowRetry();
         return;
       }
@@ -2802,12 +2783,7 @@ class Game {
     $('pauseWhere').textContent = `${themeLabel(this.origem.tema)} \u00b7 ${t('level')} ${this.level}`;
     this.setStars('pauseStars', session ? session.stars : 0);
     const par = session && session.par ? ` \u00b7 ${t('par')} ${session.par}` : '';
-    // Com toques contados, quanto sobra: e o numero que importa ali. Os toques
-    // da fase continuam contando o que a volta de jogada desfez; o que sobra e
-    // o do mundo, que a volta devolve.
-    const resta = session ? session.world.toquesRestantes() : Infinity;
-    const sobra = Number.isFinite(resta) ? ` \u00b7 ${t('tapsLeft')} ${resta}` : '';
-    $('pauseTaps').textContent = session ? `${t('taps')} ${session.taps}${par}${sobra}` : '';
+    $('pauseTaps').textContent = session ? `${t('taps')} ${session.taps}${par}` : '';
     $('pauseTaps').classList.toggle('perfeita', this.progress.perfeitaEm(this.level));
     const toggle = (/** @type {string} */ id, /** @type {boolean} */ on) => {
       const el = document.getElementById(id);

@@ -310,7 +310,6 @@ export class Session {
     // partida (gameplayStart), nem contar, nem mover o ponto de volta.
     if (piece.joia) return { piece, ok: false, reason: 'joia' };
     if (piece.presa) return { piece, ok: false, reason: 'presa' };
-    if (this.world.toquesRestantes() <= 0) return { piece, ok: false, reason: 'limite' };
 
     if (this.state === 'ready') {
       this.state = 'playing';
@@ -387,11 +386,7 @@ export class Session {
     // Copiado antes da volta: rewind() restaura o mundo, e o motivo iria junto.
     this.motivo = verdict === 'lost' ? this.world.motivo : null;
     const perdeu = verdict === 'lost' || (verdict === 'stuck' && this.world.starsCrossed === 0);
-    // Sem toques nao ha volta: ela devolveria um toque so, e o jogador ficava
-    // num laco de perder de novo ate o recomeco trocar o layout. A fase
-    // recomeca do zero (main.js, onLevelEnd).
-    const volta = this.motivo !== 'toques';
-    if (perdeu && volta && this.rewindOnLoss && this.rewinds < this.rewindLimit && this.rewind()) {
+    if (perdeu && this.rewindOnLoss && this.rewinds < this.rewindLimit && this.rewind()) {
       if (this.onRewind) this.onRewind();
       return;
     }
@@ -416,8 +411,6 @@ export class Session {
    */
   _updateAutoHint(dt) {
     if (this.autoHintAfter <= 0 || this.hintPiece) return;
-    // Sem toque sobrando nao ha o que indicar: a fase so espera o veredito.
-    if (this.world.toquesRestantes() <= 0) return;
     this.idle += dt;
     if (this.idle < this.autoHintAfter) return;
     if (this.idle < this.autoHintAfter + 3 && !this.world.everythingAtRest()) return;

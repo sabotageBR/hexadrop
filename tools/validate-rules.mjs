@@ -16,7 +16,7 @@
  *
  * Uso:
  *   node tools/validate-rules.mjs                 todas as fases com regra
- *   node tools/validate-rules.mjs --levels 16-20  so um trecho (o resto e preservado)
+ *   node tools/validate-rules.mjs --levels 21-25  so um trecho (o resto e preservado)
  *   node tools/validate-rules.mjs --workers 12
  *   node tools/validate-rules.mjs --retomar       continua de onde parou
  *   node tools/validate-rules.mjs --conferir      so confere regras.gen.js contra levels.gen.js (sem simular)
@@ -70,20 +70,20 @@ function vitoriasBase(layout, seed) {
  */
 function validaVariante(t) {
   const rec = LEVELS[t.index];
-  const [seed, par] = rec.v[t.vi];
+  const [seed] = rec.v[t.vi];
   const config = levelConfig(t.index, rec.s);
   const layout = generateLayout(config, seed);
   const inicio = Date.now();
   const base = t.base ?? vitoriasBase(layout, seed);
   const piso = Math.max(2, base - 2);
-  const cands = candidatosDaRegra(t.id, layout, seed, par, t.index);
+  const cands = candidatosDaRegra(t.id, layout, seed, t.index);
   for (let c = 0; c < cands.length; c++) {
     const param = cands[c];
     const regra = { tipo: t.id, ...param };
     delete regra.a;
     const rep = evaluateVariant(comRegra(layout, regra), seed, { smartRuns: SMART_RUNS, naiveRuns: 0, minSmartWins: 2 });
     if (!rep.accepted || rep.smartWins < piso) continue;
-    // O perdao so importa onde ele e a regua (fases 16 a 25): e so relatorio.
+    // O perdao so importa onde ele e a regua (fases 21 a 25): e so relatorio.
     let perdao = null;
     if (t.index < worldStart(5)) {
       let ganhos = 0;

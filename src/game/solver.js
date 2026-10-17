@@ -495,15 +495,7 @@ export function rollout(layout, opts) {
     world.destroyPiece(piece, 'tap');
     taps++;
     steps += settle(world);
-    let after = world.evaluate();
-    // Com o limite de toques esgotado nao ha mais jogada: deixa a torre
-    // terminar de cair ate o veredito, em vez de tocar de novo. A regra
-    // garante um veredito em ate sete segundos (world._evaluateComRegra).
-    for (let k = 0; after === 'playing' && world.toquesRestantes() <= 0 && k < 600; k++) {
-      world.step(STEP);
-      steps++;
-      after = world.evaluate();
-    }
+    const after = world.evaluate();
     if (after !== 'playing') {
       outcome = after;
       break;

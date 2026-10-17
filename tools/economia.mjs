@@ -80,11 +80,6 @@ function joga(layout, upgrades, perfil, rng) {
     world.destroyPiece(peca, 'tap');
     taps++;
     settle(world);
-    // Com o limite de toques da regra esgotado, assenta ate o veredito em vez
-    // de tocar de novo (o mundo recusaria o toque).
-    for (let k = 0; k < 600 && world.toquesRestantes() <= 0 && world.evaluate() === 'playing'; k++) {
-      world.step(1 / 60);
-    }
     if (n >= 2) {
       comboScore += n * n;
       comboPieces += n;
