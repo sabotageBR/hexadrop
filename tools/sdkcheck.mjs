@@ -443,42 +443,36 @@ await sleep(1500);
 await ganharEsperando(105);
 const dourada105 = await js('window.__game.progress.data.skin');
 
-// Regras de fase (game/regras.js). A 16 estreia os toques contados: o chip
-// mostra quantos sobram e o cartao de estreia apresenta a regra.
-await js('window.__game.startLevel(16)');
-await sleep(1600);
-const regra16 = await js(`(() => { const s = window.__game.scene.session; const b = document.querySelector('#gameRegra b');
-  return { tipo: s.regra && s.regra.tipo, chip: !document.getElementById('gameRegra').hidden, num: b ? b.textContent : '',
-    resta: s.world.toquesRestantes(), tut: document.getElementById('tut').textContent }; })()`);
-// Sem toque nenhum ainda, esgotar o limite e esperar: a derrota pela regra e
-// `fail` (nunca 'stuck'), sai `regra/toques/perdeu` e o selo diz por que.
-// Um toque de verdade antes: e ele que cria o ponto de volta (e o
-// gameplayStart). Com a sequencia de derrotas ja no limite do cartao, a falta
-// de toques tem que recomecar a fase do zero assim mesmo: sem voltar jogada (a
-// volta devolveria um toque so) e sem abrir o cartao.
-await tocar();
-await sleep(1500);
-const corteToques = await js('window.__sdkLog.length');
-await js(`(() => { const g = window.__game; g.lossStreak = 5; const w = g.scene.session.world;
-  w.toquesUsados = w.regra.limite; w.ultimoToque = w.time - 8; })()`);
-let perdaRegra = null;
-for (let t = 0; t < 20 && !(perdaRegra && perdaRegra.estado === 'lost'); t++) {
-  await sleep(150);
-  perdaRegra = await js(`({ motivo: window.__game.scene.session.motivo, estado: window.__game.scene.session.state,
-    voltas: window.__game.scene.session.rewinds, ponto: !!window.__game.scene.session.checkpoint,
-    selo: document.getElementById('flowCoins').textContent })`);
-}
-await sleep(2600);
-const aposSemToques = await js(`({ screen: window.__game.screen, level: window.__game.level,
-  toques: window.__game.scene.session.world.toquesRestantes(), limite: window.__game.scene.session.regra && window.__game.scene.session.regra.limite,
-  log: window.__sdkLog.slice(${corteToques}).filter((e) => e.name === 'measure').map((e) => e.extra) })`);
-// A 21 estreia a joia: tocar nela e recusado e nao comeca a partida.
+// Regras de fase (game/regras.js). A 21 estreia a joia: o chip mostra o icone,
+// o cartao de estreia apresenta a regra, e tocar na joia e recusado sem
+// comecar a partida.
 await js('window.__game.startLevel(21)');
 await sleep(1600);
+const regra21 = await js(`(() => { const s = window.__game.scene.session;
+  return { tipo: s.regra && s.regra.tipo, chip: !document.getElementById('gameRegra').hidden,
+    tut: document.getElementById('tut').textContent }; })()`);
 const joia21 = await js(`(() => { const s = window.__game.scene.session; const j = s.world.pieces.find((p) => p.joia);
   if (!j) return { tipo: s.regra && s.regra.tipo };
   const pos = j.body.getPosition(); const r = s.tap(pos.x, pos.y);
   return { tipo: s.regra && s.regra.tipo, ok: !!(r && r.ok), reason: r && r.reason, estado: s.state }; })()`);
+// A derrota pela regra e `fail` (nunca 'stuck'), sai `regra/joia/perdeu` e o
+// selo diz por que. Um toque de verdade antes: e ele que cria o ponto de volta
+// e o gameplayStart. Com as voltas da estreia ja gastas, a joia destruida perde
+// a tentativa, e a fase recomeca sozinha, sem cartao.
+await tocar();
+await sleep(1500);
+const corteRegra = await js('window.__sdkLog.length');
+await js(`(() => { const s = window.__game.scene.session; s.rewinds = s.rewindLimit;
+  const j = s.world.pieces.find((p) => p.joia); if (j && j.alive) s.world.destroyPiece(j, 'explosion'); })()`);
+let perdaRegra = null;
+for (let t = 0; t < 20 && !(perdaRegra && perdaRegra.estado === 'lost'); t++) {
+  await sleep(150);
+  perdaRegra = await js(`({ motivo: window.__game.scene.session.motivo, estado: window.__game.scene.session.state,
+    selo: document.getElementById('flowCoins').textContent })`);
+}
+await sleep(2600);
+const aposRegra = await js(`({ screen: window.__game.screen, level: window.__game.level,
+  log: window.__sdkLog.slice(${corteRegra}).filter((e) => e.name === 'measure').map((e) => e.extra) })`);
 await js('window.__game.quitLevel()');
 await sleep(900);
 
@@ -591,10 +585,10 @@ check(
   const r = rampa;
   const ok = (n, volta, limite) => !!r[n] && r[n].volta === volta && r[n].limite === limite;
   check(
-    'rampa de derrota: 10 sem limite e sem a mao, 11 e 15 com duas voltas, 20 com uma, 25 sem volta; estreia de regra (16, 19, 21) com duas',
+    'rampa de derrota: 10 sem limite e sem a mao, 11 e 15 com duas voltas, 16 a 20 com uma, 25 sem volta; estreia da joia (21) com duas',
     ok(10, true, 'Infinity') && r[10].mao === false && ok(11, true, '2') && ok(15, true, '2') &&
-      ok(20, true, '1') && !!r[25] && r[25].volta === false &&
-      ok(16, true, '2') && ok(19, true, '2') && ok(21, true, '2'),
+      ok(16, true, '1') && ok(19, true, '1') && ok(20, true, '1') && !!r[25] && r[25].volta === false &&
+      ok(21, true, '2'),
     JSON.stringify(r),
   );
 }
@@ -726,23 +720,21 @@ check(
 );
 check('o fim do mundo 21 (fase 105) da a dourada, equipada', dourada105 === 'smiley-ouro', String(dourada105));
 check(
-  'fase 16: toques contados, com chip e cartao de estreia',
-  !!regra16 && regra16.tipo === 'toques' && regra16.chip && String(regra16.num) === String(regra16.resta) && regra16.tut.length > 0,
-  JSON.stringify(regra16),
+  'fase 21: joia, com chip e cartao de estreia',
+  !!regra21 && regra21.tipo === 'joia' && regra21.chip && regra21.tut.length > 0,
+  JSON.stringify(regra21),
 );
 check(
-  'sem toques: derrota pela regra, com motivo no selo e regra/toques/perdeu',
-  !!perdaRegra && perdaRegra.estado === 'lost' && perdaRegra.motivo === 'toques' && perdaRegra.selo.length > 0 &&
-    measures.includes('regra/toques/perdeu') && measures.includes('regra/toques/visible'),
+  'joia destruida: derrota pela regra, com motivo no selo e regra/joia/perdeu',
+  !!perdaRegra && perdaRegra.estado === 'lost' && perdaRegra.motivo === 'joia' && perdaRegra.selo.length > 0 &&
+    measures.includes('regra/joia/perdeu') && measures.includes('regra/joia/visible'),
   JSON.stringify(perdaRegra),
 );
 check(
-  'sem toques nao volta jogada e recomeca a fase do zero, sem cartao (mesmo na 6a derrota)',
-  !!perdaRegra && perdaRegra.ponto === true && perdaRegra.voltas === 0 &&
-    !!aposSemToques && aposSemToques.screen === 'game' && aposSemToques.level === 16 &&
-    aposSemToques.toques === aposSemToques.limite &&
-    !aposSemToques.log.includes('level/16/rewind') && aposSemToques.log.includes('level/16/fail') && aposSemToques.log.includes('level/16/start'),
-  JSON.stringify({ perdaRegra, aposSemToques }),
+  'a derrota pela regra recomeca a fase sozinha, sem cartao',
+  !!aposRegra && aposRegra.screen === 'game' && aposRegra.level === 21 &&
+    aposRegra.log.includes('level/21/fail') && aposRegra.log.includes('level/21/start'),
+  JSON.stringify(aposRegra),
 );
 check(
   'fase 21: tocar na joia e recusado e nao comeca a partida',

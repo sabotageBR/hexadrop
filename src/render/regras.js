@@ -185,29 +185,6 @@ export function paintRegraIcon(ctx, id, lado, tinta) {
     ctx.lineTo(18 * u, 16 * u);
     ctx.lineTo(23 * u, 11 * u);
     ctx.stroke();
-  } else {
-    // Toques contados: um dedo tocando e tres tracos de contagem.
-    const u = lado / 36;
-    ctx.strokeStyle = tinta;
-    ctx.fillStyle = tinta;
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 3 * u;
-    ctx.beginPath();
-    ctx.arc(13 * u, 12 * u, 6 * u, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(13 * u, 12 * u, 2.2 * u, 0, Math.PI * 2);
-    ctx.fill();
-    for (const x of [22, 27, 32]) {
-      ctx.beginPath();
-      ctx.moveTo(x * u, 21 * u);
-      ctx.lineTo(x * u, 32 * u);
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(20 * u, 30 * u);
-    ctx.lineTo(34 * u, 23 * u);
-    ctx.stroke();
   }
   ctx.restore();
 }

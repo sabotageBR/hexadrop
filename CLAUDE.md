@@ -264,6 +264,28 @@ funis da Poki guiaram as trocas:
   análise completa está na nota do Hexa Drop no vault do Obsidian
   (`POKI/40 Projetos/Hexa Drop.md`). Daí a 1.0.16: as regras de fase, a jogada perfeita,
   o primeiro clique do desktop e as edições de ouro (ver "Regras de fase").
+- **1.0.18, um Player Fit Test com todas as categorias** (17/10; a 1.0.16 e a 1.0.17 não
+  foram testadas), como o da 1.0.7 e ao contrário dos da 1.0.9 à 1.0.15: **3:17**, aparada
+  de **188 s**, 5,0% acima de 10 min. A 1.0.7, com o mesmo público, tinha feito 192 s e
+  6,0%. **Onze versões e a curva de sobrevivência é a mesma até 7 min** (1 min: 74% e 75%;
+  3 min: 36% e 37%; 5 min: 20% e 19%), com saída plana de 0,25 a 0,31 por minuto. A
+  "melhora" da 1.0.9 à 1.0.15 era o filtro de categoria. O que a 1.0.16 trouxe:
+  - **o limite de toques fez da fase 16 um muro**: dos 66 que concluíram a 15, 31
+    concluíram a 16 (53% de perda, 65% no celular, contra 10% na mesma fase da 1.0.15), e
+    49 das 68 partidas que viram o limite perderam por ele. Ali chegavam juntos o limite, o
+    pedestal que balança (0,446), o fim da dica automática e uma derrota sem cartão. A
+    cauda pagou: 10 min em 5,0% contra 6,0%, 15 min em 1,4% contra 2,2%;
+  - o primeiro clique funcionou: a fase 1 do desktop conclui 77%, contra 62% na 1.0.7. Dos
+    205 carregamentos de desktop, 51 nunca mexeram o mouse sobre a cena, e quem nunca
+    clica são praticamente esses;
+  - fora a 16, a perda é de ~13% por fase das 2 às 15 com este público; nas fases sem
+    derrota, de 26% a 46% das partidas derrubaram o hexágono ao menos uma vez (`rewind`),
+    e a dica automática acendeu em 92% delas.
+
+  Daí a 1.0.19: sem a regra de toques. Ela é o controle de duas apostas no próprio laço,
+  testadas como versões irmãs com o mesmo público: **peso no toque** (pausa de impacto,
+  tremor, estilhaço, moeda saindo da peça, combo desde a fase 1) e **estrelas que se pegam**
+  (as três estrelas viram objetos na trajetória do hexágono, vitória com 0 a 3).
 
 **Como ler o painel.** A perda de uma fase é **1 − Completed**, e não *Left*: *Left* só
 conta quem sai com a fase começada e nada depois, e quem sai depois de uma volta de
@@ -277,6 +299,8 @@ público (categorias e aparelhos): o filtro de categoria sozinho muda o começo 
 Para pedir outra revisão, a barra é média aparada de **~300 s** e **11%** das partidas
 passando de 10 min, em dois Player Fit Tests com o público da 1.0.9. A conta vem do fator
 de 1,68 entre a aparada do Player Fit Test e o Web Fit Test da 1.0.15: 507 s ÷ 1,68 ≈ 300.
+Com **todas as categorias** (o público da 1.0.7 e da 1.0.18) o fator foi de 1,84 (192 s no
+Player Fit Test, 354 s no Web Fit Test), e a barra fica em **~275 s** e ~10% acima de 10 min.
 
 **A mistura de aparelhos muda de um teste para outro** (28% de desktop na 1.0.10, 43%
 na 1.0.11), e o desktop perde mais: a média de dois testes só se compara com a mesma
@@ -402,8 +426,9 @@ Duas regras que nasceram de medição:
 
 **Peças e mecânicas estreiam até a fase 11** — `MATERIAL_DEBUT` (`physics/materials.js`)
 para as peças e `HAZARD_DEBUT` (`levelgen.js`) para as mecânicas que não são material.
-Desde a 1.0.16 as **regras de fase** continuam a fila, uma por mundo: toques contados na
-16, joia na 21, cadeado na 26 e dourado na 31 (ver "Regras de fase"):
+Desde a 1.0.16 as **regras de fase** continuam a fila, uma por mundo: joia na 21, cadeado
+na 26 e dourado na 31 (ver "Regras de fase"; o limite de toques, que estreava na 16, saiu na
+1.0.19):
 
 | fase | estreia |
 |---|---|
@@ -996,10 +1021,11 @@ melhoria na mesma revelação), confere que só a 100 para o fluxo, e segue do c
 100 para a 101 e a 102. A vitória forçada grava as estrelas em
 `world.starsCrossed` — `Session.stars` é só um getter — e dispara o `onFirstTap`, senão
 a partida nunca teria `gameplayStart`. Da 1.0.16 ele confere também: o cartão "Clique"
-de pé na fase 1 e o par `entrada/mouse`; a rampa com duas voltas nas estreias de regra (16,
-19 e 21) e nenhuma na 25; a dourada equipada no fim do mundo 21 (fase 105); na 16, o chip
-com os toques que sobram, o cartão de estreia e a derrota pela regra (`fail`, motivo no
-selo, `regra/toques/perdeu`); na 21, o toque na joia recusado sem começar a partida.
+de pé na fase 1 e o par `entrada/mouse`; a rampa com uma volta no mundo 4 (16 a 20), duas
+na estreia da joia (21) e nenhuma na 25; a dourada equipada no fim do mundo 21 (fase 105);
+na 21, o chip e o cartão de estreia, o toque na joia recusado sem começar a partida e a
+derrota pela regra (`fail`, motivo no selo, `regra/joia/perdeu`), que recomeça a fase
+sozinha.
 
 ### Além da fase 100
 
@@ -1333,16 +1359,23 @@ página de engajamento da Poki separa os dois casos: travar é dificuldade, ir e
 poucos pede *"a reward or a new challenge"*. Recompensa já tinha sido medida (prêmio,
 barra, chuva, skins); desafio novo não existia depois da fase 11.
 
+**O limite de toques saiu na 1.0.19.** Ele estreava na 16 (limite = `par` + 50%), e no
+Player Fit Test da 1.0.18 a fase 16 perdeu 53% de quem chegou nela, 65% no celular (ver o
+funil acima). Quem toca sem planejar nunca vence com limite nenhum — a validação já tinha
+medido perdão zero nas fases 16 a 19 —, e esse é o jogador do funil. O mundo 4 ficou sem
+regra e o rodízio do mundo 8 em diante passou a três. Como meta sem derrota, contar toques
+já existe: é a jogada perfeita (toques ≤ `par`).
+
 | regra | estreia | o que é |
 |---|---|---|
-| `toques` | 16 | limite = meta (`par`) da variante + folga de 50% na estreia, 40% até a 60 e 30% depois, nunca menos de 3 |
 | `joia` | 21 | uma peça da torre vira joia: não se toca, e destruída ou abaixo de y = −1 perde a fase |
 | `cadeado` | 26 | duas a quatro peças presas: não se tocam (continuam dinâmicas e estouram por explosão) |
 | `dourado` | 31 | o hexágono tem que repousar na faixa dourada do pedestal; nunca com pedestal que balança |
 
-**A agenda** (`regraDaFase`): nada até a 15, na última fase de cada mundo nem em fase
+**A agenda** (`regraDaFase`): nada até a 20, na última fase de cada mundo nem em fase
 afrouxada; no mundo de estreia as quatro primeiras levam a regra; do mundo 8 em diante três
-das quatro primeiras, em rodízio, com a fase livre mudando de lugar a cada mundo. Depois
+das quatro primeiras, em rodízio de três regras, com a fase livre mudando de lugar a cada
+mundo; o dourado que cairia em pedestal que balança vira cadeado. Depois
 da 100 a regra vem da fase de origem (51 a 100). O cartão de estreia sai na primeira fase
 em que a regra aparece de fato (`PRIMEIRA_FASE`), nunca com `origem.alem`.
 
@@ -1356,25 +1389,12 @@ o rollout sem regra não mudou. Invariantes:
 
 - **A regra só transforma `playing` em `lost`, nunca em `stuck`**: `stuck` com estrela é
   vitória em `onLevelEnd`. A ordem do `evaluate` com regra é queda, joia, vitória (no
-  dourado, dentro da faixa), acabaram as tocáveis, encalhe e, por último, o limite de
-  toques — encalhar dentro do limite não é perder.
-- **O limite espera 0,1 s depois do último toque** (no passo seguinte à remoção o que vai
-  cair anda a 1/6 m/s, abaixo do repouso) e nunca vale com o hexágono no pedestal. Sobre o
-  pedestal que balança a torre nunca assenta: 4 s com `_restAboveHex`, ou 7 s sempre, que
-  cabem nos 420 passos do `MAX_SETTLE`.
-- **Os toques da regra são do mundo** (`toquesUsados`, `ultimoToque`, no `snapshot`): a
-  dica simula sem gastar toque e a volta de jogada devolve o toque. `Session.taps` continua
-  contando o que a volta desfez — é ele que decide a jogada perfeita. `destroyPiece(..., 'tap')`
-  recusa peça não tocável e toque além do limite, e o `rollout` e o `economia.mjs` assentam
-  até o veredito quando o limite acaba.
+  dourado, dentro da faixa), acabaram as tocáveis e, por último, o encalhe.
+- `destroyPiece(..., 'tap')` recusa peça não tocável (joia e presa) para todo mundo que toca
+  direto no mundo: o solucionador, a economia e a automação.
 - **O motivo da derrota** (`world.motivo`) é copiado para `session.motivo` antes do rewind,
-  e o `restore` o limpa (senão vazava dos ramos que o solucionador simula).
-- **Sem toques não há volta de jogada nem cartão.** A volta devolveria um toque só, e o
-  jogador ficava num laço de perder de novo até o recomeço trocar o layout. Na derrota
-  por falta de toques a `Session` não volta jogada (mesmo com voltas sobrando), e
-  `onLevelEnd` recomeça a fase do zero pelo selo, em qualquer número de derrotas
-  seguidas — o cartão, com o "voltar uma jogada", nunca abre por ela. Joia e dourado
-  continuam voltando jogada: ali a jogada anterior ainda é uma saída.
+  e o `restore` o limpa (senão vazava dos ramos que o solucionador simula). Joia e dourado
+  voltam jogada como uma queda: ali a jogada anterior ainda é uma saída.
 - **`_travado`**: peça presa ou joia parada sobre o estático conta como apoio imóvel, senão
   o hexágono em cima dela deixaria a fase em `playing` para sempre.
 - **A rajada da vitória poupa a joia**: fora da fila, e com `world.celebrando` a explosão
@@ -1390,16 +1410,14 @@ o rollout sem regra não mudou. Invariantes:
 competentes sem regra e tenta os candidatos (`candidatosDaRegra`, de um Rng próprio) com
 `evaluateVariant(..., {naiveRuns: 0})`; aceita o primeiro com `smartWins ≥ max(2, base − 2)` e
 robustez. Fase com menos de duas variantes aprovadas tenta a regra seguinte do rodízio, e
-sem nenhuma fica sem regra. Na 1.0.16: 54 fases com regra, 38 das 65 do mundo 8 em diante.
-Medido: com folga fixa (meta + 4) os toques zeravam o perdão das fases 16 a 19 — quem toca
-ao acaso nunca vence com limite nenhum, e esse é o desafio da regra; o competente perde
-pouco (3,3 → 2,8 vitórias em 6). Na estreia da joia as candidatas vão da mais baixa para a
-mais alta, e o perdão ficou igual ao da fase sem regra (0,13 → 0,13 na 22).
+sem nenhuma fica sem regra. Na 1.0.16 eram 54 fases com regra, 38 das 65 do mundo 8 em
+diante. Na estreia da joia as candidatas vão da mais baixa para a mais alta, e o perdão
+ficou igual ao da fase sem regra (0,13 → 0,13 na 22).
 
 **Desenho** (`render/regras.js`): a gema e o cadeado por cima da peça, na célula do meio
 (o sprite é cacheado e não pode mudar); a faixa dourada desce pela face do pedestal, porque
-o topo fica escondido atrás da torre; o chip `#gameRegra` (só exibição) mostra o ícone e os
-toques que sobram, sacode no toque recusado e pisca no último. Sem halo borrado em nada.
+o topo fica escondido atrás da torre; o chip `#gameRegra` (só exibição) mostra o ícone e
+sacode no toque recusado. Sem halo borrado em nada.
 
 **Jogada perfeita** (toques ≤ `par`, `jogadaPerfeita` em `content.js`): toda vitória
 continua com três estrelas, e a perfeita paga `BONUS_PERFEITA` (15; até a 1.0.15 eram 6
