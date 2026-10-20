@@ -1469,15 +1469,20 @@ const STRINGS = {
   },
 };
 
-/** @returns {string} */
-function detect() {
+/**
+ * @param {string[]|null} [daPlataforma] as tags que a plataforma manda usar
+ * @returns {string}
+ */
+function detect(daPlataforma) {
   const stored = load('lang', null);
   if (stored && LANGS.includes(stored)) return stored;
   let tags = [];
   try {
-    tags = (navigator.languages && navigator.languages.length
-      ? navigator.languages
-      : [navigator.language || 'en']).map((t) => String(t).toLowerCase());
+    tags = (daPlataforma && daPlataforma.length
+      ? daPlataforma
+      : navigator.languages && navigator.languages.length
+        ? navigator.languages
+        : [navigator.language || 'en']).map((t) => String(t).toLowerCase());
   } catch {
     tags = ['en'];
   }
@@ -1504,6 +1509,21 @@ export function setLang(lang) {
   if (!LANGS.includes(lang) || lang === current) return;
   current = lang;
   save('lang', lang);
+  for (const fn of listeners) fn();
+}
+
+/**
+ * O idioma que a plataforma manda usar, no lugar do navegador: a CrazyGames
+ * pede o `locale` do `systemInfo` dela, com o ingles quando ele nao serve. A
+ * escolha feita nos ajustes continua valendo, e nada e gravado - o idioma do
+ * site pode mudar de uma visita para outra.
+ * @param {string|null|undefined} locale ex. "pt-BR"
+ */
+export function idiomaDaPlataforma(locale) {
+  if (!locale) return;
+  const lang = detect([String(locale), 'en']);
+  if (lang === current) return;
+  current = lang;
   for (const fn of listeners) fn();
 }
 

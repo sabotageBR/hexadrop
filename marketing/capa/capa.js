@@ -19,6 +19,10 @@
  *
  * Abrir com `npm run dev` em /marketing/capa/; a captura e a de sempre
  * (tools/shot.mjs a 1080x1080, que sai com o dobro, reduzido depois).
+ *
+ * A cena e desenhada num quadro de 1080x1080 ("unidades") e `pintaCapa` a
+ * leva para qualquer formato com escala e deslocamento: e assim que as capas da
+ * CrazyGames (marketing/crazygames/), em 16:9, 2:3 e 1:1, saem da mesma cena.
  */
 import { THEMES } from '../../src/render/themes.js';
 import { SpriteCache } from '../../src/render/sprites.js';
@@ -26,6 +30,7 @@ import { paintBackground } from '../../src/render/backgrounds.js';
 import { skin as getSkin } from '../../src/game/content.js';
 import { HEX_RADIUS } from '../../src/physics/world.js';
 
+/** O quadro da cena, em unidades: a capa da Poki e ele, sem escala. */
 const W = 1080;
 const DPR = 2;
 /** Tamanho de uma celula na capa: a mesma escala da estatica atual. */
@@ -83,9 +88,12 @@ function sorteio(seed) {
   };
 }
 
-/** @param {CanvasRenderingContext2D} ctx */
-function pintaPecas(ctx) {
-  for (const p of PECAS) {
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{x:number, y:number, cells:number[][], cor:number}[]} pecas
+ */
+function pintaPecas(ctx, pecas) {
+  for (const p of pecas) {
     const s = cache.piece(p.cells, 'rubber', gx(p.cor), 0);
     // O sprite tem a caixa da peca com o canto de baixo em (pad, h - pad).
     const x = X0 + p.x * CELULA;
@@ -147,14 +155,33 @@ function brilho(ctx, x, y, raio, cor, alfa) {
   ctx.restore();
 }
 
-function desenha() {
-  const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('capa'));
-  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+/**
+ * A cena inteira num contexto ja na escala do dispositivo.
+ *
+ * `w` e `h` sao o tamanho da capa; `k`, `ox` e `oy` levam o quadro de 1080
+ * unidades para dentro dela (x = ox + k * unidade). O ceu e a vinheta cobrem a
+ * capa toda; `extras` sao pecas a mais, na mesma grade, para formatos mais
+ * largos que a torre.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{w?:number, h?:number, k?:number, ox?:number, oy?:number, skinId?:string,
+ *   extras?:{x:number, y:number, cells:number[][], cor:number}[]}} [o]
+ */
+export function pintaCapa(ctx, o = {}) {
+  const w = o.w ?? W;
+  const h = o.h ?? W;
+  const k = o.k ?? 1;
+  const ox = o.ox ?? 0;
+  const oy = o.oy ?? 0;
   ctx.imageSmoothingQuality = 'high';
 
   // Ceu do mundo 1, o mesmo do jogo.
-  paintBackground(ctx, th, W, W);
+  paintBackground(ctx, th, w, h);
+
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.scale(k, k);
+  // A capa inteira, em unidades: o halo e o escurecido cobrem ela toda.
+  const area = [-ox / k, -oy / k, w / k, h / k];
 
   const hx = W / 2;
   const hy = 392;
@@ -166,7 +193,7 @@ function desenha() {
   halo.addColorStop(0.35, 'rgba(255, 150, 60, 0.18)');
   halo.addColorStop(1, 'rgba(255, 120, 60, 0)');
   ctx.fillStyle = halo;
-  ctx.fillRect(0, 0, W, W);
+  ctx.fillRect(area[0], area[1], area[2], area[3]);
 
   // Raios suaves saindo do hexagono.
   ctx.save();
@@ -185,7 +212,7 @@ function desenha() {
   }
   ctx.restore();
 
-  pintaPecas(ctx);
+  pintaPecas(ctx, o.extras ? [...o.extras, ...PECAS] : PECAS);
 
   // O clarao no vao, onde a peca acabou de estourar.
   const clarao = ctx.createRadialGradient(hx, vaoY, 0, hx, vaoY, 200);
@@ -200,7 +227,7 @@ function desenha() {
   // pedida em `?skin=` - a variante com rosto usa a `smiley`, o primeiro premio
   // de mundo, para medir se um personagem puxa mais clique.
   const raio = HEX_RADIUS * 1.15;
-  const skinId = new URLSearchParams(window.location.search).get('skin') || 'classic';
+  const skinId = o.skinId || new URLSearchParams(window.location.search).get('skin') || 'classic';
   const hex = cache.hexagon(raio, getSkin(skinId));
   ctx.save();
   ctx.translate(hx, hy);
@@ -216,14 +243,27 @@ function desenha() {
   brilho(ctx, hx + 128, hy + 96, 16, '#ffffff', 0.8);
   brilho(ctx, hx - 120, hy - 170, 14, '#ffffff', 0.7);
 
-  // Cantos escurecidos: o foco fica no centro.
-  const vinheta = ctx.createRadialGradient(W / 2, W / 2, W * 0.42, W / 2, W / 2, W * 0.78);
+  ctx.restore();
+
+  // Cantos escurecidos: o foco fica no centro. Os raios sao fracoes da
+  // diagonal - no quadrado, 0,42 e 0,78 do lado, como sempre foram.
+  const diag = Math.hypot(w, h) / Math.SQRT2;
+  const vinheta = ctx.createRadialGradient(w / 2, h / 2, diag * 0.42, w / 2, h / 2, diag * 0.78);
   vinheta.addColorStop(0, 'rgba(3, 6, 20, 0)');
   vinheta.addColorStop(1, 'rgba(3, 6, 20, 0.5)');
   ctx.fillStyle = vinheta;
-  ctx.fillRect(0, 0, W, W);
-
-  window.__capaPronta = true;
+  ctx.fillRect(0, 0, w, h);
 }
 
-desenha();
+/** As cores da marca, para quem monta `extras`: a cor sai da posicao na grade. */
+export const CORES = { ROSA, CIANO, VERDE, AMARELO, LARANJA, ROXO, ROSA2 };
+
+// A pagina da capa da Poki (marketing/capa/index.html). Importado de outra
+// pagina, o modulo so entrega o pintor.
+const canvas = /** @type {HTMLCanvasElement|null} */ (document.getElementById('capa'));
+if (canvas) {
+  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  pintaCapa(ctx);
+  window.__capaPronta = true;
+}

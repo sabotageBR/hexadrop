@@ -10,6 +10,9 @@
     "build:lisa": "VITE_PLATAFORMA=lisa vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "preview:lisa": "VITE_PLATAFORMA=lisa vite preview --host 127.0.0.1 --port 4174",
+    "build:crazy": "VITE_PLATAFORMA=crazy vite build",
+    "preview:crazy": "VITE_PLATAFORMA=crazy vite preview --host 127.0.0.1 --port 4176",
+    "verify:crazy": "DIST_DIR=dist-crazy VERIFY_URL=http://127.0.0.1:4176 node tools/verify-build.mjs",
     "levels": "node tools/generate-levels.mjs",
     "levels:quick": "node tools/generate-levels.mjs --quick",
     "regras": "node tools/validate-rules.mjs",
@@ -32,7 +35,9 @@
     "android:aab": "npm run build:app:producao && cap sync android && cd android && ./gradlew bundleRelease",
     "android:aab:teste": "npm run build:app && cap sync android && cd android && ./gradlew bundleRelease -Phexadrop.permitirAdmobTeste=true",
     "ios:sync": "npm run build:app && cap sync ios && node tools/versao-app.mjs",
-    "icones": "node tools/icone.mjs && capacitor-assets generate --android --ios --iconBackgroundColor '#1a0b2e' --iconBackgroundColorDark '#1a0b2e' --splashBackgroundColor '#1a0b2e' --splashBackgroundColorDark '#1a0b2e'"
+    "icones": "node tools/icone.mjs && capacitor-assets generate --android --ios --iconBackgroundColor '#1a0b2e' --iconBackgroundColorDark '#1a0b2e' --splashBackgroundColor '#1a0b2e' --splashBackgroundColorDark '#1a0b2e'",
+    "portais": "node tools/portais.mjs",
+    "portais:check": "node tools/portaischeck.mjs"
   },
   "dependencies": {
     "@capacitor-community/admob": "8.2.1",

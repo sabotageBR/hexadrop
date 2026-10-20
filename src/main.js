@@ -353,6 +353,12 @@ function voltasNaFase(level) {
  */
 const FASES_COM_MAO = 3;
 
+/**
+ * Nos portais, a volta da aba deixa a tela de pausa este tempo na tela antes
+ * de retomar sozinha: a pausa se ve, e o jogador se situa.
+ */
+const VOLTA_DA_ABA_MS = 800;
+
 /** Trilha sonora por tema. */
 const MUSIC = {
   puzzle: { scale: [0, 2, 4, 7, 9], root: 2, bpm: 112, type: 'triangle', bass: 'sine', pad: 'triangle', motif: [0, 2, 4, 1] },
@@ -394,6 +400,13 @@ class Game {
      * o playsweep mede uma fase por vez em vez de correr atras do avanco.
      */
     this.flowLevels = true;
+    /**
+     * Como o portal pausou o jogo (pausaDoPortal): 'tela' (a de pausa), 'laco'
+     * (congelado fora de fase) ou '' (nao pausou).
+     */
+    this.pausaPortal = '';
+    /** A aba escondida pausou a fase (pausaDaAba): ela retoma sozinha na volta. */
+    this.pausaAba = false;
     /**
      * Regras de fase (game/regras.js). A automacao que precisa da fase como o
      * gerador a validou - thumbnail, sondagens - desliga.
@@ -484,10 +497,14 @@ class Game {
     if (logo && !logo.complete) logo.addEventListener('load', () => this.fitHomeScene());
 
     plataforma.onAdStart = () => {
-      audio.muteForAd();
+      // Na Poki e no app o silencio vem junto com a pausa. A CrazyGames pede o
+      // silencio so quando o video comeca de fato (`onAdPlay`): pedido sem
+      // anuncio para mostrar nao cala o jogo.
+      if (!plataforma.silencioNoVideo) audio.muteForAd();
       this.scene.input.disable();
       this.scene.loop.pause();
     };
+    plataforma.onAdPlay = () => audio.muteForAd();
     plataforma.onAdEnd = () => {
       audio.unmuteAfterAd();
       this.scene.input.enable();
@@ -500,6 +517,12 @@ class Game {
     plataforma.onVoltar = () => this.voltar();
     plataforma.onSegundoPlano = () => this.segundoPlano();
     plataforma.onPrimeiroPlano = () => this.rearmaSom();
+    // So a CrazyGames e os portais disparam: o mudo do site vence os botoes de som do jogo.
+    plataforma.onSilencio = (mudo) => audio.setPlatformMute(mudo);
+    // So os portais disparam (src/portais/): o site pausou ou devolveu o jogo, e
+    // a aba sumiu ou voltou.
+    plataforma.onPausaPortal = (pausado) => this.pausaDoPortal(pausado);
+    plataforma.onAba = (escondida) => this.pausaDaAba(escondida);
 
     $('loaderBar').style.width = '35%';
     await plataforma.init();
@@ -535,6 +558,7 @@ class Game {
     // `measure('level', 1, 'start')`, e um evento de progresso antes do fim do
     // carregamento inverte a ordem que o sdkcheck cobra.
     plataforma.gameLoadingFinished();
+    this.informaProgresso();
     this.ligaMarcosDeTempo();
     if (entraJogando) this.startLevel(1);
     else this.show('home');
@@ -958,6 +982,7 @@ class Game {
         return;
       }
       this.progress.reset();
+      this.informaProgresso();
       this.level = 1;
       this.homeWorld = 0;
       this._confirmReset = false;
@@ -974,9 +999,13 @@ class Game {
    * e WASD andam o foco ate o botao mais proximo naquela direcao, Enter e Espaco
    * acionam o botao focado - ou, sem foco, o principal da tela - e Esc volta.
    * Antes so a pausa respondia ao teclado; o resto pedia mouse.
+   *
+   * P tambem pausa e continua: na CrazyGames o Esc sai da tela cheia, e o
+   * navegador nem entrega a tecla ao jogo.
    * @param {string} code
    */
   onKey(code) {
+    if (code === 'KeyP' && (this.screen === 'game' || this.screen === 'pause')) code = 'Escape';
     if (this.screen === 'game') {
       if (code === 'Escape' || code === 'Space') this.pauseLevel();
       return;
@@ -1793,6 +1822,7 @@ class Game {
       chuvaPieces: this.chuvaAtiva ? session.bonusTotal : 0,
     });
     this.hideChuva();
+    this.informaProgresso();
     // No fim dos mundos pares 2 a 8, `finishLevel` ja comprou o hexagono da
     // barra (`result.unlock`), na mesma gravacao do premio do mundo.
     this.lastResult = result;
@@ -2795,8 +2825,9 @@ class Game {
     toggle('pauseMusic', audio.musicOn);
   }
 
-  async resumeLevel() {
-    audio.button();
+  /** @param {boolean} [clique] o jogador tocou em continuar (a volta do portal nao toca o som) */
+  async resumeLevel(clique = true) {
+    if (clique) audio.button();
     this.paused = false;
     audio.releaseMusic();
     this.show('game');
@@ -2804,7 +2835,8 @@ class Game {
     // quando havia jogo de fato. Pausar antes do primeiro toque nao e uma
     // interrupcao de gameplay, e um anuncio ali seria injustificado.
     const wasPlaying = !!this.scene.session && this.scene.session.state === 'playing';
-    if (wasPlaying) await this.commercialBreak('retomar');
+    // So o toque em continuar abre o intervalo: a volta sozinha (portal, aba) nao.
+    if (wasPlaying && clique) await this.commercialBreak('retomar');
     if (this.scene.session) {
       this.scene.session.paused = false;
       if (wasPlaying && this.scene.session.state === 'playing') plataforma.gameplayStart();
@@ -2877,6 +2909,18 @@ class Game {
       chuvaPieces: this.chuvaAtiva ? session.bonusDone : 0,
     });
     this.hideChuva();
+    this.informaProgresso();
+  }
+
+  /**
+   * Quantas fases da campanha ja foram concluidas, para a plataforma (a
+   * CrazyGames mostra a porcentagem; as outras ignoram). Conta fase com
+   * estrela, e nao `unlocked`: fase pulada com video nao foi concluida.
+   */
+  informaProgresso() {
+    let fases = 0;
+    for (let lvl = 1; lvl <= LEVEL_COUNT; lvl++) if (this.progress.starsOf(lvl) >= 1) fases++;
+    plataforma.progresso(fases);
   }
 
   async nextLevel() {
@@ -3049,6 +3093,60 @@ class Game {
    * uma escolha do jogador. Com a fase ainda sem toque nao ha o que pausar, e
    * celebracao, transicao e derrota a caminho sao recusadas por pauseLevel.
    */
+  /**
+   * O portal (src/portais/) pausou ou devolveu o jogo fora de um anuncio: o
+   * botao de pausa do site, o menu dele por cima. Numa fase, a tela de pausa do
+   * jogo - a pausa tem que se ver: congelada sem tela nenhuma, a fase parada
+   * parecia rodando no Testing Toolkit da GamePix. Fora de fase (inicio, mapa),
+   * o laco e o toque param. Na volta o jogo segue sozinho, como os portais
+   * esperam; a pausa que ja era do jogador continua. O som e do mudo da
+   * plataforma (`onSilencio`).
+   * @param {boolean} pausado
+   */
+  pausaDoPortal(pausado) {
+    if (pausado) {
+      if (this.screen === 'game' && !this.paused) {
+        this.pauseLevel();
+        this.pausaPortal = this.paused ? 'tela' : '';
+      }
+      if (!this.pausaPortal) {
+        this.scene.input.disable();
+        this.scene.loop.pause();
+        this.pausaPortal = 'laco';
+      }
+      return;
+    }
+    const como = this.pausaPortal;
+    this.pausaPortal = '';
+    if (como === 'tela' && this.screen === 'pause') this.resumeLevel(false);
+    if (como === 'laco') {
+      this.scene.input.enable();
+      this.scene.loop.start();
+    }
+    this.rearmaSom();
+  }
+
+  /**
+   * A aba sumiu ou voltou, nos portais (src/portais/base.js). Sumiu no meio da
+   * fase: a tela de pausa. Voltou: a pausa fica um instante na tela e o jogo
+   * retoma sozinho - o "Open Tab" do Testing Toolkit da GamePix pergunta se o
+   * jogo pausou e voltou. A pausa que ja era do jogador continua.
+   * @param {boolean} escondida
+   */
+  pausaDaAba(escondida) {
+    if (escondida) {
+      if (this.paused) return;
+      this.segundoPlano();
+      this.pausaAba = this.paused;
+      return;
+    }
+    if (!this.pausaAba) return;
+    this.pausaAba = false;
+    window.setTimeout(() => {
+      if (!document.hidden && this.screen === 'pause') this.resumeLevel(false);
+    }, VOLTA_DA_ABA_MS);
+  }
+
   segundoPlano() {
     const session = this.scene.session;
     if (this.screen === 'game' && session && session.state === 'playing') this.pauseLevel();

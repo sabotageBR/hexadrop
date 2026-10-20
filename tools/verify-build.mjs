@@ -4,6 +4,11 @@
  * Roda sobre a pasta dist/ e sobre o jogo servido, e cobre os pontos que a QA
  * da Poki reprova: requisicao externa, dependencia de localStorage, travar com
  * bloqueador de anuncios, escala nas tres resolucoes obrigatorias e tamanho.
+ *
+ * Os outros builds (DIST_DIR) sao reconhecidos pelo que tem: o da CrazyGames
+ * pelo SDK v3 deles no HTML, o app pelo plugin da AdMob, e a versao lisa por
+ * nao ter script externo nenhum. Os dos portais de distribuicao pela pasta
+ * (dist-<portal>, tools/portais-sdk.mjs).
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -12,7 +17,8 @@ import { spawn } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, basename } from 'node:path';
+import { PORTAIS } from './portais-sdk.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Tres saidas de build: dist/ e a da Poki, dist-lisa/ e a versao sem
@@ -27,9 +33,30 @@ const EXIGE_PRODUCAO = process.env.EXIGE_PRODUCAO === '1';
 /** Prefixo das unidades de demonstracao da Google, que so servem anuncio de teste. */
 const ADMOB_TESTE = 'ca-app-pub-3940256099942544';
 const BASE = process.env.VERIFY_URL || 'http://127.0.0.1:5173';
-const ALLOWED_HOST = 'game-cdn.poki.com';
+const POKI_HOST = 'game-cdn.poki.com';
+const CRAZY_HOST = 'sdk.crazygames.com';
+const SDK_CRAZY = `https://${CRAZY_HOST}/crazygames-sdk-v3.js`;
 /** Dominios do proprio SDK da Poki: o jogo nao os chama, o SDK chama. */
 const POKI_HOSTS = /(^|\.)(poki\.com|poki-cdn\.com|poki\.io|poki\.dev)$/;
+/** Os da CrazyGames, pelo mesmo motivo. */
+const CRAZY_HOSTS = /(^|\.)(crazygames\.com|crazygames\.io)$/;
+// O HTML decide de quem e o build, e com ele o unico script de fora aceito.
+const NA_CRAZY = readFileSafe(join(DIST, 'index.html')).includes(SDK_CRAZY);
+/** O portal de distribuicao do build, pela pasta: dist-yandex, dist-y8... */
+const PORTAL_ID = basename(DIST).replace(/^dist-/, '');
+const PORTAL = Object.hasOwn(PORTAIS, PORTAL_ID) ? PORTAIS[PORTAL_ID] : null;
+const ALLOWED_HOSTS = PORTAL ? PORTAL.hosts : [NA_CRAZY ? CRAZY_HOST : POKI_HOST];
+const SDK_HOSTS = PORTAL ? PORTAL.dominios : NA_CRAZY ? CRAZY_HOSTS : POKI_HOSTS;
+const NOME_SDK = PORTAL ? PORTAL.nome : NA_CRAZY ? 'CrazyGames' : 'Poki';
+
+/** @param {string} f @returns {string} */
+function readFileSafe(f) {
+  try {
+    return readFileSync(f, 'utf8');
+  } catch {
+    return '';
+  }
+}
 
 let failures = 0;
 let warnings = 0;
@@ -77,6 +104,9 @@ const mb = (/** @type {number} */ n) => (n / 1024 / 1024).toFixed(2) + ' MB';
 console.log(`  ${files.length} arquivos, ${mb(total)} bruto, ${mb(totalGz)} comprimido`);
 check('download inicial <= 5 MB comprimido', totalGz <= 5 * 1024 * 1024, mb(totalGz));
 check('total <= 8 MB comprimido', totalGz <= 8 * 1024 * 1024, mb(totalGz));
+// A CrazyGames aceita ate 1.500 arquivos; a Poki nao tem limite, e o jogo tem
+// uma dezena.
+check('no maximo 1500 arquivos', files.length <= 1500, `${files.length}`);
 
 console.log('\n=== Requisicoes externas ===');
 const textExt = new Set(['.html', '.js', '.css', '.json', '.svg', '.mjs']);
@@ -92,7 +122,7 @@ for (const f of files) {
       // Namespaces de XML/SVG sao identificadores, nao enderecos que o
       // navegador chega a buscar.
       if (host === 'www.w3.org' || host === 'w3.org') continue;
-      if (host !== ALLOWED_HOST) external.push(`${relative(DIST, f)}: ${u.slice(0, 90)}`);
+      if (!ALLOWED_HOSTS.includes(host)) external.push(`${relative(DIST, f)}: ${u.slice(0, 90)}`);
     } catch {
       /* ignora */
     }
@@ -101,7 +131,7 @@ for (const f of files) {
     external.push(`${relative(DIST, f)}: referencia a CDN externa`);
   }
 }
-check('nenhuma URL externa alem do SDK da Poki', external.length === 0, external.slice(0, 4).join(' | '));
+check(`nenhuma URL externa alem do SDK da ${NOME_SDK}`, external.length === 0, external.slice(0, 4).join(' | '));
 
 const indexHtml = readFileSync(join(DIST, 'index.html'), 'utf8');
 const jsFiles = files.filter((f) => extname(f) === '.js');
@@ -109,15 +139,38 @@ const allJs = jsFiles.map((f) => readFileSync(f, 'utf8')).join('\n');
 // A versao lisa e reconhecida pelo que ela nao tem: sem o carregador da Poki no
 // HTML, a exigencia se inverte - nenhum script de fora, de dominio nenhum. O
 // app e reconhecido pelo plugin da AdMob registrado no bundle.
-const COM_PLATAFORMA = indexHtml.includes(`https://${ALLOWED_HOST}/scripts/v2/poki-sdk.js`);
-const NO_APP = !COM_PLATAFORMA && /["']AdMob["']\s*,\s*\{\s*web\s*:/.test(allJs);
-if (COM_PLATAFORMA) {
+const COM_PLATAFORMA = indexHtml.includes(`https://${POKI_HOST}/scripts/v2/poki-sdk.js`);
+const NO_APP = !COM_PLATAFORMA && !NA_CRAZY && !PORTAL && /["']AdMob["']\s*,\s*\{\s*web\s*:/.test(allJs);
+if (PORTAL) {
+  const scripts = indexHtml.match(/<script[^>]*src="(https?:)?\/[^"]*"/gi) || [];
+  const esperado = PORTAL.html.match(/src="([^"]+)"/);
+  check(`${PORTAL_ID}: SDK do portal no HTML`, esperado ? indexHtml.includes(esperado[0]) : true, esperado ? esperado[1] : 'carregado pelo JS');
+  check(`${PORTAL_ID}: nenhum outro script de fora no HTML`, scripts.length === (esperado ? 1 : 0), scripts.join(' | '));
+  check(`${PORTAL_ID}: nada da Poki no build`, !indexHtml.includes(POKI_HOST) && !allJs.includes(POKI_HOST) && !/PokiSDK/.test(allJs));
+  check(`${PORTAL_ID}: nada da CrazyGames no build`, !/crazygames|CrazyGames/.test(allJs + indexHtml));
+  check(`${PORTAL_ID}: nada do app no build`, !/isNativePlatform|["']AdMob["']|Capacitor/.test(allJs));
+  for (const [id, outro] of Object.entries(PORTAIS)) {
+    if (id === PORTAL_ID) continue;
+    const marca = outro.hosts[0] || (id === 'yandex' ? 'YaGames' : outro.nome);
+    check(`${PORTAL_ID}: nada de ${outro.nome} no build`, !allJs.includes(marca) && !indexHtml.includes(marca));
+  }
+  for (const arq of Object.keys(PORTAL.arquivos || {})) {
+    check(`${PORTAL_ID}: ${arq} na raiz`, files.some((f) => relative(DIST, f) === arq));
+  }
+} else if (COM_PLATAFORMA) {
   check('script do Poki SDK v2 presente', true);
   check('nada do app no build da Poki', !/isNativePlatform|["']AdMob["']|Capacitor/.test(allJs));
+  check('nada da CrazyGames no build da Poki', !/crazygames|CrazyGames/.test(allJs));
+} else if (NA_CRAZY) {
+  check('crazy: script do SDK v3 da CrazyGames presente', true);
+  const scripts = indexHtml.match(/<script[^>]*src="https?:[^"]*"/gi) || [];
+  check('crazy: nenhum outro script externo no HTML', scripts.length === 1, scripts.join(' | '));
+  check('crazy: nada da Poki no build', !indexHtml.includes(POKI_HOST) && !allJs.includes(POKI_HOST) && !/PokiSDK/.test(allJs));
+  check('crazy: nada do app no build', !/isNativePlatform|["']AdMob["']|Capacitor/.test(allJs));
 } else if (NO_APP) {
   check('app: nenhum script externo no HTML', !/<script[^>]*src="https?:/i.test(indexHtml));
   check('app: nenhuma URL externa no build', external.length === 0);
-  check('app: nada da Poki no build', !allJs.includes(ALLOWED_HOST) && !/PokiSDK/.test(allJs));
+  check('app: nada da Poki no build', !allJs.includes(POKI_HOST) && !/PokiSDK/.test(allJs));
   const teste = allJs.includes(ADMOB_TESTE + '/');
   const reais = (allJs.match(/ca-app-pub-\d{16}\/\d{10}/g) || []).filter((u) => !u.startsWith(ADMOB_TESTE));
   if (EXIGE_PRODUCAO) {
@@ -140,6 +193,9 @@ check('sem setDebug ligado', !/setDebug\s*\(\s*true/.test(allJs));
 check('sem console.log restante', !/console\s*\.\s*log\s*\(/.test(allJs));
 check('sem source map publicado', !files.some((f) => f.endsWith('.map')));
 check('localStorage sempre em try/catch', !/[^h]\s*localStorage\./.test(allJs) || allJs.includes('catch'));
+
+/** O que um bloqueador de anuncios barra nos portais: o script de cada SDK. */
+const BLOQUEIO_PORTAIS = Object.values(PORTAIS).flatMap((p) => p.hosts.map((h) => `*${h}*`));
 
 // ------------------------------------------------------------------ browser
 console.log('\n=== Comportamento no navegador ===');
@@ -234,7 +290,7 @@ for (const [w, h] of [[640, 360], [836, 470], [1031, 580]]) {
 }
 
 {
-  const r = await run({ w: 430, h: 880, block: ['*poki-sdk*', '*poki.com*', '*game-cdn*'] });
+  const r = await run({ w: 430, h: 880, block: ['*poki-sdk*', '*poki.com*', '*game-cdn*', '*crazygames*', ...BLOQUEIO_PORTAIS] });
   const s = r.state;
   check('com bloqueador de anuncios: o jogo carrega', s.booted === true && s.loaderGone === true);
   check('com bloqueador de anuncios: fase jogavel', s.pieces > 0, `${s.pieces} pecas`);
@@ -254,11 +310,11 @@ for (const [w, h] of [[640, 360], [836, 470], [1031, 580]]) {
   // Com o SDK bloqueado, tudo que sair da rede foi o jogo que pediu. E assim
   // que se distingue uma requisicao propria da pilha de anuncios da Poki, que
   // e permitida e nao esta sob nosso controle.
-  const r = await run({ w: 430, h: 880, block: ['*poki-sdk*'] });
+  const r = await run({ w: 430, h: 880, block: ['*poki-sdk*', '*crazygames-sdk*', ...BLOQUEIO_PORTAIS] });
   const outside = r.requests.filter((u) => {
     try {
       const h = new URL(u).host;
-      return h !== ALLOWED_HOST && !POKI_HOSTS.test(h) && !u.startsWith(BASE) &&
+      return !ALLOWED_HOSTS.includes(h) && !SDK_HOSTS.test(h) && !u.startsWith(BASE) &&
         !u.startsWith('data:') && !u.startsWith('blob:');
     } catch {
       return false;

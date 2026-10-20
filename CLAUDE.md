@@ -30,6 +30,20 @@ npm run android:aab          # build de produção + AAB assinado em android/app
 npm run android:aab:teste    # o mesmo AAB com anúncios de TESTE, para o teste interno/fechado
 npm run ios:sync             # build:app + cap sync ios + versão do package.json no Xcode
 npm run icones               # ícone e splash (marketing/icone/) para assets/, android/ e ios/
+
+npm run build:crazy          # dist-crazy/ (CrazyGames, SDK v3)
+npm run preview:crazy        # serve dist-crazy em 127.0.0.1:4176 (SDK em modo local)
+npm run verify:crazy         # conformidade da versão CrazyGames (precisa do preview:crazy no ar)
+node tools/crazygames.mjs    # capas da CrazyGames em marketing/crazygames/capas/ (--videos: e os dois vídeos)
+
+npm run portais              # os 6 portais (Y8, Playgama, Yandex, GameMonetize, GameDistribution, GamePix):
+                             # zips em dist-portais/ e o material em marketing/portais/<portal>/
+npm run portais -- --so=builds --portal=y8   # so o zip desse portal (--so=arte: so o material)
+npm run portais:check        # os 6 builds com o SDK falso de cada portal (porta 4185, depuracao 9119)
+VITE_PLATAFORMA=yandex npm run build         # um portal so, em dist-yandex/
+node tools/thumbnail.mjs --perfil y8 --largura 1920 --altura 1080 --vista 960x540 \
+  --video hexa-drop-video-continuo-1920x1080.mp4 --folha quadros-video-continuo.png --sem-marca --crf 18
+                             # o trecho continuo da Y8 (sem corte), que o npm run portais converte (~10 min)
 ```
 
 O app pede **Node 22** (`~/programas/node-v22.*`, no PATH pelo `~/.bashrc`; o
@@ -48,7 +62,7 @@ node tools/generate-levels.mjs --levels 1-20     # só um trecho; o resto do arq
 ```
 
 Verificação — **todas as ferramentas de `tools/` sobem `google-chrome --headless=new`
-em uma porta de debug fixa (9222/9333/9444/9555/9666/9777/9888/9998/9999), então rode uma por vez**,
+em uma porta de debug fixa (9111/9222/9333/9444/9555/9666/9777/9888/9998/9999), então rode uma por vez**,
 e todas precisam de um servidor já no ar:
 
 ```bash
@@ -105,7 +119,7 @@ Não há framework de teste nem linter. A verificação é essa automação sobr
 
 **Camadas, da mais pura para a mais suja.** `core/` e `physics/` e `game/` não tocam
 no DOM — é isso que permite o validador offline rodar exatamente o mesmo código do
-jogo dentro do Node. Só `main.js`, `poki.js`, `app/`, `render/` e `core/{input,loop,viewport,audio,storage,i18n}.js`
+jogo dentro do Node. Só `main.js`, `poki.js`, `app/`, `crazy/`, `render/` e `core/{input,loop,viewport,audio,storage,i18n}.js`
 usam `window`/`document`. **Ao mexer em `src/physics/` ou `src/game/`, não introduza
 nenhuma referência a `window`, `document` ou `performance`**: `tools/generate-levels.mjs`
 importa esses módulos direto e quebra.
@@ -132,8 +146,8 @@ o que `GameScene.load()` faz.
 
 **`main.js` é o único lugar que decide telas, progressão e quando falar com a plataforma.**
 Ele importa `@plataforma`, um alias de `vite.config.js` que aponta para `src/poki.js`
-(Poki e lisa) ou `src/app/nativo.js` (app), e nenhum outro módulo do jogo importa
-nenhum dos dois. Mantenha assim.
+(Poki e lisa), `src/app/nativo.js` (app) ou `src/crazy/crazy.js` (CrazyGames), e nenhum
+outro módulo do jogo importa nenhum deles. Mantenha assim.
 
 ### Mundos e o tamanho de cada um
 
@@ -1448,7 +1462,7 @@ subconjunto latin, então **só levam letras do Latin-1**: um İ ou um ş turco 
 outra fonte no meio da palavra — por isso o turco não tem "HARİKA" nem "MÜTHİŞ". O
 francês leva o espaço fino antes do "!" como ` `.
 
-### Tres versoes: Poki, lisa e app
+### Quatro versoes: Poki, lisa, app e CrazyGames
 
 O alvo do build entra por `VITE_PLATAFORMA` e vive em `src/core/platform.js` (a mesma
 lista esta em `vite.config.js`; valor desconhecido vira `poki` nos dois).
@@ -1456,7 +1470,8 @@ lista esta em `vite.config.js`; valor desconhecido vira `poki` nos dois).
 os videos recompensados. `lisa` (`npm run build:lisa`, sai em `dist-lisa/`) nao tem
 plataforma nenhuma — e a versao para hospedar em qualquer lugar. `app`
 (`npm run build:app`, sai em `dist-app/`) e o jogo empacotado pelo Capacitor para
-Android e iOS — ver "Versão app (Android/iOS)".
+Android e iOS — ver "Versão app (Android/iOS)". `crazy` (`npm run build:crazy`, sai em
+`dist-crazy/`) e a CrazyGames — ver "Versão CrazyGames".
 
 O que muda na versao lisa:
 
@@ -1641,6 +1656,115 @@ modelo de `app-ads.txt`, os dois com campos `[[...]]` a preencher):
   12 testadores por 14 dias seguidos antes da produção;
 - o `app-ads.txt` na raiz do site informado como do desenvolvedor.
 
+### Versão CrazyGames
+
+O build `crazy` troca o carregador da Poki pelo **SDK v3 da CrazyGames** no HTML
+(`semPlataforma` em `vite.config.js`), aponta `@plataforma` para `src/crazy/crazy.js` e
+entra por `src/crazy/inicio.js`, como o app: o idioma e o som são lidos do storage na
+avaliação dos módulos, então antes de `main.js` vêm, nesta ordem, o `init` do SDK (com
+prazo; sem SDK ou com o ambiente `disabled` tudo segue sem ele), o `loadingStart`, o save
+vindo do módulo Data e o idioma do site.
+
+| arquivo | papel |
+|---|---|
+| `sdk.js` | o `init` uma vez só, com prazo; pequeno de propósito, porque roda antes do jogo |
+| `save.js` | o save no módulo Data (a nuvem da conta CrazyGames) |
+| `crazy.js` | a plataforma, com a interface de `poki.js` |
+
+**O save vai para o módulo Data**, que a CrazyGames exige (*"do not depend on local
+saves"*). O jogo continua no `core/storage.js`; `save.js` hidrata o localStorage com o
+Data e liga o espelho, como o `src/app/save.js` faz com o Preferences. O Data não lista
+as próprias chaves, por isso `CHAVES` (`save`, `sfxOn`, `musicOn`, `lang`, `quality`):
+**chave nova no storage entra nessa lista**. Quem vence é o Data, menos quando o save
+local é do **mesmo dono** e tem `rev` maior — o Data grava com atraso de 1 a 30 s. O dono
+(`crazyDono`, só no localStorage) é o id da conta ou `visitante`: sem ele, entrar numa
+conta com progresso de outro aparelho deixaria o save do visitante por cima. Saindo da
+conta, o save local que o Data não tem é apagado. **No envio, a opção Progress Save tem
+que estar ligada**, senão o módulo responde `dataModuleDisabled` e o jogo fica só no
+localStorage.
+
+**Anúncios.** A frequência é do SDK (um midgame a cada 3 min, contando o recompensado),
+sem cooldown nosso; a carência de `FASES_SEM_INTERVALO` continua em `main.js`. O
+`crazy.js` não pede midgame ao `retomar` da pausa (navegação) nem no `repetir`, que sai
+do cartão de derrota — ao lado do vídeo de voltar uma jogada, e a CrazyGames não aceita
+midgame e *"watch rewarded to keep playing"* entre as mesmas duas fases. O jogo para no
+pedido (`onAdStart`), mas **só silencia quando o vídeo começa** (`adStarted` →
+`onAdPlay`; `silencioNoVideo` diz a `main.js` que o som não sai no `onAdStart`): pedido
+sem anúncio não cala o jogo. O recompensado mostra o véu (`#adVeil`) até o vídeo entrar e
+só paga com `adFinished`. No **Basic Launch** a CrazyGames desliga todo anúncio
+(`adsDisabledBasicLaunch`): da primeira resposta dessas em diante o midgame nem é pedido
+e o botão de vídeo responde com o toast `videoIndisponivel`, porque botão de vídeo que
+não faz nada é reprovação.
+
+**O mudo do site vence o do jogo**: `settings.muteAudio` chega por `onSilencio` em
+`audio.setPlatformMute()`, que zera o ganho mestre e fica por cima dos botões de som e
+música e do fim do anúncio.
+
+**O resto do SDK sai de eventos que o jogo já emite.** `measure('level', N, 'start')`
+vira `setGameContext({ level })`, que acompanha o feedback dos jogadores;
+`plataforma.progresso(fases)` (`informaProgresso()` em `main.js`, na carga e a cada
+vitória) vira `reportGameCompletedPercentage` — fases **com estrela** sobre as cem, e não
+`unlocked`, porque fase pulada com vídeo não foi concluída —; e o `happytime`, que a
+CrazyGames pede *"sparingly"*, só sai no fim da campanha e nos marcos de jogadas
+perfeitas. Poki e app têm `progresso()` vazio.
+
+**O idioma vem do site** (`systemInfo.locale`, `idiomaDaPlataforma()` em `core/i18n.js`),
+com o inglês quando ele não serve; a escolha feita nos ajustes continua valendo, e o
+idioma do site não é gravado. **P também pausa e continua**: na tela cheia da CrazyGames
+o Esc sai da tela cheia.
+
+Para testar, `npm run build:crazy && npm run preview:crazy`: em `127.0.0.1` o SDK roda no
+ambiente `local`, com o vídeo trocado por uma sobreposição de ~5 s, um usuário de
+demonstração e o Data no localStorage; `?muteAudio=true` liga o mudo do site.
+
+**Capas, vídeos e textos** moram em `marketing/crazygames/` (`ficha.md` tem o que colar em
+cada campo do portal). As três capas (1920x1080, 800x1200, 800x800) são a cena da capa
+comercial (`pintaCapa` de `marketing/capa/capa.js`) levada a cada formato por escala e
+deslocamento, com a logo por cima — na CrazyGames o nome do jogo é o único texto aceito
+na capa. Os vídeos (1920x1080 e 1080x1620, ~17,5 s, sem som) são o `tools/thumbnail.mjs`
+com `--perfil crazygames` (`ROTEIRO_CRAZY`, seis cenas de cenários diferentes) e a capa
+como primeiro quadro (`--abertura`), que a CrazyGames pede; `tools/crazygames.mjs
+--videos` roda os dois.
+
+### Portais de distribuição
+
+Y8, Playgama, Yandex Games, GameMonetize, GameDistribution e GamePix (2026-10-20). Cada um é um
+`VITE_PLATAFORMA` (`y8`, `playgama`, `yandex`, `gamemonetize`, `gamedistribution`, `gamepix`), sai em
+`dist-<portal>/` e tem a implementação de `@plataforma` em `src/portais/<portal>.js`, sobre
+`src/portais/base.js` (a interface de `poki.js`, os prazos, o prêmio só com o fim do vídeo e a pausa do
+portal). A entrada é `src/portais/inicio.js`, que inicia o SDK e prepara idioma e save antes de
+`main.js`, como o `src/crazy/inicio.js`, e bloqueia o menu de contexto na página inteira (a Yandex
+reprova o do navegador). O SDK de cada um no HTML, os hosts aceitos e os arquivos a mais (a config da
+Playgama) moram em `tools/portais-sdk.mjs`, que `vite.config.js` e `tools/verify-build.mjs` leem (o
+verify reconhece o portal pela pasta `dist-<portal>`).
+
+**Os ids do painel** (Y8: `appId` e `gameId`; GameDistribution e GameMonetize: `gameId`) ficam em
+`marketing/portais/ids.json` e entram no bundle por `define`. Sem eles o SDK nem carrega e o zip sai
+`-sem-id`, só para teste. A GamePix, a Playgama e a Yandex não pedem id.
+
+O que muda de um portal para outro (fontes em `marketing/portais/<portal>/ficha.md`):
+
+- **Onde o intervalo sai** (`pontos` em `base.js`): nas passagens de fase (`troca`, `proxima`,
+  `recomeco`); na Y8 só de clique (`proxima`, `repetir`, `retomar`), porque lá o automático é proibido.
+- **GameMonetize não tem vídeo premiado**: `COM_ANUNCIOS` é falso nela, como na versão lisa, e o caminho
+  gratuito fica no lugar dos botões de vídeo (game.css).
+- **GameDistribution**: pre-roll obrigatório em `_preparar`, antes do jogo abrir.
+- **Playgama**: save pelo `bridge.storage` (`src/portais/save.js`), e o "voltar uma jogada" por vídeo sai
+  do cartão de derrota (regra 6.3: nada de "+1 vida" a cada derrota).
+- **Pausa do portal** (botão de pausa do site, `game_api_pause`, `GamePix.on.pause`...): abre a tela de
+  pausa, e a volta fecha e segue sozinha (`pausaDoPortal` em main.js). **Aba escondida**: a tela de
+  pausa, que fica 0,8 s na volta e retoma sozinha (`pausaDaAba`). Foi o que o Testing Toolkit da
+  GamePix cobrou: congelado sem tela a pausa não se via, e a pausa que esperava o jogador não "voltava".
+  A volta sozinha não pede intervalo (`resumeLevel(false)`).
+- **GamePix**: os ganchos de pausa e som ficam declarados antes do `loaded()`, em `GamePix.on.*` e em
+  `GamePix.*` (o SDK v3 procura o primeiro, depois o segundo).
+
+`tools/portaischeck.mjs` monta cada portal com ids de teste em `.tmp/portaischeck/` e serve o SDK falso
+pela mesma URL do de verdade: confere carregamento, idioma, intervalo com som calado, prêmio, pausa do
+portal, aba escondida, save e pre-roll. As imagens (`tools/portais.mjs`) saem da capa em qualquer
+proporção (`marketing/portais/capa/`), do ícone do app e de telas do jogo em inglês com um toque na peça
+da dica; JPG desce de qualidade até caber no peso do portal.
+
 ### Poki
 
 `src/poki.js` é um wrapper blindado. O script v2 da Poki é só um carregador, sem
@@ -1776,7 +1900,9 @@ Reflete a QA da Poki e roda sobre `dist/`:
 No build do app (`DIST_DIR=dist-app`, reconhecido pelo plugin da AdMob registrado no
 bundle) ele cobra também: nada da Poki, nenhuma URL nem script externo, e com
 `EXIGE_PRODUCAO=1` nenhuma unidade de anúncio de teste e as reais preenchidas. No build
-da Poki, que nada do app entrou.
+da Poki, que nada do app nem da CrazyGames entrou. No da CrazyGames (`DIST_DIR=dist-crazy`,
+reconhecido pelo SDK v3 no HTML), que o único script externo é o deles, sem nada da Poki
+nem do app, e no máximo 1.500 arquivos.
 
 `window.__game` e `window.__audio` são expostos no fim de `main.js` só para essa
 automação, e **só em `127.0.0.1`/`localhost`**: a Poki pede *"remove all development

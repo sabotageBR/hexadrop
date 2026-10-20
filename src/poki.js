@@ -90,6 +90,12 @@ class Poki {
     this.onSegundoPlano = null;
     /** @type {null|(()=>void)} */
     this.onPrimeiroPlano = null;
+    // So a CrazyGames tem (src/crazy/crazy.js): o silencio na hora em que o
+    // video comeca e o mudo do site. Aqui nunca disparam.
+    /** @type {null|(()=>void)} */
+    this.onAdPlay = null;
+    /** @type {null|((mudo:boolean)=>void)} */
+    this.onSilencio = null;
   }
 
   /** @returns {Promise<void>} resolve mesmo quando o SDK nao carrega */
@@ -298,6 +304,12 @@ class Poki {
 
   /** So o app minimiza; no navegador nao ha para onde ir. */
   minimizar() {}
+
+  /**
+   * Fases da campanha concluidas. So a CrazyGames usa (a porcentagem do jogo).
+   * @param {number} _fases
+   */
+  progresso(_fases) {}
 
   /** @returns {boolean} */
   isTablet() {
