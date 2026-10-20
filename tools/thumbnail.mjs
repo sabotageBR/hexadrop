@@ -89,6 +89,22 @@
  *                         o Chrome (e, com ele aberto, antes de cada cena com
  *                         700 MB a menos), e desiste se nao melhorar. 0
  *                         desliga a conferencia
+ *   --perfil crazygames   os videos de previa da CrazyGames: 15 a 20 s, sem
+ *                         audio, com a capa como primeiro quadro. Troca o
+ *                         roteiro (ROTEIRO_CRAZY), nao grava estaticas e grava
+ *                         em marketing/crazygames/videos. Junto com ele:
+ *   --perfil y8           o video de gameplay da Y8: um trecho so, sem corte
+ *                         (ROTEIRO_Y8: uma fase jogada pelo solucionador ate
+ *                         o pouso e a celebracao), >= 15 s, sem abertura;
+ *                         grava em marketing/portais/y8
+ *   --largura <px>        largura do video (padrao: --tamanho)
+ *   --altura <px>         altura do video (padrao: --tamanho)
+ *   --vista <LxA>         viewport em pixels CSS (padrao: --lado x --lado); a
+ *                         escala do dispositivo e largura/L, igual em A
+ *   --video <arquivo>     nome do .mp4 (padrao hexadrop-animada.mp4)
+ *   --folha <arquivo>     nome da folha de contato (padrao quadros.png)
+ *   --abertura <png>      abre o video com essa imagem parada (ABERTURA_S) e
+ *                         passa ao jogo num esmaecido (ESMAECER_S)
  *   --sondar <faixa>      modo de escolha: "1-45" ou "7,9,38". Lista as fases
  *                         (tema, torre, bomba/TNT com a distancia ao hexagono,
  *                         CADEIA quando um explosivo alcanca outro) e monta uma
@@ -131,16 +147,28 @@ const opcao = (nome, padrao) => {
 /** @param {string} nome */
 const bandeira = (nome) => argv.includes(nome);
 
-const SAIDA = resolve(RAIZ, opcao('--saida', 'marketing/thumbnail'));
+const PERFIL = opcao('--perfil', 'poki');
+const CRAZY = PERFIL === 'crazygames';
+const Y8 = PERFIL === 'y8';
+const SAIDA = resolve(RAIZ, opcao('--saida', CRAZY ? 'marketing/crazygames/videos' : Y8 ? 'marketing/portais/y8' : 'marketing/thumbnail'));
 const PORTA_HTTP = Number(opcao('--porta', '4190'));
 const PORTA_CDP = Number(opcao('--cdp', '9444'));
 const TAMANHO = Number(opcao('--tamanho', '1080'));
 const LADO = Number(opcao('--lado', '540'));
+const LARGURA = Number(opcao('--largura', String(TAMANHO)));
+const ALTURA = Number(opcao('--altura', String(TAMANHO)));
+const [VISTA_L, VISTA_A] = (opcao('--vista', `${LADO}x${LADO}`)).split('x').map(Number);
+const NOME_VIDEO = opcao('--video', 'hexadrop-animada.mp4');
+const NOME_FOLHA = opcao('--folha', 'quadros.png');
+const ABERTURA = opcao('--abertura') ? resolve(RAIZ, opcao('--abertura')) : null;
+/** A capa parada no comeco do video, e o esmaecido dela para o jogo. */
+const ABERTURA_S = 0.5;
+const ESMAECER_S = 0.4;
 const CRF = Number(opcao('--crf', '16'));
 const DE_DIST = opcao('--from-dist');
 const SONDAR = opcao('--sondar');
 const MARCA_TOQUE = !bandeira('--sem-marca');
-const SO_VIDEO = bandeira('--so-video');
+const SO_VIDEO = bandeira('--so-video') || CRAZY || Y8;
 const SO_ESTATICA = bandeira('--so-estatica');
 const MANTER_TEMP = bandeira('--manter-temp');
 const SO_CENAS = opcao('--cenas');
@@ -155,11 +183,15 @@ if (PORTAS_DAS_OUTRAS.includes(PORTA_CDP)) {
   console.error(`A porta ${PORTA_CDP} e de outra ferramenta de tools/. Use --cdp 9444.`);
   process.exit(2);
 }
-const ESCALA = TAMANHO / LADO;
+const ESCALA = LARGURA / VISTA_L;
 if (ESCALA > 2 + 1e-9) {
   // Viewport limita o dpr a 2 (core/viewport.js): acima disso o canvas sairia
   // menor que o video e teria que ser esticado.
-  console.error(`--lado ${LADO} com --tamanho ${TAMANHO} pede dpr ${ESCALA.toFixed(2)}; o jogo para em 2. Use --lado >= ${Math.ceil(TAMANHO / 2)}.`);
+  console.error(`viewport de ${VISTA_L} px com video de ${LARGURA} pede dpr ${ESCALA.toFixed(2)}; o jogo para em 2. Use --lado (ou --vista) >= ${Math.ceil(LARGURA / 2)}.`);
+  process.exit(2);
+}
+if (Math.abs(VISTA_A * ESCALA - ALTURA) > 0.5) {
+  console.error(`a vista ${VISTA_L}x${VISTA_A} nao tem a proporcao do video ${LARGURA}x${ALTURA}`);
   process.exit(2);
 }
 
@@ -220,6 +252,97 @@ const ROTEIRO = [
     vitoria: {
       duracao: 2.05, antesDoToque: 0.15, minCascata: 1.2, maxSegundos: 90,
       politicas: ['cavar', 'dica'], apressar: null, bastaNota: 11,
+    },
+  },
+];
+
+/**
+ * O roteiro dos videos de previa da CrazyGames (--perfil crazygames): 15 a 20 s
+ * em vez de 4 a 6, e por isso seis cenas em vez de tres - um cenario novo a
+ * cada cena, que e o que o jogo tem de diferente a cada cinco fases. O video
+ * abre com a capa (--abertura), e o esmaecido cobre os primeiros 0,4 s da
+ * primeira cena: o primeiro toque vem depois disso.
+ *
+ * Regras da CrazyGames que o roteiro respeita: velocidade real (o relogio e o
+ * do jogo, nada acelerado), sem cursor, sem texto de propaganda, sem tela
+ * preta e sem som.
+ */
+const ROTEIRO_CRAZY = [
+  {
+    nome: 'toque',
+    candidatas: ROTEIRO[0].candidatas,
+    melhor: true,
+    basta: 3,
+    aquecer: 45,
+    duracao: 3.6,
+    toques: [[0.6, 'sob-hex'], [1.35, 'sob-hex'], [2.15, 'dica'], [2.9, 'dica']],
+  },
+  {
+    nome: 'gelo',
+    candidatas: [[11, 0], [12, 0], [13, 0], [14, 0], [11, 1], [12, 1], [13, 1], [14, 1]],
+    melhor: true,
+    basta: 3,
+    aquecer: 45,
+    duracao: 2.6,
+    toques: [[0.2, 'dica'], [1.0, 'dica'], [1.8, 'dica']],
+  },
+  {
+    nome: 'explosao',
+    candidatas: ROTEIRO[1].candidatas,
+    melhor: true,
+    basta: 6,
+    aquecer: 45,
+    preparo: ROTEIRO[1].preparo,
+    duracao: 2.6,
+    toques: [[0.25, ['tnt', 'bomb']]],
+  },
+  {
+    nome: 'doce',
+    candidatas: [[16, 0], [17, 0], [18, 0], [19, 0], [16, 1], [17, 1], [18, 1], [19, 1]],
+    melhor: true,
+    basta: 3,
+    aquecer: 45,
+    duracao: 2.4,
+    toques: [[0.2, 'dica'], [1.0, 'dica'], [1.8, 'dica']],
+  },
+  {
+    nome: 'neon',
+    candidatas: [[41, 0], [42, 0], [43, 0], [44, 0], [41, 1], [42, 1], [43, 1], [44, 1]],
+    melhor: true,
+    basta: 3,
+    aquecer: 45,
+    duracao: 2.6,
+    toques: [[0.2, 'dica'], [1.0, 'dica'], [1.8, 'dica']],
+  },
+  {
+    nome: 'vitoria',
+    candidatas: ROTEIRO[2].candidatas,
+    aquecer: 45,
+    vitoria: {
+      // A cascata inteira e um instante do hexagono sozinho no pedestal: mais
+      // que isso o video termina num quadro vazio.
+      duracao: 3.2, antesDoToque: 0.7, minCascata: 1.8, maxSegundos: 90,
+      politicas: ['cavar', 'dica'], apressar: null, bastaNota: 11,
+    },
+  },
+];
+
+/**
+ * O video de gameplay da Y8 (--perfil y8): "a continuous gameplay clip with
+ * no cuts", de 15 s ou mais - trailer e montagem sao recusados. Uma cena so:
+ * uma fase longa jogada pelo solucionador, do meio dela ate o hexagono pousar
+ * no pedestal e a celebracao (`minSegundos` descarta a fase curta demais, que
+ * deixaria o trecho passar do fim da celebracao). Fases de mundos diferentes,
+ * na ordem do cenario mais vistoso.
+ */
+const ROTEIRO_Y8 = [
+  {
+    nome: 'continuo',
+    candidatas: [[12, 0], [17, 0], [16, 0], [13, 0], [18, 0], [11, 0], [14, 0], [19, 0], [22, 0], [27, 0]],
+    aquecer: 45,
+    vitoria: {
+      duracao: 16.5, antesDoToque: 60, minCascata: 2.2, maxSegundos: 60, minSegundos: 14.5,
+      politicas: ['dica'], apressar: null, bastaNota: 9,
     },
   },
 ];
@@ -1171,7 +1294,7 @@ async function main() {
       await enviar('Runtime.enable', {}, S);
       await enviar('Network.enable', {}, S);
       await enviar('Network.setBlockedURLs', { urls: ['*game-cdn.poki.com*', '*poki-sdk*'] }, S);
-      await enviar('Emulation.setDeviceMetricsOverride', { width: LADO, height: LADO, deviceScaleFactor: ESCALA, mobile: true }, S);
+      await enviar('Emulation.setDeviceMetricsOverride', { width: VISTA_L, height: VISTA_A, deviceScaleFactor: ESCALA, mobile: true }, S);
       // Toque de verdade: ponteiro principal grosso, e a camera usa a celula de
       // dedo (56 px, game/scene.js) - a torre aparece grande, como no celular.
       await enviar('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, S);
@@ -1241,7 +1364,7 @@ async function main() {
     const cenas = new Map();
     let total = 0;
     const escolhidas = SO_CENAS ? new Set(SO_CENAS.split(',')) : null;
-    for (const c0 of SO_ESTATICA ? [] : ROTEIRO) {
+    for (const c0 of SO_ESTATICA ? [] : CRAZY ? ROTEIRO_CRAZY : Y8 ? ROTEIRO_Y8 : ROTEIRO) {
       if (escolhidas && !escolhidas.has(c0.nome)) continue;
       const c = CANDIDATAS
         ? { ...c0, candidatas: CANDIDATAS.split(',').map((x) => x.split(':').map(Number)) }
@@ -1273,21 +1396,40 @@ async function main() {
     fechar = async () => {};
 
     if (!SO_ESTATICA && total > 0) {
-      const mp4 = join(SAIDA, 'hexadrop-animada.mp4');
+      const mp4 = join(SAIDA, NOME_VIDEO);
       // Converte do sRGB do canvas para BT.709 de faixa limitada, e marca o
       // arquivo assim: sem isso os players chutam a matriz e a cor desbota.
+      // setparams por ultimo: sem ele o filtro deixa primarias e transferencia
+      // como "unknown" no arquivo, por cima das opcoes de saida.
+      const cor = 'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv';
+      const escala = `scale=${LARGURA}:${ALTURA}:flags=lanczos`;
+      // Com a abertura, a capa entra parada e esmaece para o primeiro quadro do
+      // jogo: o xfade mistura em RGB e so depois o resultado vai para BT.709.
+      const entrada = ABERTURA
+        ? [
+          '-loop', '1', '-framerate', String(FPS), '-t', String(ABERTURA_S + ESMAECER_S), '-i', ABERTURA,
+          '-framerate', String(FPS), '-i', join(quadros, '%05d.png'), '-an',
+          '-filter_complex',
+          `[0:v]${escala},format=gbrp,setsar=1,settb=AVTB[capa];`
+            + `[1:v]${escala},format=gbrp,setsar=1,settb=AVTB[jogo];`
+            + `[capa][jogo]xfade=transition=fade:duration=${ESMAECER_S}:offset=${ABERTURA_S},`
+            + `scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,${cor}[v]`,
+          '-map', '[v]',
+        ]
+        : [
+          '-framerate', String(FPS), '-i', join(quadros, '%05d.png'), '-an',
+          '-vf', `${escala}:out_color_matrix=bt709:out_range=tv,format=yuv420p,${cor}`,
+        ];
       ffmpeg([
-        '-framerate', String(FPS), '-i', join(quadros, '%05d.png'), '-an',
-        // setparams por ultimo: sem ele o filtro deixa primarias e transferencia
-        // como "unknown" no arquivo, por cima das opcoes de saida.
-        '-vf', `scale=${TAMANHO}:${TAMANHO}:flags=lanczos:out_color_matrix=bt709:out_range=tv,format=yuv420p,`
-          + 'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv',
+        ...entrada,
         '-c:v', 'libx264', '-preset', 'slow', '-crf', String(CRF), '-profile:v', 'high', '-threads', '4',
         '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
         '-r', String(FPS), '-movflags', '+faststart', mp4,
       ]);
-      // Folha de contato: oito quadros do proprio mp4, espalhados por igual.
-      const alvos = Array.from({ length: 8 }, (_, i) => Math.min(total - 1, Math.round(((i + 0.5) * total) / 8)));
+      // Folha de contato: oito quadros do proprio mp4, espalhados por igual (com
+      // a abertura, o primeiro e a capa).
+      const totalMp4 = total + (ABERTURA ? Math.round(ABERTURA_S * FPS) : 0);
+      const alvos = Array.from({ length: 8 }, (_, i) => (ABERTURA && i === 0 ? 0 : Math.min(totalMp4 - 1, Math.round(((i + 0.5) * totalMp4) / 8))));
       const sel = alvos.map((n) => `eq(n\\,${n})`).join('+');
       // O tempo de cada quadro vai escrito nele, para a revisao apontar "o de
       // 2,4 s". Sem a fonte, a folha sai sem o rotulo.
@@ -1297,10 +1439,10 @@ async function main() {
         : '';
       ffmpeg([
         '-i', mp4, '-vf',
-        `select='${sel}',scale=360:360:flags=lanczos${rotulo},tile=4x2:padding=8:margin=8:color=0x101014`,
-        '-frames:v', '1', '-fps_mode', 'passthrough', join(SAIDA, 'quadros.png'),
+        `select='${sel}',scale=${Math.round((360 * LARGURA) / Math.max(LARGURA, ALTURA))}:${Math.round((360 * ALTURA) / Math.max(LARGURA, ALTURA))}:flags=lanczos${rotulo},tile=4x2:padding=8:margin=8:color=0x101014`,
+        '-frames:v', '1', '-fps_mode', 'passthrough', join(SAIDA, NOME_FOLHA),
       ]);
-      relatorio.video = { arquivo: mp4, quadros: total, ffprobe: ffprobe(mp4), mb: +(statSync(mp4).size / 1048576).toFixed(2), folha: alvos };
+      relatorio.video = { arquivo: mp4, quadros: totalMp4, ffprobe: ffprobe(mp4), mb: +(statSync(mp4).size / 1048576).toFixed(2), folha: alvos };
     }
 
     console.log('\n' + JSON.stringify(relatorio, null, 2));
@@ -1328,14 +1470,17 @@ async function gravarVitoria(js, c, pasta, inicio) {
       // O solucionador so entra depois do aquecimento.
       const fim = await js(`(__thumb.cfg.solucionar = ${JSON.stringify(politica)}, __thumb.avancar(${c.vitoria.maxSegundos * FPS}, true))`);
       const nota = fim.venceu ? await js('__thumb.notaDaVitoria()') : { nota: -1 };
-      tentativas.push({ fase, variante, politica, fim, nota, info });
-      const basta = c.vitoria.bastaNota != null && nota.nota >= c.vitoria.bastaNota;
+      // Curta demais para o trecho caber entre o aquecimento e o fim da
+      // celebracao (o video da Y8 nao pode ter corte): fica de fora.
+      const curta = !!(fim.venceu && c.vitoria.minSegundos && fim.quadro - c.aquecer < Math.round(c.vitoria.minSegundos * FPS));
+      tentativas.push({ fase, variante, politica, fim, nota, info, curta });
+      const basta = !curta && c.vitoria.bastaNota != null && nota.nota >= c.vitoria.bastaNota;
       console.log(`  ${c.nome}: fase ${fase} v${variante} ${politica.padEnd(5)} ${fim.venceu ? `venceu no quadro ${fim.quadro} com ${fim.toques} toques` : `nao venceu (${fim.estado})`}  ${JSON.stringify(nota)}`);
       // Nota boa o bastante: nao vale gastar minutos com o resto da lista.
       if (basta) break procura;
     }
   }
-  const boas = tentativas.filter((t) => t.fim.venceu).sort((a, b) => b.nota.nota - a.nota.nota);
+  const boas = tentativas.filter((t) => t.fim.venceu && !t.curta).sort((a, b) => b.nota.nota - a.nota.nota);
   if (boas.length && !boas[0].nota.pousou) console.log(`  AVISO: nenhuma candidata pousou no pedestal; vai a melhor encalhada`);
   if (!boas.length) throw new Error(`nenhuma candidata venceu na cena ${c.nome}`);
   const t = boas[0];

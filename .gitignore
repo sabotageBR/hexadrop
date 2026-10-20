@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-lisa/
 dist-app/
+dist-crazy/
 .vite/
 *.log
 .tmp/
@@ -22,3 +23,12 @@ proposals/
 
 # Pacote de upload para a Play Store (npm run android:aab / android:aab:teste).
 *.aab
+
+# Builds dos portais de distribuicao (npm run portais).
+dist-portais/
+dist-y8/
+dist-playgama/
+dist-yandex/
+dist-gamemonetize/
+dist-gamedistribution/
+dist-gamepix/

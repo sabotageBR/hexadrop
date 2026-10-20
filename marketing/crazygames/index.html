@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hexa Drop - capas da CrazyGames</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #101014;
+        color: #ccc;
+        font: 14px system-ui, sans-serif;
+      }
+      main {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        padding: 24px;
+        align-items: flex-start;
+      }
+      figure {
+        margin: 0;
+      }
+      canvas {
+        display: block;
+        height: 400px;
+        width: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- O dobro por dentro: tools/crazygames.mjs le cada canvas e desce para o
+         tamanho pedido com filtro. -->
+    <main>
+      <figure><canvas id="paisagem" width="3840" height="2160"></canvas><figcaption>paisagem 1920x1080</figcaption></figure>
+      <figure><canvas id="retrato" width="1600" height="2400"></canvas><figcaption>retrato 800x1200</figcaption></figure>
+      <figure><canvas id="quadrada" width="1600" height="1600"></canvas><figcaption>quadrada 800x800</figcaption></figure>
+    </main>
+    <script type="module" src="./capas.js"></script>
+  </body>
+</html>

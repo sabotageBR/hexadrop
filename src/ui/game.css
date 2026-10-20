@@ -662,9 +662,13 @@ html[data-kit="ficha"] .world-pips i { clip-path: none; border-radius: 50%; widt
    definicao suficiente e acompanha a polaridade do mundo. */
 .btn.ghost { background: var(--wash); backdrop-filter: none; -webkit-backdrop-filter: none; }
 
-/* Versao lisa: nao ha plataforma, entao nao ha video. Todo botao de anuncio
-   sai da tela - o caminho padrao ao lado de cada um deles continua ali. */
-html[data-plataforma='lisa'] .btn.ad { display: none; }
+/* Versao lisa: nao ha plataforma, entao nao ha video; na GameMonetize so ha o
+   intersticial. Todo botao de anuncio sai da tela - o caminho padrao ao lado
+   de cada um deles continua ali. */
+html[data-plataforma='lisa'] .btn.ad,
+html[data-plataforma='gamemonetize'] .btn.ad { display: none; }
+/* A Playgama proibe o "+1 vida" por video oferecido a cada derrota (regra 6.3). */
+html[data-plataforma='playgama'] #loseRevive { display: none !important; }
 
 /* ------------------------------------------------------------ tela inicial */
 /* O fundo e a fase viva do mundo atual. O veu so segura o texto. */

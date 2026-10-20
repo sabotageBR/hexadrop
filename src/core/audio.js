@@ -79,6 +79,12 @@ export class AudioEngine {
     this.noiseBuffer = null;
     this.unlocked = false;
     this.adMuted = false;
+    /**
+     * O mudo da plataforma (o `muteAudio` da CrazyGames). Vence os botoes de
+     * som e musica do jogo: com ele ligado, nada toca, seja o que for que o
+     * jogador tenha escolhido nos ajustes.
+     */
+    this.platformMuted = false;
     this.sfxOn = load('sfxOn', true) !== false;
     // A musica comeca desligada (1.0.16): so toca para quem a liga nos ajustes
     // ou na pausa, e a escolha fica salva. Os efeitos continuam ligados.
@@ -107,7 +113,7 @@ export class AudioEngine {
       if (!Ctor) return;
       this.ctx = new Ctor({ latencyHint: 'interactive' });
       this.master = this.ctx.createGain();
-      this.master.gain.value = 1;
+      this.master.gain.value = this.platformMuted ? 0 : 1;
       this.master.connect(this.ctx.destination);
       this.sfxBus = this.ctx.createGain();
       this.sfxBus.gain.value = this.sfxOn ? 0.85 : 0;
@@ -169,7 +175,22 @@ export class AudioEngine {
 
   /** @returns {boolean} */
   get ready() {
-    return !!this.ctx && (this.ctx.state === 'running' || !!this._retomando) && !this.adMuted;
+    return !!this.ctx && (this.ctx.state === 'running' || !!this._retomando) && !this.adMuted && !this.platformMuted;
+  }
+
+  /**
+   * Liga ou desliga o mudo da plataforma.
+   * @param {boolean} on
+   */
+  setPlatformMute(on) {
+    this.platformMuted = !!on;
+    if (on) this._stopMusicNodes();
+    if (!this.ctx || !this.master || this.adMuted) return;
+    try {
+      this.master.gain.setTargetAtTime(on ? 0 : 1, this.ctx.currentTime, 0.02);
+    } catch {
+      /* ignora */
+    }
   }
 
   /** @param {boolean} on */
@@ -218,7 +239,7 @@ export class AudioEngine {
       this.ctx.resume().then(
         () => {
           if (this.master && this.ctx) {
-            this.master.gain.setTargetAtTime(1, this.ctx.currentTime, 0.05);
+            this.master.gain.setTargetAtTime(this.platformMuted ? 0 : 1, this.ctx.currentTime, 0.05);
           }
           if (this._music) this._musicNext = this.ctx ? this.ctx.currentTime + 0.1 : 0;
         },
@@ -625,7 +646,7 @@ export class AudioEngine {
    * densidade e timbre. O silencio e o que mais tira o som de metronomo.
    */
   updateMusic() {
-    if (!this._music || !this.ctx || !this.musicOn || this.adMuted) return;
+    if (!this._music || !this.ctx || !this.musicOn || this.adMuted || this.platformMuted) return;
     if (this._musicHold || this._hidden) return;
     if (this.ctx.state !== 'running') return;
     const spec = this._music;

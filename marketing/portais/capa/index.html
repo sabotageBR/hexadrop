@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hexa Drop - capas dos portais</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #101014;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Uma capa por carga: ?w=512&h=384 (&logo=0 sem a logo). O canvas tem o
+         dobro por dentro; tools/portais.mjs le e desce para o tamanho pedido. -->
+    <canvas id="capa"></canvas>
+    <script type="module" src="./capas.js"></script>
+  </body>
+</html>

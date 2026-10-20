@@ -100,6 +100,11 @@ class Nativo {
     this.onSegundoPlano = null;
     /** O app voltou (rearma o som). @type {null|(()=>void)} */
     this.onPrimeiroPlano = null;
+    // So a CrazyGames tem (src/crazy/crazy.js); no app nunca disparam.
+    /** @type {null|(()=>void)} */
+    this.onAdPlay = null;
+    /** @type {null|((mudo:boolean)=>void)} */
+    this.onSilencio = null;
     /** @type {Compras|null} */
     this.loja = null;
     /** @type {null|{readonly obrigatoria:boolean, abrir:()=>Promise<void>}} */
@@ -329,6 +334,12 @@ class Nativo {
   minimizar() {
     if (this.b) this.b.ciclo.minimizar();
   }
+
+  /**
+   * Fases da campanha concluidas. So a CrazyGames usa (a porcentagem do jogo).
+   * @param {number} _fases
+   */
+  progresso(_fases) {}
 
   /** @returns {boolean} */
   isTablet() {
