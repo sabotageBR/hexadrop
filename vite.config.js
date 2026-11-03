@@ -8,7 +8,7 @@ const root = import.meta.dirname;
 // `lisa` = sem plataforma nenhuma, em dist-lisa/. `app` = o jogo empacotado pelo
 // Capacitor (Android/iOS), em dist-app/, que e o `webDir` de capacitor.config.json.
 // `crazy` = a CrazyGames, em dist-crazy/. Os portais de distribuicao (PORTAIS,
-// src/portais/) saem em dist-<portal>/.
+// src/portais/), a Wavedash entre eles, saem em dist-<portal>/.
 // A Poki continua em dist/ - e o que as ferramentas de tools/ conferem por padrao.
 // A mesma lista mora em src/core/platform.js; valor desconhecido vira `poki`.
 const ALVO = process.env.VITE_PLATAFORMA;
@@ -57,10 +57,12 @@ function semPlataforma() {
       if (PLATAFORMA === 'crazy') {
         troca = `\n<!-- Unico script externo permitido pela CrazyGames. -->\n<script src="${SDK_CRAZY}"></script>`;
       } else if (NUM_PORTAL) {
-        const { nome, html: sdk } = PORTAIS[PLATAFORMA];
+        const { nome, html: sdk, injetado } = PORTAIS[PLATAFORMA];
         troca = sdk
           ? `\n<!-- ${nome}: o SDK do portal, unico script de fora. -->\n${sdk}`
-          : `\n<!-- ${nome}: o SDK entra por src/portais/${PLATAFORMA}.js, depois das opcoes que ele le. -->`;
+          : injetado
+            ? `\n<!-- ${nome}: o portal injeta o SDK antes dos scripts do jogo; nada de fora aqui. -->`
+            : `\n<!-- ${nome}: o SDK entra por src/portais/${PLATAFORMA}.js, depois das opcoes que ele le. -->`;
       }
       const novo = html.replace(
         /\n?[^\n]*<!--[^>]*Poki[^>]*-->\s*\n?[^\n]*<script src="https:\/\/game-cdn\.poki\.com[^>]*><\/script>/,
@@ -106,9 +108,47 @@ function entradaDoApp() {
   };
 }
 
+/**
+ * No build do portal que pede o pacote sem citar ninguem (`semMarcas` em
+ * tools/portais-sdk.mjs, a Wavedash), tira da folha de estilo os seletores das
+ * outras plataformas (`html[data-plataforma='playgama'] ...`). Neste build eles
+ * nunca valem, e eram o nome de outro portal dentro do zip. Comentario sai
+ * antes, porque o minificador o tiraria de qualquer jeito e uma virgula dentro
+ * dele confundiria a lista de seletores. Do index.html saem os comentarios, que
+ * explicam regras da Poki e iriam junto no zip. Os outros builds nao passam
+ * por aqui.
+ */
+function semMarcasDeOutros() {
+  const LIGADO = NUM_PORTAL && !!PORTAIS[PLATAFORMA].semMarcas;
+  return {
+    name: 'hexadrop-sem-marcas-de-outros',
+    enforce: /** @type {'pre'} */ ('pre'),
+    transformIndexHtml: {
+      order: /** @type {'post'} */ ('post'),
+      /** @param {string} html */
+      handler(html) {
+        return LIGADO ? html.replace(/[ \t]*<!--[\s\S]*?-->[ \t]*\n?/g, '') : html;
+      },
+    },
+    /** @param {string} codigo @param {string} id */
+    transform(codigo, id) {
+      if (!LIGADO || !/\.css$/.test(id)) return null;
+      const outro = (/** @type {string} */ sel) => {
+        const m = /data-plataforma\s*=\s*['"]?([\w-]+)/.exec(sel);
+        return !!m && m[1] !== PLATAFORMA;
+      };
+      return codigo.replace(/\/\*[\s\S]*?\*\//g, '').replace(/([^{}]+)\{([^{}]*)\}/g, (regra, seletores, corpo) => {
+        if (!seletores.includes('data-plataforma')) return regra;
+        const ficam = seletores.split(',').filter((s) => !outro(s));
+        return ficam.length ? `${ficam.join(',')}{${corpo}}` : '';
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [semPlataforma(), entradaDoApp()],
+  plugins: [semPlataforma(), entradaDoApp(), semMarcasDeOutros()],
   // A versao do package.json, para a telemetria do app saber de que build veio
   // cada evento (o versionName do Android sai do mesmo campo).
   define: {

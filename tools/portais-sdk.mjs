@@ -14,6 +14,9 @@
  * @property {string[]} hosts   hosts aceitos nas URLs do build (o script do SDK)
  * @property {RegExp} dominios  o que o proprio SDK pode chamar em tempo de execucao
  * @property {Record<string, string>} [arquivos]  arquivos a mais na raiz do build
+ * @property {boolean} [injetado]  o portal poe o SDK na pagina sozinho: nada no HTML
+ * @property {boolean} [semMarcas] nem o CSS cita outra plataforma (vite.config.js), e o
+ *                                 verify-build reprova qualquer nome de outro portal
  */
 
 /** @type {Record<string, SdkPortal>} */
@@ -64,5 +67,15 @@ export const PORTAIS = {
     html: '<script src="https://integration.gamepix.com/sdk/v3/gamepix.sdk.js"></script>',
     hosts: ['integration.gamepix.com'],
     dominios: /(^|\.)(gamepix\.com)$/,
+  },
+  wavedash: {
+    nome: 'Wavedash',
+    // A Wavedash injeta `window.Wavedash` antes de qualquer script do jogo, e
+    // o jogo roda isolado (COEP require-corp): nenhum script nem URL de fora.
+    html: '',
+    hosts: [],
+    dominios: /(^|\.)(wavedash\.com|wavedashcdn\.com)$/,
+    injetado: true,
+    semMarcas: true,
   },
 };

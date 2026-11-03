@@ -72,6 +72,59 @@ function warn(name, detail) {
   warnings++;
 }
 
+/**
+ * O build que nao pode citar ninguem (`semMarcas`, a Wavedash): nome de outro
+ * portal em arquivo nenhum, import que nao resolve e caminho absoluto, que
+ * quebra quando o portal serve o jogo numa subpasta.
+ */
+function conferirSemMarcas() {
+  // No JS so o que nao pode ser nome curto de variavel minificada (o "y8" so
+  // como propriedade, dominio ou texto).
+  const MARCAS_TEXTO = /poki|crazy ?games|playgama|yandex|yagames|gamemonetize|gamedistribution|gamepix|\by8\b/i;
+  const MARCAS_JS = /poki|crazy ?games|playgama|yandex|yagames|gamemonetize|gamedistribution|gamepix|y8\.com|y8sdk|\.y8\b|["'`]y8["'`]/i;
+  /** @type {string[]} */
+  const marcas = [];
+  /** @type {string[]} */
+  const quebrados = [];
+  /** @type {string[]} */
+  const absolutos = [];
+  const naoBinario = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.txt', '.webmanifest']);
+  /** @param {string} f @param {string} ref */
+  const confereRef = (f, ref) => {
+    if (/^(data:|blob:|#|https?:|wss?:|mailto:)/i.test(ref)) return;
+    const onde = `${relative(DIST, f)}: ${ref}`;
+    if (ref.startsWith('/')) {
+      absolutos.push(onde);
+      return;
+    }
+    if (!ref.startsWith('./') && !ref.startsWith('../')) {
+      quebrados.push(`${onde} (sem caminho relativo)`);
+      return;
+    }
+    const alvo = resolve(dirname(f), ref.split(/[?#]/)[0]);
+    if (!files.includes(alvo)) quebrados.push(onde);
+  };
+  for (const f of files) {
+    const ext = extname(f);
+    if (!naoBinario.has(ext)) continue;
+    const texto = readFileSync(f, 'utf8');
+    const m = (ext === '.js' || ext === '.mjs' ? MARCAS_JS : MARCAS_TEXTO).exec(texto);
+    if (m) marcas.push(`${relative(DIST, f)}: ...${texto.slice(Math.max(0, m.index - 30), m.index + 30)}...`);
+    if (ext === '.js' || ext === '.mjs') {
+      for (const r of texto.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/g)) confereRef(f, r[1]);
+      // As dependencias que o preload do Vite pede junto com o import dinamico.
+      for (const r of texto.matchAll(/["'](\.{0,2}\/[^"'\s]+\.(?:js|css))["']/g)) confereRef(f, r[1]);
+    } else if (ext === '.css') {
+      for (const r of texto.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)) confereRef(f, r[1]);
+    } else if (ext === '.html') {
+      for (const r of texto.matchAll(/\s(?:src|href)\s*=\s*["']([^"']+)["']/g)) confereRef(f, r[1]);
+    }
+  }
+  check(`${PORTAL_ID}: nenhum nome de outro portal no build`, marcas.length === 0, marcas.slice(0, 3).join(' | '));
+  check(`${PORTAL_ID}: nenhum import ou arquivo referenciado que falte`, quebrados.length === 0, quebrados.slice(0, 3).join(' | '));
+  check(`${PORTAL_ID}: nenhum caminho absoluto`, absolutos.length === 0, absolutos.slice(0, 3).join(' | '));
+}
+
 /** @param {string} dir @returns {string[]} */
 function walk(dir) {
   /** @type {string[]} */
@@ -133,6 +186,8 @@ for (const f of files) {
 }
 check(`nenhuma URL externa alem do SDK da ${NOME_SDK}`, external.length === 0, external.slice(0, 4).join(' | '));
 
+check('index.html na raiz do build', files.includes(join(DIST, 'index.html')));
+if (!files.includes(join(DIST, 'index.html'))) process.exit(1);
 const indexHtml = readFileSync(join(DIST, 'index.html'), 'utf8');
 const jsFiles = files.filter((f) => extname(f) === '.js');
 const allJs = jsFiles.map((f) => readFileSync(f, 'utf8')).join('\n');
@@ -144,7 +199,8 @@ const NO_APP = !COM_PLATAFORMA && !NA_CRAZY && !PORTAL && /["']AdMob["']\s*,\s*\
 if (PORTAL) {
   const scripts = indexHtml.match(/<script[^>]*src="(https?:)?\/[^"]*"/gi) || [];
   const esperado = PORTAL.html.match(/src="([^"]+)"/);
-  check(`${PORTAL_ID}: SDK do portal no HTML`, esperado ? indexHtml.includes(esperado[0]) : true, esperado ? esperado[1] : 'carregado pelo JS');
+  check(`${PORTAL_ID}: SDK do portal no HTML`, esperado ? indexHtml.includes(esperado[0]) : true,
+    esperado ? esperado[1] : PORTAL.injetado ? 'injetado pelo portal' : 'carregado pelo JS');
   check(`${PORTAL_ID}: nenhum outro script de fora no HTML`, scripts.length === (esperado ? 1 : 0), scripts.join(' | '));
   check(`${PORTAL_ID}: nada da Poki no build`, !indexHtml.includes(POKI_HOST) && !allJs.includes(POKI_HOST) && !/PokiSDK/.test(allJs));
   check(`${PORTAL_ID}: nada da CrazyGames no build`, !/crazygames|CrazyGames/.test(allJs + indexHtml));
@@ -156,6 +212,12 @@ if (PORTAL) {
   }
   for (const arq of Object.keys(PORTAL.arquivos || {})) {
     check(`${PORTAL_ID}: ${arq} na raiz`, files.some((f) => relative(DIST, f) === arq));
+  }
+  if (PORTAL.semMarcas) conferirSemMarcas();
+  if (PORTAL_ID === 'wavedash') {
+    // Sem o init o jogo fica para sempre atras da tela de carregamento da Wavedash.
+    check('wavedash: chamada Wavedash.init() no build', /\bWavedash\.init\(/.test(allJs));
+    check('wavedash: barra de carregamento (updateLoadProgressZeroToOne)', /\bWavedash\.updateLoadProgressZeroToOne\(/.test(allJs));
   }
 } else if (COM_PLATAFORMA) {
   check('script do Poki SDK v2 presente', true);

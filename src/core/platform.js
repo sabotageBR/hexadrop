@@ -9,7 +9,9 @@
  * compra que tira os anuncios (src/app/). `crazy` e a CrazyGames, com o SDK v3
  * deles, o save na nuvem pelo modulo Data e o idioma do site (src/crazy/).
  * Os portais de distribuicao (`y8`, `playgama`, `yandex`, `gamemonetize`,
- * `gamedistribution`, `gamepix`) tem cada um o SDK dele (src/portais/).
+ * `gamedistribution`, `gamepix`, `wavedash`) tem cada um o SDK dele
+ * (src/portais/). A Wavedash injeta o dela e nao tem anuncio: a partir da
+ * versao lisa, com o `Wavedash.init()` e a barra de carregamento.
  *
  * O valor entra por `VITE_PLATAFORMA` no build. O Vite troca a expressao por
  * uma constante literal, entao o ramo que nao vale para o alvo sai do bundle.
@@ -31,16 +33,19 @@ const PORTAL =
   ALVO === 'yandex' ||
   ALVO === 'gamemonetize' ||
   ALVO === 'gamedistribution' ||
-  ALVO === 'gamepix';
+  ALVO === 'gamepix' ||
+  ALVO === 'wavedash';
 
 export const PLATAFORMA = ALVO === 'lisa' || ALVO === 'app' || ALVO === 'crazy' || PORTAL ? ALVO : 'poki';
 
 /**
- * Ha video recompensado? A versao lisa nao tem anuncio nenhum, e a
- * GameMonetize so tem o intersticial: nas duas os botoes de video somem e o
- * caminho gratuito fica no lugar.
+ * Ha video recompensado? A versao lisa e a Wavedash nao tem anuncio nenhum, e
+ * a GameMonetize so tem o intersticial: nas tres os botoes de video somem e o
+ * caminho gratuito fica no lugar. A ordem importa: o Rollup deixa no bundle so
+ * a ultima comparacao, e com a GameMonetize por ultimo os outros builds sairam
+ * byte a byte iguais quando a Wavedash entrou.
  */
-export const COM_ANUNCIOS = PLATAFORMA !== 'lisa' && PLATAFORMA !== 'gamemonetize';
+export const COM_ANUNCIOS = PLATAFORMA !== 'lisa' && PLATAFORMA !== 'wavedash' && PLATAFORMA !== 'gamemonetize';
 
 /** O jogo esta empacotado como app (Android/iOS)? */
 export const NO_APP = PLATAFORMA === 'app';

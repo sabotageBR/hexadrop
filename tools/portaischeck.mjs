@@ -10,14 +10,16 @@
  * - o video recompensado paga so quando o SDK diz que foi visto ate o fim;
  * - a pausa do portal fora do anuncio cala o jogo, e a volta devolve o som;
  * - na Playgama e na GamePix o save vai para o armazenamento do portal;
- * - na GameDistribution o pre-roll sai antes do jogo abrir.
+ * - na GameDistribution o pre-roll sai antes do jogo abrir;
+ * - na Wavedash, que injeta o SDK (o falso entra antes dos scripts do jogo), o
+ *   init uma vez so e o intervalo saindo na hora, sem anuncio.
  *
  * Cada portal e montado em .tmp/portaischeck/<portal> com ids de teste (os de
  * marketing/portais/ids.json ficam para o build publicado) e servido por um
  * servidor estatico proprio na porta 4185; o Chrome usa a porta de depuracao
  * 9119. Rode sozinho, como as outras ferramentas de tools/.
  *
- *   node tools/portaischeck.mjs              # os seis
+ *   node tools/portaischeck.mjs              # todos (os seis e a Wavedash)
  *   node tools/portaischeck.mjs yandex y8    # so esses
  */
 import { spawn, spawnSync } from 'node:child_process';
@@ -192,10 +194,23 @@ window.dispatchEvent(new Event('y8sdk.ready'));`,
   setTimeout(() => emite('SDK_READY'), 40);
 })();`,
   },
+  // A Wavedash injeta o SDK antes dos scripts do jogo, e o build nao pede URL
+  // nenhuma: o falso entra pelo Page.addScriptToEvaluateOnNewDocument.
+  wavedash: {
+    url: '',
+    js: `${COMUM}
+window.Wavedash = {
+  init() { __log.push('init'); return true; },
+  loadComplete() { __log.push('loadComplete'); },
+  updateLoadProgressZeroToOne(p) { __log.push('carga:' + p); },
+  getUserLanguage() { return 'tr'; },
+};`,
+  },
 };
 
 /** O que cada portal tem e o banco confere. */
 const TEM = {
+  wavedash: { idioma: true, pausa: false, premio: false, sinal: 'init', semAnuncio: true, umaVez: true },
   yandex: { idioma: true, pausa: true, premio: true, sinal: 'pronto' },
   playgama: { idioma: true, pausa: true, premio: true, sinal: 'msg:game_ready', save: true },
   gamepix: { idioma: true, pausa: true, premio: true, sinal: 'pronto', save: true },
@@ -275,15 +290,20 @@ for (const portal of ALVOS) {
   await send('Page.enable', {}, sessionId);
   await send('Runtime.enable', {}, sessionId);
   await send('Emulation.setDeviceMetricsOverride', { width: 960, height: 540, deviceScaleFactor: 1, mobile: false }, sessionId);
-  // O SDK falso sai pela mesma URL que o build pede.
-  await send('Fetch.enable', { patterns: [{ urlPattern: falso.url }] }, sessionId);
-  ouvintes.set('Fetch.requestPaused', (p) => {
-    send('Fetch.fulfillRequest', {
-      requestId: p.requestId, responseCode: 200,
-      responseHeaders: [{ name: 'content-type', value: 'text/javascript' }],
-      body: Buffer.from(falso.js).toString('base64'),
-    }, sessionId);
-  });
+  if (falso.url) {
+    // O SDK falso sai pela mesma URL que o build pede.
+    await send('Fetch.enable', { patterns: [{ urlPattern: falso.url }] }, sessionId);
+    ouvintes.set('Fetch.requestPaused', (p) => {
+      send('Fetch.fulfillRequest', {
+        requestId: p.requestId, responseCode: 200,
+        responseHeaders: [{ name: 'content-type', value: 'text/javascript' }],
+        body: Buffer.from(falso.js).toString('base64'),
+      }, sessionId);
+    });
+  } else {
+    // Injetado pelo portal: antes de qualquer script do jogo.
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: falso.js }, sessionId);
+  }
   await send('Page.navigate', { url: `http://127.0.0.1:${PORTA_HTTP}/index.html` }, sessionId);
   const js = async (/** @type {string} */ e) => {
     const r = await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, sessionId);
@@ -304,6 +324,7 @@ for (const portal of ALVOS) {
   const l0 = await log();
   confere('SDK pronto', (await js('window.__plataforma.ready')) === true);
   confere('fim do carregamento avisado ao portal', l0.includes(tem.sinal), l0.join(' '));
+  if (tem.umaVez) confere('aviso uma vez so', l0.filter((x) => x === tem.sinal).length === 1, l0.join(' '));
   if (tem.preroll) confere('pre-roll antes de o jogo abrir', l0.indexOf('midgame:preroll') >= 0, l0.join(' '));
   if (tem.idioma) confere('idioma do portal', (await js('document.documentElement.lang')) === 'tr', await js('document.documentElement.lang'));
 
@@ -318,9 +339,15 @@ for (const portal of ALVOS) {
     await js("window.__game.commercialBreak('troca')");
   }
   const l1 = await log();
-  confere('intervalo chega ao SDK', l1.some((x) => x.startsWith('midgame')), l1.join(' '));
-  confere('som calado quando o video entra', l1.includes('abriu:true'), l1.join(' '));
-  confere('som de volta depois', (await js('window.__audio.adMuted')) === false);
+  if (tem.semAnuncio) {
+    // A Wavedash nao serve anuncio: o intervalo sai na hora, sem pausar nem calar.
+    confere('intervalo sai na hora, sem anuncio', !l1.some((x) => x.startsWith('midgame')), l1.join(' '));
+    confere('o jogo nao pausou nem calou', (await js('!window.__audio.adMuted && !window.__plataforma.inBreak')) === true);
+  } else {
+    confere('intervalo chega ao SDK', l1.some((x) => x.startsWith('midgame')), l1.join(' '));
+    confere('som calado quando o video entra', l1.includes('abriu:true'), l1.join(' '));
+    confere('som de volta depois', (await js('window.__audio.adMuted')) === false);
+  }
 
   // Video recompensado: paga so com o fim do video.
   await js('window.__log.length = 0; window.__sdkFalso.premio = true; true');

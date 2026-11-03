@@ -1,6 +1,6 @@
 /**
  * Capas dos portais (Y8, Playgama, Yandex, GameMonetize, GameDistribution,
- * GamePix) em qualquer tamanho: `?w=512&h=384`, com a logo (padrao) ou sem
+ * GamePix, Wavedash) em qualquer tamanho: `?w=512&h=384`, com a logo (padrao) ou sem
  * (`&logo=0`).
  *
  * A cena e a da capa comercial (marketing/capa/capa.js), como nas capas da

@@ -97,6 +97,11 @@
  *                         (ROTEIRO_Y8: uma fase jogada pelo solucionador ate
  *                         o pouso e a celebracao), >= 15 s, sem abertura;
  *                         grava em marketing/portais/y8
+ *   --perfil wavedash     o video de previa da Wavedash: 16:9 1920x1080 (vista
+ *                         960x540), ~22 s, sem audio e jogo desde o primeiro
+ *                         quadro, sem abertura - ela guarda so os 10 primeiros
+ *                         segundos (ROTEIRO_WAVEDASH); grava em
+ *                         marketing/portais/wavedash/hexa-drop-video-1920x1080.mp4
  *   --largura <px>        largura do video (padrao: --tamanho)
  *   --altura <px>         altura do video (padrao: --tamanho)
  *   --vista <LxA>         viewport em pixels CSS (padrao: --lado x --lado); a
@@ -150,25 +155,28 @@ const bandeira = (nome) => argv.includes(nome);
 const PERFIL = opcao('--perfil', 'poki');
 const CRAZY = PERFIL === 'crazygames';
 const Y8 = PERFIL === 'y8';
-const SAIDA = resolve(RAIZ, opcao('--saida', CRAZY ? 'marketing/crazygames/videos' : Y8 ? 'marketing/portais/y8' : 'marketing/thumbnail'));
+const WAVEDASH = PERFIL === 'wavedash';
+const SAIDA = resolve(RAIZ, opcao('--saida', CRAZY ? 'marketing/crazygames/videos' : Y8 ? 'marketing/portais/y8'
+  : WAVEDASH ? 'marketing/portais/wavedash' : 'marketing/thumbnail'));
 const PORTA_HTTP = Number(opcao('--porta', '4190'));
 const PORTA_CDP = Number(opcao('--cdp', '9444'));
 const TAMANHO = Number(opcao('--tamanho', '1080'));
 const LADO = Number(opcao('--lado', '540'));
-const LARGURA = Number(opcao('--largura', String(TAMANHO)));
-const ALTURA = Number(opcao('--altura', String(TAMANHO)));
-const [VISTA_L, VISTA_A] = (opcao('--vista', `${LADO}x${LADO}`)).split('x').map(Number);
-const NOME_VIDEO = opcao('--video', 'hexadrop-animada.mp4');
-const NOME_FOLHA = opcao('--folha', 'quadros.png');
+// A Wavedash so tem um formato (16:9), entao o perfil ja traz o tamanho e os nomes.
+const LARGURA = Number(opcao('--largura', WAVEDASH ? '1920' : String(TAMANHO)));
+const ALTURA = Number(opcao('--altura', WAVEDASH ? '1080' : String(TAMANHO)));
+const [VISTA_L, VISTA_A] = (opcao('--vista', WAVEDASH ? '960x540' : `${LADO}x${LADO}`)).split('x').map(Number);
+const NOME_VIDEO = opcao('--video', WAVEDASH ? 'hexa-drop-video-1920x1080.mp4' : 'hexadrop-animada.mp4');
+const NOME_FOLHA = opcao('--folha', WAVEDASH ? 'quadros-video-1920x1080.png' : 'quadros.png');
 const ABERTURA = opcao('--abertura') ? resolve(RAIZ, opcao('--abertura')) : null;
 /** A capa parada no comeco do video, e o esmaecido dela para o jogo. */
 const ABERTURA_S = 0.5;
 const ESMAECER_S = 0.4;
-const CRF = Number(opcao('--crf', '16'));
+const CRF = Number(opcao('--crf', WAVEDASH ? '18' : '16'));
 const DE_DIST = opcao('--from-dist');
 const SONDAR = opcao('--sondar');
 const MARCA_TOQUE = !bandeira('--sem-marca');
-const SO_VIDEO = bandeira('--so-video') || CRAZY || Y8;
+const SO_VIDEO = bandeira('--so-video') || CRAZY || Y8 || WAVEDASH;
 const SO_ESTATICA = bandeira('--so-estatica');
 const MANTER_TEMP = bandeira('--manter-temp');
 const SO_CENAS = opcao('--cenas');
@@ -345,6 +353,48 @@ const ROTEIRO_Y8 = [
       politicas: ['dica'], apressar: null, bastaNota: 9,
     },
   },
+];
+
+/**
+ * O video de previa da Wavedash (--perfil wavedash): 16:9, de 5 s a 5 min, sem
+ * audio, e ela guarda so os 10 primeiros segundos - entao jogo desde o primeiro
+ * quadro (nada de capa nem tela de titulo, ao contrario da CrazyGames) e o mais
+ * vistoso no comeco: o mundo 1 com o primeiro toque logo aos 0,3 s, o gelo, a
+ * TNT e o doce cabem nos 10 s. Depois, mais tres cenarios e a vitoria, ~22 s.
+ */
+const ROTEIRO_WAVEDASH = [
+  {
+    nome: 'toque',
+    candidatas: ROTEIRO[0].candidatas,
+    melhor: true,
+    basta: 3,
+    aquecer: 45,
+    duracao: 3.4,
+    toques: [[0.3, 'sob-hex'], [1.05, 'sob-hex'], [1.85, 'dica'], [2.6, 'dica']],
+  },
+  ROTEIRO_CRAZY[1], // gelo
+  ROTEIRO_CRAZY[2], // explosao
+  ROTEIRO_CRAZY[3], // doce
+  {
+    nome: 'futurista',
+    candidatas: [[21, 0], [22, 0], [23, 0], [24, 0], [21, 1], [22, 1], [23, 1], [24, 1]],
+    melhor: true,
+    basta: 3,
+    aquecer: 45,
+    duracao: 2.6,
+    toques: [[0.2, 'dica'], [1.0, 'dica'], [1.8, 'dica']],
+  },
+  ROTEIRO_CRAZY[4], // neon
+  {
+    nome: 'papel',
+    candidatas: [[31, 0], [32, 0], [33, 0], [34, 0], [31, 1], [32, 1], [33, 1], [34, 1]],
+    melhor: true,
+    basta: 3,
+    aquecer: 45,
+    duracao: 2.6,
+    toques: [[0.2, 'dica'], [1.0, 'dica'], [1.8, 'dica']],
+  },
+  ROTEIRO_CRAZY[5], // vitoria
 ];
 
 /**
@@ -1364,7 +1414,8 @@ async function main() {
     const cenas = new Map();
     let total = 0;
     const escolhidas = SO_CENAS ? new Set(SO_CENAS.split(',')) : null;
-    for (const c0 of SO_ESTATICA ? [] : CRAZY ? ROTEIRO_CRAZY : Y8 ? ROTEIRO_Y8 : ROTEIRO) {
+    const roteiro = CRAZY ? ROTEIRO_CRAZY : Y8 ? ROTEIRO_Y8 : WAVEDASH ? ROTEIRO_WAVEDASH : ROTEIRO;
+    for (const c0 of SO_ESTATICA ? [] : roteiro) {
       if (escolhidas && !escolhidas.has(c0.nome)) continue;
       const c = CANDIDATAS
         ? { ...c0, candidatas: CANDIDATAS.split(',').map((x) => x.split(':').map(Number)) }

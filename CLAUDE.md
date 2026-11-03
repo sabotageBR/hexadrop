@@ -44,6 +44,13 @@ VITE_PLATAFORMA=yandex npm run build         # um portal so, em dist-yandex/
 node tools/thumbnail.mjs --perfil y8 --largura 1920 --altura 1080 --vista 960x540 \
   --video hexa-drop-video-continuo-1920x1080.mp4 --folha quadros-video-continuo.png --sem-marca --crf 18
                              # o trecho continuo da Y8 (sem corte), que o npm run portais converte (~10 min)
+
+npm run build:wavedash       # dist-wavedash/ (Wavedash: o SDK e injetado por ela, sem anuncio)
+npm run preview:wavedash     # serve dist-wavedash em 127.0.0.1:4177 (sem window.Wavedash, como fora dela)
+npm run verify:wavedash      # conformidade da Wavedash (precisa do preview:wavedash no ar)
+npm run test:wavedash        # teste de unidade do adaptador (node --test, Node puro)
+npm run portais -- --portal=wavedash --so=builds   # o zip, em dist-portais/hexa-drop-wavedash-<versao>.zip
+node tools/thumbnail.mjs --perfil wavedash         # o video de previa 16:9 (~22 s) em marketing/portais/wavedash/
 ```
 
 O app pede **Node 22** (`~/programas/node-v22.*`, no PATH pelo `~/.bashrc`; o
@@ -1728,8 +1735,9 @@ como primeiro quadro (`--abertura`), que a CrazyGames pede; `tools/crazygames.mj
 
 ### Portais de distribuição
 
-Y8, Playgama, Yandex Games, GameMonetize, GameDistribution e GamePix (2026-10-20). Cada um é um
-`VITE_PLATAFORMA` (`y8`, `playgama`, `yandex`, `gamemonetize`, `gamedistribution`, `gamepix`), sai em
+Y8, Playgama, Yandex Games, GameMonetize, GameDistribution e GamePix (2026-10-20), e a Wavedash
+(2026-11-03, ver abaixo). Cada um é um
+`VITE_PLATAFORMA` (`y8`, `playgama`, `yandex`, `gamemonetize`, `gamedistribution`, `gamepix`, `wavedash`), sai em
 `dist-<portal>/` e tem a implementação de `@plataforma` em `src/portais/<portal>.js`, sobre
 `src/portais/base.js` (a interface de `poki.js`, os prazos, o prêmio só com o fim do vídeo e a pausa do
 portal). A entrada é `src/portais/inicio.js`, que inicia o SDK e prepara idioma e save antes de
@@ -1759,8 +1767,28 @@ O que muda de um portal para outro (fontes em `marketing/portais/<portal>/ficha.
 - **GamePix**: os ganchos de pausa e som ficam declarados antes do `loaded()`, em `GamePix.on.*` e em
   `GamePix.*` (o SDK v3 procura o primeiro, depois o segundo).
 
+**Wavedash** (`src/portais/wavedash.js`): a versão lisa com o `Wavedash.init()` e a barra de carregamento.
+A Wavedash injeta `window.Wavedash` antes dos scripts do jogo (`injetado` em `tools/portais-sdk.mjs`): nada
+no HTML e nenhuma URL de fora, porque o jogo roda isolado (COEP `require-corp`). Regras:
+
+- **`Wavedash.init()` uma vez só, no `gameLoadingFinished` de main.js**, por fora do `ready` do SDK.
+  Nunca de um quadro: num iframe de outra origem escondido o Chrome não roda o rAF, e o jogo ficaria atrás
+  da tela de carregamento dela para sempre. Também não espera foco, aba visível nem o fim de uma pausa.
+  Se o carregamento não chegar lá, a reserva por timer chama o init 8 s depois da avaliação do módulo
+  (`RESERVA_MS`). `updateLoadProgressZeroToOne` sai nas etapas do carregamento (`CARGA`), antes do init.
+- **Sem anúncio:** `COM_ANUNCIOS` é falso, os botões de vídeo somem e fica o caminho gratuito da versão
+  lisa. A regra que esconde os botões mora no adaptador, e não em game.css, para a folha dos outros builds
+  continuar a mesma. O intervalo sai na hora e o vídeo premiado responde `false`.
+- **Idioma:** `getUserLanguage()` só quando é um dos sete; senão, o do navegador.
+- **Nenhuma marca de outro portal no zip** (`semMarcas`): `vite.config.js` tira do CSS os seletores das
+  outras plataformas e os comentários do index.html (que citam a Poki). Esc não é a única pausa: P, Espaço e
+  o botão do HUD também pausam (na Wavedash o Esc sai da tela cheia antes).
+- **Prova do zip:** `node distribuicao/provar-wavedash.mjs <zip> --porta <n>`, na raiz `em_tech/` (fora
+  deste repositório): o zip num iframe isolado, oculto até o init, com um `window.Wavedash` falso. O
+  material (capa 1920x1080 só com a logo, vídeo de `--perfil wavedash`) fica em `marketing/portais/wavedash/`.
+
 `tools/portaischeck.mjs` monta cada portal com ids de teste em `.tmp/portaischeck/` e serve o SDK falso
-pela mesma URL do de verdade: confere carregamento, idioma, intervalo com som calado, prêmio, pausa do
+pela mesma URL do de verdade (o da Wavedash entra antes dos scripts da página, como ela faz): confere carregamento, idioma, intervalo com som calado, prêmio, pausa do
 portal, aba escondida, save e pre-roll. As imagens (`tools/portais.mjs`) saem da capa em qualquer
 proporção (`marketing/portais/capa/`), do ícone do app e de telas do jogo em inglês com um toque na peça
 da dica; JPG desce de qualidade até caber no peso do portal.
@@ -1902,7 +1930,9 @@ bundle) ele cobra também: nada da Poki, nenhuma URL nem script externo, e com
 `EXIGE_PRODUCAO=1` nenhuma unidade de anúncio de teste e as reais preenchidas. No build
 da Poki, que nada do app nem da CrazyGames entrou. No da CrazyGames (`DIST_DIR=dist-crazy`,
 reconhecido pelo SDK v3 no HTML), que o único script externo é o deles, sem nada da Poki
-nem do app, e no máximo 1.500 arquivos.
+nem do app, e no máximo 1.500 arquivos. No da Wavedash (`DIST_DIR=dist-wavedash`), também nome de
+outro portal em qualquer arquivo, import ou arquivo referenciado que falte, caminho absoluto, `index.html`
+fora da raiz e a falta de `Wavedash.init(` e de `updateLoadProgressZeroToOne` no JS.
 
 `window.__game` e `window.__audio` são expostos no fim de `main.js` só para essa
 automação, e **só em `127.0.0.1`/`localhost`**: a Poki pede *"remove all development

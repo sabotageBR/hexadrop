@@ -1,7 +1,7 @@
 # Hexa Drop nos portais de distribuição
 
 Builds e material gráfico para Y8, Playgama, Yandex Games, GameMonetize, GameDistribution e GamePix
-(2026-10-20, versão 1.0.19). Cada pasta tem as imagens e os vídeos no tamanho e no formato exatos que o
+(2026-10-20, versão 1.0.19), e para a Wavedash (2026-11-03, mesma versão). Cada pasta tem as imagens e os vídeos no tamanho e no formato exatos que o
 painel pede, a `ficha.md` com as opções do envio e os textos para colar, e uma `folha.jpg` para conferir
 tudo de uma vez.
 
@@ -13,6 +13,7 @@ tudo de uma vez.
 | GameMonetize | `dist-portais/hexa-drop-gamemonetize-1.0.19-sem-id.zip` | [`gamemonetize/`](gamemonetize/ficha.md) | **falta o id do painel** |
 | GameDistribution | `dist-portais/hexa-drop-gamedistribution-1.0.19-sem-id.zip` | [`gamedistribution/`](gamedistribution/ficha.md) | **falta o id do painel** |
 | GamePix | `dist-portais/hexa-drop-gamepix-1.0.19.zip` | [`gamepix/`](gamepix/ficha.md) | pronto |
+| Wavedash | `dist-portais/hexa-drop-wavedash-1.0.19.zip` | [`wavedash/`](wavedash/) (capa e vídeo; os textos ficam em `distribuicao/hexa-drop/textos.md`) | pronto, nada enviado |
 
 ## Os ids dos painéis
 

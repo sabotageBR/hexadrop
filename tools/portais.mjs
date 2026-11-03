@@ -1,6 +1,6 @@
 /**
  * Os pacotes e o material grafico dos portais de distribuicao (Y8, Playgama,
- * Yandex Games, GameMonetize, GameDistribution e GamePix).
+ * Yandex Games, GameMonetize, GameDistribution, GamePix e Wavedash).
  *
  *   node tools/portais.mjs                    # builds e material de todos
  *   node tools/portais.mjs --so=builds        # so os zips
@@ -26,7 +26,9 @@
  *   que recusa montagem ("a continuous gameplay clip with no cuts"), um trecho
  *   so de uma fase, gravado por `node tools/thumbnail.mjs --perfil y8` (VIDEO_Y8,
  *   ~10 min; rode antes, depois de mexer em arte ou em `npm run levels`). O da
- *   Y8 sai no MP4 que todo painel le (mp4Compativel);
+ *   Y8 sai no MP4 que todo painel le (mp4Compativel). O da Wavedash, jogo desde
+ *   o primeiro quadro e sem audio, ja sai no lugar por `node tools/thumbnail.mjs
+ *   --perfil wavedash` (VIDEO_WAVEDASH): aqui so se confere que ele existe;
  * - folha.jpg de cada portal, para conferir tudo de uma vez (nao vai para o
  *   envio).
  * JPG que passa do peso maximo do portal desce de qualidade ate caber.
@@ -49,6 +51,8 @@ const PORTA_CDP = 9112;
 const VIDEO_CRAZY = join(RAIZ, 'marketing/crazygames/videos/hexadrop-video-1920x1080.mp4');
 /** O trecho continuo da Y8, de `tools/thumbnail.mjs --perfil y8` (ROTEIRO_Y8). */
 const VIDEO_Y8 = join(RAIZ, 'marketing/portais/y8/hexa-drop-video-continuo-1920x1080.mp4');
+/** O video de previa da Wavedash, de `tools/thumbnail.mjs --perfil wavedash` (ROTEIRO_WAVEDASH). */
+const VIDEO_WAVEDASH = join(RAIZ, 'marketing/portais/wavedash/hexa-drop-video-1920x1080.mp4');
 /** Os portais que pedem id do painel, e quais. */
 const IDS_PEDIDOS = { y8: ['appId', 'gameId'], gamedistribution: ['gameId'], gamemonetize: ['gameId'] };
 
@@ -77,6 +81,7 @@ const CENAS = {
  * @property {boolean} [logo]  capa com a logo (padrao: sim)
  * @property {string} [cena]   tela: chave de CENAS
  * @property {boolean} [continuo]  video: o trecho sem corte da Y8 (VIDEO_Y8)
+ * @property {boolean} [previa]    video: o da Wavedash (VIDEO_WAVEDASH), gravado ja no lugar
  */
 
 /** O que cada portal pede. @type {Record<string, Item[]>} */
@@ -133,6 +138,12 @@ const ITENS = {
   gamepix: [
     { arq: 'icone-256x256', tipo: 'icone', w: 256, h: 256, fmt: 'png', maxKB: 1024 },
     { arq: 'capa-1360x850', tipo: 'capa', w: 1360, h: 850, fmt: 'png', maxKB: 1536 },
+  ],
+  wavedash: [
+    // 16:9 (guardada ate 1920x1080, ate 25 MB), com o titulo e nenhum outro texto.
+    { arq: 'capa-1920x1080', tipo: 'capa', w: 1920, h: 1080, fmt: 'png', maxKB: 25600 },
+    // Jogo desde o primeiro quadro, sem audio: ela guarda so os 10 primeiros segundos.
+    { arq: 'video-1920x1080', tipo: 'video', previa: true },
   ],
 };
 
@@ -325,7 +336,9 @@ async function arte() {
     for (const it of ITENS[portal]) {
       if (it.tipo === 'video') {
         const mp4 = join(pasta, `${JOGO}-${it.arq}.mp4`);
-        if (it.continuo) {
+        if (it.previa) {
+          if (!existsSync(VIDEO_WAVEDASH)) throw new Error('falta o video da Wavedash: node tools/thumbnail.mjs --perfil wavedash');
+        } else if (it.continuo) {
           if (!existsSync(VIDEO_Y8)) {
             throw new Error('falta o trecho continuo da Y8: node tools/thumbnail.mjs --perfil y8 --largura 1920 --altura 1080 '
               + '--vista 960x540 --video hexa-drop-video-continuo-1920x1080.mp4 --folha quadros-video-continuo.png --sem-marca --crf 18');
