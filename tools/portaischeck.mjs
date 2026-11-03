@@ -13,8 +13,9 @@
  * - na GameDistribution o pre-roll sai antes do jogo abrir;
  * - na Playgama, pelos requisitos de 2026-10-30: nenhum acesso ao armazenamento
  *   do navegador (3.2.1), o intervalo sem a carencia do jogo (passo 7 do
- *   Bridge), o Esc sem efeito e o P pausando (1.5.2), e "(ad)" no texto dos
- *   botoes de video (2.2.1).
+ *   Bridge), o Esc sem efeito e o P pausando (1.5.2), "(ad)" no texto dos
+ *   botoes de video (2.2.1), e o som so em arquivo, com a musica de fundo
+ *   tocando e nenhum oscilador criado (3.3.1 e 3.3.2).
  *
  * Cada portal e montado em .tmp/portaischeck/<portal> com ids de teste (os de
  * marketing/portais/ids.json ficam para o build publicado) e servido por um
@@ -78,6 +79,19 @@ window.YaGames = { init() {
   playgama: {
     url: '*playgama-bridge.js*',
     js: `${COMUM}
+// conta os osciladores (som sintetizado) e as fontes de buffer (som de arquivo) que o jogo cria
+(() => {
+  let osc = 0;
+  let fontes = 0;
+  window.__osciladores = () => osc;
+  window.__fontesDeArquivo = () => fontes;
+  const C = window.BaseAudioContext || window.AudioContext;
+  if (!C) return;
+  const o = C.prototype.createOscillator;
+  C.prototype.createOscillator = function () { osc++; return o.apply(this, arguments); };
+  const b = C.prototype.createBufferSource;
+  C.prototype.createBufferSource = function () { fontes++; return b.apply(this, arguments); };
+})();
 // conta todo acesso ao armazenamento do navegador (o SDK falso nao usa nenhum)
 (() => {
   let n = 0;
@@ -391,6 +405,14 @@ for (const portal of ALVOS) {
     confere('o P pausa e volta', comP === 'pause' && (await js('window.__game.screen')) === 'game', `${comP} -> ${await js('window.__game.screen')}`);
     const ad = await js("getComputedStyle(document.querySelector('.btn.ad'), '::after').content");
     confere('botao de video diz que e anuncio (2.2.1)', /reklam/.test(String(ad)), String(ad));
+    // um clique de verdade (os eventos de JS nao contam como gesto) destrava o audio; o clique na
+    // torre quebra uma peca, e a musica comeca
+    for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: 480, y: 300, button: 'left', clickCount: 1 }, sessionId);
+    await sleep(3000);
+    const som = JSON.parse(String(await js("JSON.stringify({ osc: window.__osciladores(), fontes: window.__fontesDeArquivo(), prontos: [...window.__audio._buffers.values()].filter((b) => b && typeof b !== 'string').length, musica: !!window.__audio._musica, musicOn: window.__audio.musicOn })")));
+    confere('nenhum som sintetizado (3.3.2)', som.osc === 0, `osciladores: ${som.osc}`);
+    confere('efeitos em arquivo, tocando', som.prontos >= 30 && som.fontes > 1, `carregados: ${som.prontos}, tocados: ${som.fontes}`);
+    confere('musica de fundo em arquivo, ligada e tocando (3.3.1)', som.musica && som.musicOn, JSON.stringify(som));
   }
   if (tem.save) {
     await js("window.__log.length = 0; window.__game.progress.data.coins += 7; window.__game.progress.flush(); true");

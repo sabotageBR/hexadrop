@@ -119,6 +119,9 @@ const TROCAS_PLAYGAMA = {
     // 1.5.2: o Esc e do navegador (sai da tela cheia); P e Espaco pausam, e os
     // menus voltam pelo botao
     ["  onKey(code) {\n    if (code === 'KeyP'", "  onKey(code) {\n    if (code === 'Escape') return;\n    if (code === 'KeyP'"],
+    // 3.3.1: os cartoes de vitoria e de derrota tocam as vinhetas (src/portais/playgama-audio.js)
+    ['if (!calado) audio.win();', 'if (!calado) audio.winCard();'],
+    ['  showLose() {\n    audio.lose();', '  showLose() {\n    audio.loseCard();'],
   ],
 };
 /** CSS a mais no fim de cada arquivo, so no build da Playgama. */
@@ -137,21 +140,31 @@ const CSS_PLAYGAMA = {
 };
 
 /**
- * So no build da Playgama: src/core/storage.js vira src/portais/playgama-storage.js
- * (so memoria e o espelho do Bridge, nunca o armazenamento do navegador: 3.2.1),
- * e entram as TROCAS_PLAYGAMA e o CSS_PLAYGAMA. Nos outros alvos o plugin nao
- * faz nada, e os bundles saem iguais.
+ * So no build da Playgama, os modulos trocados (MODULOS_PLAYGAMA), as
+ * TROCAS_PLAYGAMA e o CSS_PLAYGAMA. Nos outros alvos o plugin nao faz nada, e
+ * os bundles saem iguais.
  */
+const MODULOS_PLAYGAMA = {
+  // 3.2.1: so memoria e o espelho do Bridge, nunca o armazenamento do navegador
+  'src/core/storage.js': 'src/portais/playgama-storage.js',
+  // 3.3.1 e 3.3.2: musica e efeitos em arquivo (tools/sons-playgama.mjs), nada sintetizado
+  'src/core/audio.js': 'src/portais/playgama-audio.js',
+};
+
 function soNaPlaygama() {
-  const storage = resolve(root, 'src/core/storage.js');
-  const substituto = resolve(root, 'src/portais/playgama-storage.js');
+  const trocados = new Map(Object.entries(MODULOS_PLAYGAMA).map(([de, para]) => [resolve(root, de), resolve(root, para)]));
   return {
     name: 'hexadrop-so-na-playgama',
     enforce: 'pre',
     async resolveId(source, importer, options) {
-      if (PLATAFORMA !== 'playgama' || !importer || !source.endsWith('storage.js')) return null;
+      if (PLATAFORMA !== 'playgama' || !importer || !/(storage|audio)\.js$/.test(source)) return null;
       const r = await this.resolve(source, importer, { ...options, skipSelf: true });
-      return r && r.id === storage ? substituto : null;
+      return (r && trocados.get(r.id)) || null;
+    },
+    // os creditos dos sons (CC0) ao lado do LICENCAS.txt dos outros builds
+    generateBundle() {
+      if (PLATAFORMA !== 'playgama') return;
+      this.emitFile({ type: 'asset', fileName: 'LICENCAS-SONS.txt', source: readFileSync(resolve(root, 'src/portais/playgama-sons/LICENCAS.txt'), 'utf8') });
     },
     transform(code, id) {
       if (PLATAFORMA !== 'playgama') return null;
@@ -198,7 +211,8 @@ export default defineConfig({
   build: {
     outDir: SAIDA,
     target: 'es2020',
-    assetsInlineLimit: 8192,
+    // na Playgama os MP3 vao como arquivo, nunca embutidos no JS (3.3.2: som em arquivo)
+    assetsInlineLimit: PLATAFORMA === 'playgama' ? (arquivo, conteudo) => !arquivo.endsWith('.mp3') && conteudo.length < 8192 : 8192,
     cssCodeSplit: false,
     sourcemap: false,
     // Os prototipos NAO entram no build. Eles sao oficina: rodam em `npm run

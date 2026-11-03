@@ -1755,8 +1755,10 @@ O que muda de um portal para outro (fontes em `marketing/portais/<portal>/ficha.
     `vite.config.js` (nos outros alvos ele não faz nada, e os bundles saem iguais): `src/core/storage.js` vira
     `src/portais/playgama-storage.js` (só memória e Bridge), o Esc não faz nada, sem a carência
     `FASES_SEM_INTERVALO` e "(ad)" no texto dos botões de vídeo; o idioma do Bridge vem depois do save, com o
-    inglês de reserva. O `npm run portais:check -- playgama` cobra cada um. Falta o som: a Playgama não aceita
-    som sintetizado (3.3.2).
+    inglês de reserva. E todo o som em arquivo (3.3.2): o `src/core/audio.js` vira o
+    `src/portais/playgama-audio.js`, que toca os MP3 de `src/portais/playgama-sons/` (música do MintoDog e
+    efeitos da Kenney, CC0, convertidos pelo `tools/sons-playgama.mjs`; a música começa ligada). O
+    `npm run portais:check -- playgama` cobra cada um, inclusive nenhum oscilador e a música tocando.
 - **Pausa do portal** (botão de pausa do site, `game_api_pause`, `GamePix.on.pause`...): abre a tela de
   pausa, e a volta fecha e segue sozinha (`pausaDoPortal` em main.js). **Aba escondida**: a tela de
   pausa, que fica 0,8 s na volta e retoma sozinha (`pausaDaAba`). Foi o que o Testing Toolkit da

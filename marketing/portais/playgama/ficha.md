@@ -36,8 +36,17 @@ os banners das campanhas de tráfego do sandbox. Os arquivos ficam em `marketing
   - o idioma só do Bridge, com o inglês de reserva (3.4.2), aplicado depois do save, para a escolha das
     opções voltar;
   - "(ad)" no texto dos botões de vídeo, em cada idioma (2.2.1).
-- **Falta o som (3.3.1 e 3.3.2):** a música e todos os efeitos são sintetizados no navegador, e a Playgama só
-  aceita som gravado ou produzido em ferramenta de áudio, em ogg ou mp3. **Não envie** antes disso.
+- **Som em arquivo (3.3.1 e 3.3.2), escolhido pelo usuário em 2026-11-03:**
+  - música de fundo: Sci-fi Puzzle In-Game 2, do MintoDog (CC0, opengameart.org), uma faixa para todos os
+    mundos, em laço sem emenda. Neste build ela começa ligada: a 3.3.1 pede música de fundo, e a versão
+    sintetizada nasce desligada desde a 1.0.16;
+  - cartões de vitória e de derrota: as vinhetas Clear e Failure da mesma série;
+  - efeitos: os CC0 da Kenney, um por material de peça. Estrela, moeda, bônus e combo sobem de nota como
+    na síntese, e a batida varia de volume pela força.
+
+  O `tools/sons-playgama.mjs` converte as fontes de `.tmp/sons/`, e o `src/portais/playgama-audio.js`
+  entra no lugar do `src/core/audio.js`. A build não leva nenhum som sintetizado, e os 33 MP3 vão como
+  arquivo, nunca embutidos no JS.
 - **Supported devices:** Desktop, iOS, Android. **Screen orientation:** as duas. No desktop o jogo roda deitado, com o HUD nas laterais; no celular, em pé ou deitado, e a cena se ajusta.
 - **Game languages:** English, Português, Español, Français, Italiano, Deutsch, Türkçe.
 - **Category:** `puzzle`.

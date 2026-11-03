@@ -1,0 +1,8 @@
+Sons do build da Playgama (CC0 1.0, creativecommons.org/publicdomain/zero/1.0/):
+- Kenney Interface Sounds
+- Kenney UI Audio
+- Kenney Impact Sounds
+- Kenney Casino Audio
+- MintoDog (opengameart.org) Sci-fi Puzzle Jingle & Result
+- MintoDog (opengameart.org) Sci-fi Puzzle In-Game 2
+Convertidos por tools/sons-playgama.mjs (loudnorm, MP3).
