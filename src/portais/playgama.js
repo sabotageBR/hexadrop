@@ -16,8 +16,17 @@
  *
  * As mensagens de fase (`level_started`, `level_completed`, `level_failed`)
  * saem dos eventos que o jogo ja emite. O "voltar uma jogada" por video do
- * cartao de derrota sai deste build (game.css): a regra 6.3 deles proibe o
- * "+1 vida" oferecido a cada derrota.
+ * cartao de derrota sai deste build (game.css): a regra 2.2.4 deles (a antiga
+ * 6.3) proibe o "+1 vida" oferecido a cada derrota.
+ *
+ * Os requisitos reescritos em 2026-10-30 (wiki.playgama.com/playgama/game-requirements)
+ * pedem mais, e o plugin `soNaPlaygama` do vite.config.js cuida do resto:
+ * - o save nunca no armazenamento do navegador (3.2.1): o build usa
+ *   src/portais/playgama-storage.js, so memoria e Bridge;
+ * - o idioma so do Bridge, com o ingles de reserva (3.4.2). Vem depois do
+ *   save, para a escolha feita nas opcoes voltar antes;
+ * - sem o Esc (1.5.2), sem a carencia do intervalo (passo 7 do Bridge: quem
+ *   espaca e o Bridge) e com "(ad)" no texto dos botoes de video (2.2.1).
  */
 
 import { Portal } from './base.js';
@@ -53,8 +62,13 @@ class Playgama extends Portal {
   }
 
   async _preparar() {
+    await this._carregarSave();
     const lang = this._chama(() => this._b.platform.language);
-    if (lang) idiomaDaPlataforma(String(lang));
+    idiomaDaPlataforma(String(lang || 'en'));
+  }
+
+  /** O save do Bridge de volta ao jogo, e o espelho que leva as gravacoes ate ele. */
+  async _carregarSave() {
     const storage = this._b.storage;
     /** @type {Record<string, string>} */
     let salvo = {};

@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { PORTAIS } from './tools/portais-sdk.mjs';
 
@@ -106,9 +106,73 @@ function entradaDoApp() {
   };
 }
 
+/**
+ * O que muda so no build da Playgama, pelos requisitos de 2026-10-30
+ * (wiki.playgama.com/playgama/game-requirements). Arquivo do repositorio ->
+ * [texto, troca]; texto que sumir do codigo reprova o build.
+ */
+const TROCAS_PLAYGAMA = {
+  'src/main.js': [
+    // passo 7 do Bridge: nada de contador proprio, quem espaca o intervalo e o
+    // Bridge (60 s no playgama-bridge-config.json, e o primeiro aos 30 s)
+    ['const FASES_SEM_INTERVALO = 5;', 'const FASES_SEM_INTERVALO = 0;'],
+    // 1.5.2: o Esc e do navegador (sai da tela cheia); P e Espaco pausam, e os
+    // menus voltam pelo botao
+    ["  onKey(code) {\n    if (code === 'KeyP'", "  onKey(code) {\n    if (code === 'Escape') return;\n    if (code === 'KeyP'"],
+  ],
+};
+/** CSS a mais no fim de cada arquivo, so no build da Playgama. */
+const CSS_PLAYGAMA = {
+  // 2.2.1: o botao do video diz, em texto, que e anuncio (o icone de camera so
+  // nao basta); o <html lang> vem do getLang() de main.js
+  'src/ui/game.css': `
+.btn.ad::after { content: "(ad)"; font-size: 0.82em; opacity: 0.85; }
+:lang(pt) .btn.ad::after { content: "(anúncio)"; }
+:lang(es) .btn.ad::after { content: "(anuncio)"; }
+:lang(fr) .btn.ad::after { content: "(pub)"; }
+:lang(it) .btn.ad::after { content: "(pubblicità)"; }
+:lang(de) .btn.ad::after { content: "(Werbung)"; }
+:lang(tr) .btn.ad::after { content: "(reklam)"; }
+`,
+};
+
+/**
+ * So no build da Playgama: src/core/storage.js vira src/portais/playgama-storage.js
+ * (so memoria e o espelho do Bridge, nunca o armazenamento do navegador: 3.2.1),
+ * e entram as TROCAS_PLAYGAMA e o CSS_PLAYGAMA. Nos outros alvos o plugin nao
+ * faz nada, e os bundles saem iguais.
+ */
+function soNaPlaygama() {
+  const storage = resolve(root, 'src/core/storage.js');
+  const substituto = resolve(root, 'src/portais/playgama-storage.js');
+  return {
+    name: 'hexadrop-so-na-playgama',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      if (PLATAFORMA !== 'playgama' || !importer || !source.endsWith('storage.js')) return null;
+      const r = await this.resolve(source, importer, { ...options, skipSelf: true });
+      return r && r.id === storage ? substituto : null;
+    },
+    transform(code, id) {
+      if (PLATAFORMA !== 'playgama') return null;
+      const arquivo = relative(root, id.split('?')[0]);
+      const trocas = TROCAS_PLAYGAMA[arquivo];
+      const css = CSS_PLAYGAMA[arquivo];
+      if (!trocas && !css) return null;
+      let novo = code;
+      for (const [de, para] of trocas || []) {
+        if (!novo.includes(de)) throw new Error(`soNaPlaygama: "${de}" sumiu de ${arquivo}`);
+        novo = novo.split(de).join(para);
+      }
+      if (css) novo += css;
+      return { code: novo, map: null };
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [semPlataforma(), entradaDoApp()],
+  plugins: [semPlataforma(), entradaDoApp(), soNaPlaygama()],
   // A versao do package.json, para a telemetria do app saber de que build veio
   // cada evento (o versionName do Android sai do mesmo campo).
   define: {

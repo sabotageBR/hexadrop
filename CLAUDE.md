@@ -1750,7 +1750,13 @@ O que muda de um portal para outro (fontes em `marketing/portais/<portal>/ficha.
   gratuito fica no lugar dos botões de vídeo (game.css).
 - **GameDistribution**: pre-roll obrigatório em `_preparar`, antes do jogo abrir.
 - **Playgama**: save pelo `bridge.storage` (`src/portais/save.js`), e o "voltar uma jogada" por vídeo sai
-  do cartão de derrota (regra 6.3: nada de "+1 vida" a cada derrota).
+  do cartão de derrota (regra 2.2.4, a antiga 6.3: nada de "+1 vida" a cada derrota).
+  - **Requisitos de 2026-10-30 (branch `playgama`):** só no build dela, pelo plugin `soNaPlaygama` do
+    `vite.config.js` (nos outros alvos ele não faz nada, e os bundles saem iguais): `src/core/storage.js` vira
+    `src/portais/playgama-storage.js` (só memória e Bridge), o Esc não faz nada, sem a carência
+    `FASES_SEM_INTERVALO` e "(ad)" no texto dos botões de vídeo; o idioma do Bridge vem depois do save, com o
+    inglês de reserva. O `npm run portais:check -- playgama` cobra cada um. Falta o som: a Playgama não aceita
+    som sintetizado (3.3.2).
 - **Pausa do portal** (botão de pausa do site, `game_api_pause`, `GamePix.on.pause`...): abre a tela de
   pausa, e a volta fecha e segue sozinha (`pausaDoPortal` em main.js). **Aba escondida**: a tela de
   pausa, que fica 0,8 s na volta e retoma sozinha (`pausaDaAba`). Foi o que o Testing Toolkit da

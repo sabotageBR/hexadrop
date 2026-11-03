@@ -10,7 +10,11 @@
  * - o video recompensado paga so quando o SDK diz que foi visto ate o fim;
  * - a pausa do portal fora do anuncio cala o jogo, e a volta devolve o som;
  * - na Playgama e na GamePix o save vai para o armazenamento do portal;
- * - na GameDistribution o pre-roll sai antes do jogo abrir.
+ * - na GameDistribution o pre-roll sai antes do jogo abrir;
+ * - na Playgama, pelos requisitos de 2026-10-30: nenhum acesso ao armazenamento
+ *   do navegador (3.2.1), o intervalo sem a carencia do jogo (passo 7 do
+ *   Bridge), o Esc sem efeito e o P pausando (1.5.2), e "(ad)" no texto dos
+ *   botoes de video (2.2.1).
  *
  * Cada portal e montado em .tmp/portaischeck/<portal> com ids de teste (os de
  * marketing/portais/ids.json ficam para o build publicado) e servido por um
@@ -74,6 +78,19 @@ window.YaGames = { init() {
   playgama: {
     url: '*playgama-bridge.js*',
     js: `${COMUM}
+// conta todo acesso ao armazenamento do navegador (o SDK falso nao usa nenhum)
+(() => {
+  let n = 0;
+  window.__acessosNavegador = () => n;
+  const vigiar = (obj, nome) => {
+    let d = null;
+    for (let o = obj; o && !d; o = Object.getPrototypeOf(o)) d = Object.getOwnPropertyDescriptor(o, nome);
+    if (!d || !d.get) return;
+    Object.defineProperty(obj, nome, { configurable: true, get() { n++; return d.get.call(this); }, set(v) { n++; if (d.set) d.set.call(this, v); } });
+  };
+  for (const nome of ['localStorage', 'sessionStorage', 'indexedDB']) vigiar(window, nome);
+  vigiar(document, 'cookie');
+})();
 (() => {
   const ouv = { a: {}, p: {} };
   const on = (t) => (n, f) => { (ouv[t][n] = ouv[t][n] || []).push(f); };
@@ -197,7 +214,7 @@ window.dispatchEvent(new Event('y8sdk.ready'));`,
 /** O que cada portal tem e o banco confere. */
 const TEM = {
   yandex: { idioma: true, pausa: true, premio: true, sinal: 'pronto' },
-  playgama: { idioma: true, pausa: true, premio: true, sinal: 'msg:game_ready', save: true },
+  playgama: { idioma: true, pausa: true, premio: true, sinal: 'msg:game_ready', save: true, requisitos2026: true },
   gamepix: { idioma: true, pausa: true, premio: true, sinal: 'pronto', save: true },
   y8: { idioma: true, pausa: false, premio: true, sinal: 'init:teste-app:teste-jogo', soClique: true },
   gamedistribution: { idioma: false, pausa: true, premio: true, sinal: 'opcoes:teste-jogo', preroll: true },
@@ -307,6 +324,12 @@ for (const portal of ALVOS) {
   if (tem.preroll) confere('pre-roll antes de o jogo abrir', l0.indexOf('midgame:preroll') >= 0, l0.join(' '));
   if (tem.idioma) confere('idioma do portal', (await js('document.documentElement.lang')) === 'tr', await js('document.documentElement.lang'));
 
+  if (tem.requisitos2026) {
+    // passo 7 do Bridge: sem carencia propria, o intervalo ja sai na fase 1
+    await js('window.__game.progress.data.unlocked = 1; window.__log.length = 0; true');
+    await js("window.__game.commercialBreak('troca')");
+    confere('intervalo sem carencia do jogo (passo 7)', (await log()).some((x) => x.startsWith('midgame')), (await log()).join(' '));
+  }
   // Intervalo: com a carencia vencida. Na Y8 a passagem automatica nao pede.
   await js('window.__game.progress.data.unlocked = 30; true');
   await js('window.__log.length = 0; true');
@@ -357,12 +380,25 @@ for (const portal of ALVOS) {
     confere('aba escondida abre a tela de pausa', naAba === 'pause' && logoDepois === 'pause', naAba);
     confere('volta da aba retoma sozinha', (await js("window.__game.screen === 'game' && !window.__game.paused")) === true, await js('window.__game.screen'));
   }
+  if (tem.requisitos2026) {
+    const tecla = (code) => js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '${code}', code: '${code}', bubbles: true })); new Promise((r) => setTimeout(() => r(true), 300))`);
+    await js('window.__game.startLevel(5); new Promise((r) => setTimeout(() => r(true), 1500))');
+    await tecla('Escape');
+    confere('o Esc nao pausa (1.5.2)', (await js('window.__game.screen')) === 'game', await js('window.__game.screen'));
+    await tecla('KeyP');
+    const comP = await js('window.__game.screen');
+    await tecla('KeyP');
+    confere('o P pausa e volta', comP === 'pause' && (await js('window.__game.screen')) === 'game', `${comP} -> ${await js('window.__game.screen')}`);
+    const ad = await js("getComputedStyle(document.querySelector('.btn.ad'), '::after').content");
+    confere('botao de video diz que e anuncio (2.2.1)', /reklam/.test(String(ad)), String(ad));
+  }
   if (tem.save) {
     await js("window.__log.length = 0; window.__game.progress.data.coins += 7; window.__game.progress.flush(); true");
     await sleep(1800);
     const store = await js('JSON.stringify(window.__sdkFalso.store)');
     confere('save no armazenamento do portal', (await log()).includes('gravou') && /hexadrop\.save|coins/.test(store || ''), (store || '').slice(0, 80));
   }
+  if (tem.requisitos2026) confere('nenhum acesso ao armazenamento do navegador (3.2.1)', (await js('window.__acessosNavegador()')) === 0, String(await js('window.__acessosNavegador()')));
   confere('sem erro no console', erros.length === 0, erros.slice(0, 2).join(' | '));
   ouvintes.delete('Fetch.requestPaused');
   await send('Target.closeTarget', { targetId });
