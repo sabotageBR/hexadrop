@@ -54,6 +54,9 @@ const SAVE_VERSION = 3;
  * @property {boolean} shopNews ha premio novo para ver na loja
  * @property {number} [rev] gravacoes ate aqui; no app decide entre o localStorage e a copia do Preferences (src/app/save.js)
  * @property {number[]} perfeitas fases (base 1, inclusive depois da 100) ja vencidas dentro da meta
+ * @property {string[]} [compras] so na Wavedash: os purchaseId dos pacotes de moedas ja creditados
+ *   (game/pacotes.js). Nasce na primeira compra, fora de `blank()`, para os outros builds sairem
+ *   byte a byte iguais; o `{...blank(), ...stored}` do construtor o preserva.
  */
 
 /**

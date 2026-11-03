@@ -32,8 +32,9 @@ import { paintHexModel, hexPath } from './render/hexmodels.js';
 import { material as getMaterial } from './physics/materials.js';
 import { audio } from './core/audio.js';
 import { plataforma } from '@plataforma';
-import { PLATAFORMA, COM_ANUNCIOS, NO_APP } from './core/platform.js';
-import { t, getLang, setLang, LANGS, LANG_NAMES, onLangChange } from './core/i18n.js';
+import { PLATAFORMA, COM_ANUNCIOS, NO_APP, COM_PACOTES } from './core/platform.js';
+import { t, getLang, setLang, LANGS, LANG_NAMES, onLangChange, textosDosPacotes } from './core/i18n.js';
+import { PACOTES, pacote, creditaCompra, estornaCompra, zeraGuardandoCompras } from './game/pacotes.js';
 import { load, save, isPersistent } from './core/storage.js';
 import { Rng } from './core/rng.js';
 import { hudLateral, hasFinePointer } from './core/viewport.js';
@@ -523,6 +524,9 @@ class Game {
     // a aba sumiu ou voltou.
     plataforma.onPausaPortal = (pausado) => this.pausaDoPortal(pausado);
     plataforma.onAba = (escondida) => this.pausaDaAba(escondida);
+    // So a Wavedash: o credito das compras de moedas fica pronto antes do fim
+    // do carregamento, porque e dentro do init dela que chegam as pendentes.
+    if (COM_PACOTES) ligaPacotes(this);
 
     $('loaderBar').style.width = '35%';
     await plataforma.init();
@@ -981,7 +985,9 @@ class Game {
         }, 4000);
         return;
       }
-      this.progress.reset();
+      // Na Wavedash a lista das compras ja creditadas sobrevive (game/pacotes.js).
+      if (COM_PACOTES) zeraGuardandoCompras(this.progress);
+      else this.progress.reset();
       this.informaProgresso();
       this.level = 1;
       this.homeWorld = 0;
@@ -3763,6 +3769,9 @@ class Game {
     const host = $('shopList');
     host.innerHTML = '';
     const p = this.progress;
+    // Os pacotes de moedas pagos, no topo de cada aba: so na Wavedash, e so
+    // com o SDK que tem o checkout.
+    if (COM_PACOTES) secaoDePacotes(this, host);
 
     if (this.shopTab === 'skins') {
       for (const entry of p.skinCatalog()) {
@@ -4080,6 +4089,145 @@ class Game {
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => el.classList.remove('show'), 1900);
   }
+}
+
+// ------------------------------------------------- pacotes de moedas pagos
+//
+// So o build da Wavedash (COM_PACOTES em core/platform.js) chama o que vem
+// abaixo. Sao funcoes de modulo, e nao metodos de Game, de proposito: o Rollup
+// tira do bundle funcao que ninguem chama, mas nunca metodo de classe, e os
+// outros builds tem que sair byte a byte iguais. O protocolo da compra mora em
+// src/portais/wavedash-pacotes.js; o credito no save, em game/pacotes.js.
+
+/** O contador de moedas de cada tela, para onde voam as moedas compradas. */
+const CONTADOR_DA_TELA = { home: 'homeCoins', map: 'mapCoins', shop: 'shopCoins', game: 'gameCoins' };
+
+/** @param {number} n */
+function moedasNoIdioma(n) {
+  try {
+    return n.toLocaleString(getLang());
+  } catch {
+    return String(n);
+  }
+}
+
+/**
+ * Liga o credito das compras ao save. Ate aqui a plataforma guardou na fila o
+ * que chegou.
+ * @param {Game} game
+ */
+function ligaPacotes(game) {
+  const pac = /** @type {*} */ (plataforma).pacotes;
+  if (!pac) return;
+  textosDosPacotes();
+  pac.liga(
+    (/** @type {{purchaseId:string, id:string}} */ c) => {
+      const antes = game.progress.data.coins;
+      const r = creditaCompra(game.progress, c.purchaseId, c.id);
+      const p = pacote(c.id);
+      if (r === 'novo' && p) {
+        plataforma.measure('compra', p.id, 'ganho');
+        avisaCredito(game, p, antes);
+      }
+      return r;
+    },
+    (/** @type {{purchaseId:string, id:string}} */ c) => {
+      if (estornaCompra(game.progress, c.purchaseId, c.id)) game.refreshScreen();
+    },
+  );
+}
+
+/**
+ * As moedas chegaram: o toast e a chuva no contador da tela, como as moedas de
+ * fim de fase. A compra pendente entregue no carregamento chega antes de haver
+ * tela, e espera ela entrar.
+ * @param {Game} game
+ * @param {import('./game/pacotes.js').Pacote} p
+ * @param {number} antes o saldo antes do credito
+ */
+function avisaCredito(game, p, antes) {
+  const mostra = () => {
+    game.refreshScreen();
+    game.toast(t('pacoteRecebido', moedasNoIdioma(p.moedas)));
+    const alvo = document.getElementById(/** @type {*} */ (CONTADOR_DA_TELA)[game.screen] || '');
+    if (alvo && alvo.getBoundingClientRect().width > 0) {
+      game.flyCoins({ x: window.innerWidth / 2, y: window.innerHeight * 0.62 }, 12, 0, alvo);
+      game.countUp(alvo, game.progress.data.coins, 380, true, antes);
+    } else {
+      audio.coin(3);
+    }
+  };
+  if (game.screen) mostra();
+  else window.setTimeout(mostra, 900);
+}
+
+/**
+ * A secao de moedas da loja: os dois pacotes, com a quantidade e sem preco (o
+ * preco e o checkout da Wavedash que mostra). "Comprar" abre o checkout; o
+ * credito vem do PURCHASE_COMPLETED, nunca da resposta do checkout. Sem o SDK
+ * que tem o checkout (fora da Wavedash) a secao nao aparece.
+ * @param {Game} game
+ * @param {HTMLElement} host
+ */
+function secaoDePacotes(game, host) {
+  const pac = /** @type {*} */ (plataforma).pacotes;
+  if (!pac || !pac.disponivel) return;
+  const secao = document.createElement('div');
+  secao.className = 'pacotes';
+  secao.style.cssText = 'display:grid;gap:8px;padding-bottom:12px;margin-bottom:2px;border-bottom:1px solid var(--edge)';
+  const titulo = document.createElement('div');
+  titulo.textContent = t('pacotesTitulo');
+  titulo.style.cssText = 'font:700 13px/1 var(--font);color:var(--ink-soft);padding:2px 4px 0';
+  secao.appendChild(titulo);
+  for (const p of PACOTES) {
+    const item = document.createElement('div');
+    item.className = 'item';
+    if (p.melhor) item.style.borderColor = 'var(--gold)';
+
+    // A pilha de moedas no lugar da vitrine: uma moeda no pacote pequeno, tres
+    // no grande. A moeda e o mesmo circulo dourado do contador.
+    const swatch = document.createElement('div');
+    swatch.className = 'swatch';
+    swatch.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+      + 'border-radius:12px;border:2px solid var(--gold);background:rgba(255,210,60,0.12);color:var(--gold);line-height:0.8';
+    swatch.innerHTML = p.melhor
+      ? '<span style="font-size:21px">&#9679;</span><span style="font-size:21px;letter-spacing:-0.12em">&#9679;&#9679;</span>'
+      : '<span style="font-size:32px">&#9679;</span>';
+    item.appendChild(swatch);
+
+    const info = document.createElement('div');
+    info.className = 'info';
+    const name = document.createElement('b');
+    name.textContent = t('pacoteNome', moedasNoIdioma(p.moedas));
+    const sub = document.createElement('span');
+    sub.textContent = p.melhor ? t('pacoteMelhor') : t('pacoteDesc');
+    if (p.melhor) {
+      sub.style.color = 'var(--gold)';
+      sub.style.fontWeight = '700';
+    }
+    info.appendChild(name);
+    info.appendChild(sub);
+    item.appendChild(info);
+
+    const btn = document.createElement('button');
+    btn.className = 'btn primary';
+    btn.textContent = t('buy');
+    btn.dataset.ev = `comprar-${p.id}`;
+    btn.dataset.pacote = p.id;
+    btn.disabled = !!pac.abrindo;
+    btn.onclick = () => {
+      audio.unlock();
+      audio.button();
+      for (const b of secao.querySelectorAll('button')) /** @type {HTMLButtonElement} */ (b).disabled = true;
+      pac.comprar(p.id).then((/** @type {string} */ r) => {
+        if (r === 'erro') game.toast(t('purchaseError'));
+        if (game.screen === 'shop') game.buildShop();
+      });
+    };
+    item.appendChild(btn);
+    secao.appendChild(item);
+  }
+  host.appendChild(secao);
 }
 
 const game = new Game();

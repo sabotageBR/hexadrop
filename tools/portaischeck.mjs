@@ -196,21 +196,70 @@ window.dispatchEvent(new Event('y8sdk.ready'));`,
   },
   // A Wavedash injeta o SDK antes dos scripts do jogo, e o build nao pede URL
   // nenhuma: o falso entra pelo Page.addScriptToEvaluateOnNewDocument.
+  // O Paid Content imita o do SDK 1.3.78: os eventos esperam o init, a
+  // abertura entrega toda consumivel sem fulfill, e o "servidor" das compras
+  // fica no localStorage para sobreviver ao reload. Com `__wdSemPago` no
+  // localStorage o falso nasce sem as funcoes pagas, como um SDK antigo.
   wavedash: {
     url: '',
     js: `${COMUM}
-window.Wavedash = {
-  init() { __log.push('init'); return true; },
-  loadComplete() { __log.push('loadComplete'); },
-  updateLoadProgressZeroToOne(p) { __log.push('carga:' + p); },
-  getUserLanguage() { return 'tr'; },
-};`,
+(() => {
+  const pago = !localStorage.getItem('__wdSemPago');
+  const lido = () => JSON.parse(localStorage.getItem('__wdServidor') || '{}');
+  const grava = (s) => localStorage.setItem('__wdServidor', JSON.stringify(s));
+  const ouvintes = [];
+  let fila = [];
+  let pronto = false;
+  const emite = (p) => { if (!pronto) fila.push(p); else ouvintes.forEach((f) => f({ ...p })); };
+  let n = 0;
+  const nova = (id) => {
+    const s = lido();
+    const p = { purchaseId: 'k97bn2q5h1t8xw6d3c0zv4ms' + String(Date.now() % 1e8 + (++n)).padStart(8, '0'), contentIdentifier: id,
+      type: 'CONSUMABLE', fulfilled: false, purchasedAt: Date.now(), receiptJwt: 'eyJ.falso' };
+    s[p.purchaseId] = p;
+    grava(s);
+    return p;
+  };
+  if (pago) for (const p of Object.values(lido())) if (!p.fulfilled) emite(p);
+  window.Wavedash = {
+    init() { __log.push('init'); pronto = true; const f = fila; fila = []; f.forEach(emite); return true; },
+    loadComplete() { __log.push('loadComplete'); },
+    updateLoadProgressZeroToOne(p) { __log.push('carga:' + p); },
+    getUserLanguage() { return 'tr'; },
+  };
+  if (!pago) return;
+  Object.assign(window.Wavedash, {
+    Events: { PURCHASE_COMPLETED: 'PurchaseCompleted' },
+    on(nome, f) { __log.push('on:' + nome); if (nome === 'PurchaseCompleted') ouvintes.push(f); return () => {}; },
+    triggerPaywall(id) {
+      __log.push('paywall:' + id);
+      const p = nova(id);
+      __sdkFalso.ultima = p;
+      setTimeout(() => emite(p), 60);
+      return new Promise((r) => setTimeout(() => r({ success: true, data: true }), 160));
+    },
+    fulfillPurchase(pid) {
+      const s = lido();
+      const p = s[pid];
+      const status = !p ? 'NOT_FOUND' : p.fulfilled ? 'ALREADY_FULFILLED' : 'FULFILLED';
+      if (p) { p.fulfilled = true; grava(s); }
+      __log.push('fulfill:' + pid + ':' + status);
+      return Promise.resolve({ success: true, data: { status } });
+    },
+    getUnfulfilledPurchases() {
+      __log.push('pendentes');
+      return Promise.resolve({ success: true, data: Object.values(lido()).filter((p) => !p.fulfilled) });
+    },
+  });
+  __sdkFalso.emite = emite;
+  __sdkFalso.pendente = (id) => nova(id);
+})();`,
   },
 };
 
 /** O que cada portal tem e o banco confere. */
 const TEM = {
-  wavedash: { idioma: true, pausa: false, premio: false, sinal: 'init', semAnuncio: true, umaVez: true },
+  wavedash: { idioma: true, pausa: false, premio: false, sinal: 'init', semAnuncio: true, umaVez: true, pacotes: true },
   yandex: { idioma: true, pausa: true, premio: true, sinal: 'pronto' },
   playgama: { idioma: true, pausa: true, premio: true, sinal: 'msg:game_ready', save: true },
   gamepix: { idioma: true, pausa: true, premio: true, sinal: 'pronto', save: true },
@@ -309,11 +358,14 @@ for (const portal of ALVOS) {
     const r = await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, sessionId);
     return r.result?.result?.value;
   };
-  let pronto = false;
-  for (let i = 0; i < 60 && !pronto; i++) {
-    await sleep(250);
-    pronto = (await js('!!(window.__game && window.__plataforma && window.__plataforma.loadingFinished)')) === true;
-  }
+  const carregou = async () => {
+    for (let i = 0; i < 60; i++) {
+      await sleep(250);
+      if ((await js('!!(window.__game && window.__plataforma && window.__plataforma.loadingFinished)')) === true) return true;
+    }
+    return false;
+  };
+  const pronto = await carregou();
   confere('o jogo abre', pronto);
   if (!pronto) {
     if (erros.length) console.log('   erros:', erros.slice(0, 3).join(' | '));
@@ -389,6 +441,63 @@ for (const portal of ALVOS) {
     await sleep(1800);
     const store = await js('JSON.stringify(window.__sdkFalso.store)');
     confere('save no armazenamento do portal', (await log()).includes('gravou') && /hexadrop\.save|coins/.test(store || ''), (store || '').slice(0, 80));
+  }
+  if (tem.pacotes) {
+    // Pacotes de moedas (Paid Content consumivel): a secao da loja, a compra
+    // pelo checkout, a entrega repetida, a reentrega na abertura e o SDK sem
+    // as funcoes pagas.
+    const moedas = async () => /** @type {number} */ (await js('window.__game.progress.data.coins'));
+    const compras = async () => /** @type {string[]} */ (await js("(JSON.parse(localStorage.getItem('hexadrop.save') || '{}').compras || [])"));
+    confere('ouvinte das compras antes do init', l0.indexOf('on:PurchaseCompleted') >= 0 && l0.indexOf('on:PurchaseCompleted') < l0.indexOf('init'), l0.join(' '));
+    confere('lista de pendentes depois do init', l0.includes('pendentes') && l0.indexOf('pendentes') > l0.indexOf('init'), l0.join(' '));
+    await js("window.__game.show('home'); window.__game.show('shop'); true");
+    const pacotes = await js("[...document.querySelectorAll('#shopList .pacotes button[data-pacote]')].map((b) => b.dataset.pacote).join(',')");
+    confere('loja: os dois pacotes no topo', pacotes === 'coins-1500,coins-5000'
+      && (await js("document.querySelector('#shopList').firstElementChild.classList.contains('pacotes')")) === true, pacotes);
+    const nomes = await js("[...document.querySelectorAll('#shopList .pacotes .info b')].map((b) => b.textContent).join(' | ')");
+    confere('loja: a quantidade, sem preco', /1\.500/.test(nomes) && /5\.000/.test(nomes) && !/\$|US/.test(nomes), nomes);
+    for (const aba of ['tabUpgrades', 'tabBoosts']) {
+      await js(`document.getElementById('${aba}').click(); true`);
+      confere(`loja: os pacotes tambem em ${aba}`, (await js("document.querySelectorAll('#shopList .pacotes button[data-pacote]').length")) === 2);
+    }
+    const antes = await moedas();
+    await js('window.__log.length = 0; true');
+    await js("document.querySelector('#shopList button[data-pacote=\"coins-1500\"]').click(); true");
+    const travou = await js("[...document.querySelectorAll('#shopList .pacotes button')].every((b) => b.disabled)");
+    await sleep(900);
+    const l2 = await log();
+    const pid = await js('window.__sdkFalso.ultima && window.__sdkFalso.ultima.purchaseId');
+    confere('compra: botoes travados com o checkout aberto', travou === true);
+    confere('compra: checkout de coins-1500 e +1500 no saldo', l2.includes('paywall:coins-1500') && (await moedas()) - antes === 1500, `${antes} -> ${await moedas()}`);
+    confere('compra: o id no save e o fulfill', (await compras()).includes(pid) && l2.includes(`fulfill:${pid}:FULFILLED`), l2.join(' '));
+    confere('compra: botoes de volta', (await js("[...document.querySelectorAll('#shopList .pacotes button')].every((b) => !b.disabled)")) === true);
+    confere('compra: o toast das moedas', /1\.500/.test(String(await js("document.getElementById('toast').textContent"))), await js("document.getElementById('toast').textContent"));
+    const depois = await moedas();
+    await js('window.__sdkFalso.emite(window.__sdkFalso.ultima); true');
+    await js("window.__sdkFalso.emite({ purchaseId: 'k97bn2q5h1t8xw6d3c0zv4ms00000099', contentIdentifier: 'gems-10', type: 'CONSUMABLE', fulfilled: false }); true");
+    await sleep(400);
+    const l3 = await log();
+    confere('entrega repetida nao credita de novo', (await moedas()) === depois && l3.includes(`fulfill:${pid}:ALREADY_FULFILLED`), l3.join(' '));
+    confere('pacote desconhecido: nada credita nem recebe fulfill', !l3.some((x) => x.includes('00000099')));
+    // Comprado com o jogo fechado: chega dentro do init da abertura seguinte.
+    const pendente = await js("window.__sdkFalso.pendente('coins-5000').purchaseId");
+    await send('Page.reload', {}, sessionId);
+    const voltou = await carregou();
+    await sleep(1400);
+    const l4 = await log();
+    confere('reentrega na abertura: +5000 uma vez, e o fulfill', voltou && (await moedas()) - depois === 5000 && l4.includes(`fulfill:${pendente}:FULFILLED`)
+      && (await compras()).includes(pendente), `${depois} -> ${await moedas()} | ${l4.join(' ')}`);
+    confere('reentrega na abertura: o toast', /5\.000/.test(String(await js("document.getElementById('toast').textContent"))), await js("document.getElementById('toast').textContent"));
+    confere('reentrega na abertura: init uma vez', l4.filter((x) => x === 'init').length === 1);
+    // O SDK sem as funcoes pagas: a loja nao oferece nada.
+    await js("localStorage.setItem('__wdSemPago', '1'); true");
+    await send('Page.reload', {}, sessionId);
+    const semPago = await carregou();
+    await js("window.__game.show('shop'); true");
+    confere('SDK sem as funcoes pagas: a loja abre sem os pacotes', semPago
+      && (await js("document.querySelectorAll('#shopList .pacotes').length")) === 0
+      && (await js("document.querySelectorAll('#shopList .item').length")) > 5);
+    await js("localStorage.removeItem('__wdSemPago'); localStorage.removeItem('__wdServidor'); true");
   }
   confere('sem erro no console', erros.length === 0, erros.slice(0, 2).join(' | '));
   ouvintes.delete('Fetch.requestPaused');

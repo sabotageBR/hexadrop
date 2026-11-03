@@ -25,9 +25,15 @@
  *   video somem e o caminho gratuito da versao lisa fica no lugar
  *   (`COM_ANUNCIOS` falso em core/platform.js).
  * - o save continua no localStorage (core/storage.js), na origem do build.
+ * - **pacotes de moedas** (Paid Content consumivel, `pacotes`,
+ *   src/portais/wavedash-pacotes.js): o ouvinte do PURCHASE_COMPLETED nasce
+ *   aqui, antes do init, e a lista de compras sem fulfill e pedida uma vez
+ *   logo depois dele. Nenhum dos dois atrasa o init. A loja, o credito no save
+ *   e o aviso ficam em main.js (`COM_PACOTES`) e game/pacotes.js.
  */
 
 import { Portal } from './base.js';
+import { PacotesWavedash } from './wavedash-pacotes.js';
 import { LANGS, idiomaDaPlataforma } from '../core/i18n.js';
 
 /** Sem init ate aqui (ms desde a avaliacao deste modulo), ele sai assim mesmo. */
@@ -66,6 +72,11 @@ export class PortalWavedash extends Portal {
     this.reveladoPor = '';
     /** O ultimo valor mandado a barra de carregamento. */
     this._carga = 0;
+    /**
+     * Os pacotes de moedas. O ouvinte das compras entra ja, antes do init: as
+     * compras sem fulfill chegam dentro dele.
+     */
+    this.pacotes = new PacotesWavedash(sdk);
     this._botoesDeVideo();
     this._progresso01(CARGA.modulo);
     this._reserva = window.setTimeout(() => this.revelar('reserva'), opcoes.reservaMs ?? RESERVA_MS);
@@ -138,6 +149,8 @@ export class PortalWavedash extends Portal {
     this.reveladoPor = motivo;
     if (!sdk()) return;
     this._chama(() => /** @type {*} */ (window).Wavedash.init());
+    // Depois do init e por fora dele: ninguem espera esta resposta.
+    this._chama(() => this.pacotes.revisa().catch(() => {}));
   }
 }
 

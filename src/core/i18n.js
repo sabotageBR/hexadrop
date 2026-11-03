@@ -1470,6 +1470,70 @@ const STRINGS = {
 };
 
 /**
+ * Os textos dos pacotes de moedas pagos da Wavedash (`COM_PACOTES` em
+ * core/platform.js). Ficam fora de STRINGS para os outros builds sairem byte a
+ * byte iguais: so o build da Wavedash chama `textosDosPacotes()`, e nos outros
+ * o Rollup tira a tabela e a funcao do bundle. As mesmas chaves nos sete
+ * idiomas, com acento em portugues e espanhol.
+ */
+const TEXTOS_PACOTES = {
+  en: {
+    pacotesTitulo: 'Coin packs',
+    pacoteNome: '+{0} coins',
+    pacoteDesc: 'For skins, upgrades and boosts',
+    pacoteMelhor: 'Best value',
+    pacoteRecebido: '+{0} coins. Thank you!',
+  },
+  pt: {
+    pacotesTitulo: 'Pacotes de moedas',
+    pacoteNome: '+{0} moedas',
+    pacoteDesc: 'Para skins, aprimoramentos e boosts',
+    pacoteMelhor: 'Melhor custo-benefício',
+    pacoteRecebido: '+{0} moedas. Obrigado!',
+  },
+  es: {
+    pacotesTitulo: 'Paquetes de monedas',
+    pacoteNome: '+{0} monedas',
+    pacoteDesc: 'Para skins, mejoras y boosts',
+    pacoteMelhor: 'La mejor oferta',
+    pacoteRecebido: '+{0} monedas. ¡Gracias!',
+  },
+  fr: {
+    pacotesTitulo: 'Packs de pièces',
+    pacoteNome: '+{0} pièces',
+    pacoteDesc: 'Pour les skins, améliorations et boosts',
+    pacoteMelhor: 'Meilleure offre',
+    pacoteRecebido: '+{0} pièces. Merci !',
+  },
+  it: {
+    pacotesTitulo: 'Pacchetti di monete',
+    pacoteNome: '+{0} monete',
+    pacoteDesc: 'Per skin, potenziamenti e boost',
+    pacoteMelhor: 'Miglior offerta',
+    pacoteRecebido: '+{0} monete. Grazie!',
+  },
+  de: {
+    pacotesTitulo: 'Münzpakete',
+    pacoteNome: '+{0} Münzen',
+    pacoteDesc: 'Für Skins, Upgrades und Boosts',
+    pacoteMelhor: 'Bestes Angebot',
+    pacoteRecebido: '+{0} Münzen. Danke!',
+  },
+  tr: {
+    pacotesTitulo: 'Altın paketleri',
+    pacoteNome: '+{0} altın',
+    pacoteDesc: 'Görünümler, geliştirmeler ve takviyeler için',
+    pacoteMelhor: 'En avantajlı paket',
+    pacoteRecebido: '+{0} altın. Teşekkürler!',
+  },
+};
+
+/** Junta os textos dos pacotes as tabelas. Chamar de novo nao muda nada. */
+export function textosDosPacotes() {
+  for (const lang of LANGS) Object.assign(/** @type {*} */ (STRINGS)[lang], /** @type {*} */ (TEXTOS_PACOTES)[lang]);
+}
+
+/**
  * @param {string[]|null} [daPlataforma] as tags que a plataforma manda usar
  * @returns {string}
  */

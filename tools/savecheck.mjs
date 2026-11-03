@@ -18,6 +18,7 @@ import { Progress } from '../src/game/progress.js';
 import { SKINS, UPGRADES, WORLD_PRIZES, barraDoMundo, worldPrize, CHEST_FINAL, CHEST_COINS, skin as getSkin, xpForRank, TRILHA_OURO, PREMIOS_ALEM, prizeWorldOfSkin, BONUS_PERFEITA, BAUS_PERFEITAS } from '../src/game/content.js';
 import { LEVEL_COUNT, WORLD_COUNT, worldStart, worldSize } from '../src/game/levelgen.js';
 import { faseDeOrigem } from '../src/game/alem.js';
+import { creditaCompra } from '../src/game/pacotes.js';
 
 let falhas = 0;
 /** @param {boolean} ok @param {string} msg */
@@ -322,6 +323,24 @@ console.log('jogada perfeita');
   confere(!!bau && bau.n === BAUS_PERFEITAS[0].n && p.totalPerfeitas === BAUS_PERFEITAS[0].n, `o bau sai na ${BAUS_PERFEITAS[0].n}a perfeita`);
   const antigo = carrega(save107({ unlocked: 5 }));
   confere(Array.isArray(antigo.data.perfeitas) && antigo.totalPerfeitas === 0, 'save antigo ganha a lista vazia');
+}
+
+console.log('pacotes de moedas (so a Wavedash)');
+{
+  // `compras` nasce na primeira compra, fora de blank(): o save antigo nao a
+  // tem, e o save com ela passa pelo construtor sem perder nada.
+  const novo = carrega(save107({ unlocked: 8, stars: estrelasAte(7), coins: 30 }));
+  confere(novo.data.compras === undefined, 'save sem compra nao ganha o campo');
+  const pid = 'k97bn2q5h1t8xw6d3c0zv4ms7x7ab2yf';
+  confere(creditaCompra(novo, pid, 'coins-1500') === 'novo' && novo.data.coins === 1530, 'credita 1500 no saldo');
+  confere(novo.data.barraDe === -1 && novo.data.barraMoedas === 0, 'e nada na barra do mundo');
+  const de = carrega(novo.data);
+  confere(Array.isArray(de.data.compras) && de.data.compras[0] === pid && de.data.coins === 1530, 'a lista sobrevive ao construtor');
+  confere(creditaCompra(de, pid, 'coins-1500') === 'repetido' && de.data.coins === 1530, 'a mesma compra nao credita de novo');
+  confere(creditaCompra(de, 'outra', 'gems-10') === null && de.data.coins === 1530, 'pacote desconhecido nao muda nada');
+  const r = de.finishLevel({ level: 8, stars: 3, won: true, taps: 9, par: 8 });
+  confere(r.coins > 0 && Array.isArray(de.data.compras) && de.data.compras.length === 1, 'a vitoria grava sem tocar na lista');
+  confere(de.data.barraMoedas === r.coins + r.bonusCoins, `a barra do mundo 2 conta so a fase (${de.data.barraMoedas}), nao as 1500`);
 }
 
 console.log('save de outra versao');

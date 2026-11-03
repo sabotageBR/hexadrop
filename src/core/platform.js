@@ -55,3 +55,11 @@ export const NA_CRAZY = PLATAFORMA === 'crazy';
 
 /** O jogo esta num dos portais de distribuicao (src/portais/)? */
 export const NUM_PORTAL = PORTAL;
+
+/**
+ * Pacotes de moedas pagos (o Paid Content da Wavedash): a secao de moedas da
+ * loja e o credito das compras (game/pacotes.js). Comparacao unica, para o
+ * Rollup resolver no build: nos outros alvos todo ramo `if (COM_PACOTES)` sai
+ * do bundle, e eles continuam byte a byte iguais.
+ */
+export const COM_PACOTES = PLATAFORMA === 'wavedash';

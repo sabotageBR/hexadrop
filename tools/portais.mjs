@@ -6,6 +6,9 @@
  *   node tools/portais.mjs --so=builds        # so os zips
  *   node tools/portais.mjs --so=arte          # so as imagens e os videos
  *   node tools/portais.mjs --portal=y8,yandex # so esses portais
+ *   node tools/portais.mjs --portal=wavedash --so=builds --versao=1.0.20
+ *                                             # outro rotulo no nome do zip; o package.json
+ *                                             # fica (a versao dele entra no bundle do app)
  *
  * **Builds**: `VITE_PLATAFORMA=<portal> vite build` (src/portais/, SDK de
  * tools/portais-sdk.mjs, ids de marketing/portais/ids.json) e o zip com o
@@ -166,6 +169,9 @@ process.exit(0);
 
 function builds() {
   const ids = JSON.parse(readFileSync(join(RAIZ, 'marketing/portais/ids.json'), 'utf8'));
+  // So o nome do zip: o build e o mesmo, e a versao do package.json continua
+  // onde estava (no app ela vira o versionName e entra no bundle).
+  const rotulo = opcao('versao') || VERSAO;
   const saida = join(RAIZ, 'dist-portais');
   mkdirSync(saida, { recursive: true });
   for (const p of ESCOLHIDOS) {
@@ -177,7 +183,7 @@ function builds() {
       process.exit(1);
     }
     const faltam = (IDS_PEDIDOS[p] || []).filter((k) => !(ids[p] && ids[p][k]));
-    const nome = `${JOGO}-${p}-${VERSAO}${faltam.length ? '-sem-id' : ''}`;
+    const nome = `${JOGO}-${p}-${rotulo}${faltam.length ? '-sem-id' : ''}`;
     const zip = join(saida, `${nome}.zip`);
     rmSync(zip, { force: true });
     const z = spawnSync('zip', ['-qr', '-X', zip, '.'], { cwd: join(RAIZ, `dist-${p}`), encoding: 'utf8' });

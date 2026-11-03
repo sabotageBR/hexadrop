@@ -218,6 +218,11 @@ if (PORTAL) {
     // Sem o init o jogo fica para sempre atras da tela de carregamento da Wavedash.
     check('wavedash: chamada Wavedash.init() no build', /\bWavedash\.init\(/.test(allJs));
     check('wavedash: barra de carregamento (updateLoadProgressZeroToOne)', /\bWavedash\.updateLoadProgressZeroToOne\(/.test(allJs));
+    // Os pacotes de moedas (Paid Content consumivel): os dois ids do painel, o
+    // ouvinte da compra, o checkout, o fulfill e a lista de pendentes.
+    const pago = ['"coins-1500"', '"coins-5000"', 'PurchaseCompleted', '.triggerPaywall(', '.fulfillPurchase(', '.getUnfulfilledPurchases('];
+    const faltam = pago.filter((s) => !allJs.includes(s));
+    check('wavedash: pacotes de moedas (coins-1500, coins-5000, checkout e fulfill)', faltam.length === 0, faltam.join(' '));
   }
 } else if (COM_PLATAFORMA) {
   check('script do Poki SDK v2 presente', true);

@@ -48,8 +48,9 @@ node tools/thumbnail.mjs --perfil y8 --largura 1920 --altura 1080 --vista 960x54
 npm run build:wavedash       # dist-wavedash/ (Wavedash: o SDK e injetado por ela, sem anuncio)
 npm run preview:wavedash     # serve dist-wavedash em 127.0.0.1:4177 (sem window.Wavedash, como fora dela)
 npm run verify:wavedash      # conformidade da Wavedash (precisa do preview:wavedash no ar)
-npm run test:wavedash        # teste de unidade do adaptador (node --test, Node puro)
+npm run test:wavedash        # teste de unidade do adaptador e dos pacotes de moedas (node --test, Node puro)
 npm run portais -- --portal=wavedash --so=builds   # o zip, em dist-portais/hexa-drop-wavedash-<versao>.zip
+npm run portais -- --portal=wavedash --so=builds --versao=1.0.20   # outro rotulo so no nome do zip
 node tools/thumbnail.mjs --perfil wavedash         # o video de previa 16:9 (~22 s) em marketing/portais/wavedash/
 ```
 
@@ -1786,6 +1787,33 @@ no HTML e nenhuma URL de fora, porque o jogo roda isolado (COEP `require-corp`).
 - **Prova do zip:** `node distribuicao/provar-wavedash.mjs <zip> --porta <n>`, na raiz `em_tech/` (fora
   deste repositório): o zip num iframe isolado, oculto até o init, com um `window.Wavedash` falso. O
   material (capa 1920x1080 só com a logo, vídeo de `--perfil wavedash`) fica em `marketing/portais/wavedash/`.
+- **Pacotes de moedas** (Paid Content consumível, zip 1.0.20): `coins-1500` (+1.500, US$ 1,99) e `coins-5000`
+  (+5.000, US$ 4,99), ofertas criadas no painel (Monetization → Paid Content). Só este build os tem, e os outros
+  saíram byte a byte iguais (sha256 de cada arquivo e do conteúdo de cada zip). Para isso, `COM_PACOTES`
+  (`core/platform.js`) é uma comparação única que o Rollup resolve; em `main.js` tudo fica em ramos
+  `if (COM_PACOTES)` e em **funções de módulo**, nunca em métodos de `Game` (o Rollup tira função que ninguém
+  chama, mas não método de classe); os textos ficam em `TEXTOS_PACOTES` de `i18n.js`, fora de `STRINGS`
+  (`textosDosPacotes()`); e o save não ganhou campo em `blank()`. O resto mora em `game/pacotes.js` (o crédito
+  no save) e `src/portais/wavedash-pacotes.js` (o protocolo do SDK).
+  - A loja mostra a seção no topo das três abas: a quantidade, sem preço (quem mostra o preço é o checkout
+    dela), e "Comprar" chama `triggerPaywall`. Sem SDK com `on`, `triggerPaywall` e `fulfillPurchase`, a seção
+    não aparece.
+  - O crédito vem só do `PURCHASE_COMPLETED`, nunca da resposta do checkout. O ouvinte nasce com o adaptador,
+    antes do `init` (as compras sem fulfill chegam **dentro** dele), e uma fila espera `main.js` ligar o crédito.
+  - Moedas no saldo e o `purchaseId` em `compras` vão na mesma gravação, e só depois sai o `fulfillPurchase`.
+    Compra já creditada recebe só o fulfill; NOT_FOUND desfaz o crédito que acabou de entrar; id desconhecido
+    não credita nem recebe fulfill. Sem localStorage que dure, a compra vale na sessão e não recebe fulfill, e
+    volta na abertura seguinte.
+  - `getUnfulfilledPurchases()` sai uma vez depois do init, como segunda chance do fulfill que falhou, e de novo
+    se o checkout confirmar e o evento não chegar em 6 s. Nada disso atrasa o init.
+  - `compras` entrou no save sem trocar `SAVE_VERSION`, criada na primeira compra. "Apagar progresso" zera as
+    moedas e guarda a lista (`zeraGuardandoCompras`): a compra cujo fulfill falhou não credita de novo.
+  - As moedas compradas não entram na barra do mundo (`barraMoedas`), e a sequência de hexágonos não muda.
+  - Conferido por `npm run test:wavedash` (SDK falso com a fila até o init e um servidor de compras que
+    sobrevive à reabertura), pelo `savecheck` e pelo `portaischeck` da Wavedash: a loja, a compra, a entrega
+    repetida, a reentrega na abertura e o SDK sem as funções pagas.
+  - O zip leva o rótulo de `--versao`, e o `package.json` continua em 1.0.19, porque a versão dele entra no
+    bundle do app.
 
 `tools/portaischeck.mjs` monta cada portal com ids de teste em `.tmp/portaischeck/` e serve o SDK falso
 pela mesma URL do de verdade (o da Wavedash entra antes dos scripts da página, como ela faz): confere carregamento, idioma, intervalo com som calado, prêmio, pausa do
