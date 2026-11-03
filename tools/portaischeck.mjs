@@ -198,8 +198,11 @@ window.dispatchEvent(new Event('y8sdk.ready'));`,
   // nenhuma: o falso entra pelo Page.addScriptToEvaluateOnNewDocument.
   // O Paid Content imita o do SDK 1.3.78: os eventos esperam o init, a
   // abertura entrega toda consumivel sem fulfill, e o "servidor" das compras
-  // fica no localStorage para sobreviver ao reload. Com `__wdSemPago` no
-  // localStorage o falso nasce sem as funcoes pagas, como um SDK antigo.
+  // fica no localStorage para sobreviver ao reload. O Remote Storage guarda a
+  // "nuvem" em `__wdNuvem`, fora das chaves do jogo: apagar as `hexadrop.*` e
+  // recarregar e o que um build novo da Wavedash faz. Com `__wdSemPago` no
+  // localStorage o falso nasce sem as funcoes pagas e sem a nuvem, como um SDK
+  // antigo.
   wavedash: {
     url: '',
     js: `${COMUM}
@@ -249,6 +252,27 @@ window.dispatchEvent(new Event('y8sdk.ready'));`,
     getUnfulfilledPurchases() {
       __log.push('pendentes');
       return Promise.resolve({ success: true, data: Object.values(lido()).filter((p) => !p.fulfilled) });
+    },
+  });
+  const nuvem = () => JSON.parse(localStorage.getItem('__wdNuvem') || '{}');
+  const idb = {};
+  Object.assign(window.Wavedash, {
+    writeLocalFile(p, b) { idb[p] = new TextDecoder().decode(b); return Promise.resolve(true); },
+    readLocalFile(p) { return Promise.resolve(p in idb ? new TextEncoder().encode(idb[p]) : null); },
+    downloadRemoteFile(p) {
+      __log.push('baixa');
+      const n = nuvem();
+      if (!(p in n)) return Promise.resolve({ success: false, data: null, message: '404 (Not Found)' });
+      idb[p] = n[p];
+      return Promise.resolve({ success: true, data: p });
+    },
+    remoteFileExists(p) { return Promise.resolve({ success: true, data: p in nuvem() }); },
+    uploadRemoteFile(p) {
+      const n = nuvem();
+      n[p] = idb[p];
+      localStorage.setItem('__wdNuvem', JSON.stringify(n));
+      __log.push('sobe');
+      return Promise.resolve({ success: true, data: p });
     },
   });
   __sdkFalso.emite = emite;
@@ -450,6 +474,10 @@ for (const portal of ALVOS) {
     const compras = async () => /** @type {string[]} */ (await js("(JSON.parse(localStorage.getItem('hexadrop.save') || '{}').compras || [])"));
     confere('ouvinte das compras antes do init', l0.indexOf('on:PurchaseCompleted') >= 0 && l0.indexOf('on:PurchaseCompleted') < l0.indexOf('init'), l0.join(' '));
     confere('lista de pendentes depois do init', l0.includes('pendentes') && l0.indexOf('pendentes') > l0.indexOf('init'), l0.join(' '));
+    confere('nuvem lida antes do init, e o espelho ligado', l0.indexOf('baixa') >= 0 && l0.indexOf('baixa') < l0.indexOf('init')
+      && (await js('window.__plataforma.nuvem.estado')) === 'ligada', `${l0.join(' ')} | ${await js('window.__plataforma.nuvem.estado')}`);
+    const naNuvem = async () => /** @type {*} */ (await js(`(() => { const n = JSON.parse(localStorage.getItem('__wdNuvem') || '{}');
+      const a = n['hexadrop-save.json']; if (!a) return null; const s = JSON.parse(a).chaves['hexadrop.save']; return s ? JSON.parse(s) : null; })()`));
     await js("window.__game.show('home'); window.__game.show('shop'); true");
     const pacotes = await js("[...document.querySelectorAll('#shopList .pacotes button[data-pacote]')].map((b) => b.dataset.pacote).join(',')");
     confere('loja: os dois pacotes no topo', pacotes === 'coins-1500,coins-5000'
@@ -470,6 +498,10 @@ for (const portal of ALVOS) {
     confere('compra: botoes travados com o checkout aberto', travou === true);
     confere('compra: checkout de coins-1500 e +1500 no saldo', l2.includes('paywall:coins-1500') && (await moedas()) - antes === 1500, `${antes} -> ${await moedas()}`);
     confere('compra: o id no save e o fulfill', (await compras()).includes(pid) && l2.includes(`fulfill:${pid}:FULFILLED`), l2.join(' '));
+    const nuvemCompra = await naNuvem();
+    confere('compra: o save com o id sobe para a nuvem antes do fulfill', l2.indexOf('sobe') >= 0
+      && l2.indexOf('sobe') < l2.indexOf(`fulfill:${pid}:FULFILLED`) && !!nuvemCompra && (nuvemCompra.compras || []).includes(pid)
+      && nuvemCompra.coins === (await moedas()), l2.join(' '));
     confere('compra: botoes de volta', (await js("[...document.querySelectorAll('#shopList .pacotes button')].every((b) => !b.disabled)")) === true);
     confere('compra: o toast das moedas', /1\.500/.test(String(await js("document.getElementById('toast').textContent"))), await js("document.getElementById('toast').textContent"));
     const depois = await moedas();
@@ -489,6 +521,19 @@ for (const portal of ALVOS) {
       && (await compras()).includes(pendente), `${depois} -> ${await moedas()} | ${l4.join(' ')}`);
     confere('reentrega na abertura: o toast', /5\.000/.test(String(await js("document.getElementById('toast').textContent"))), await js("document.getElementById('toast').textContent"));
     confere('reentrega na abertura: init uma vez', l4.filter((x) => x === 'init').length === 1);
+    confere('reentrega na abertura: a nuvem antes do fulfill', l4.indexOf('sobe') >= 0 && l4.indexOf('sobe') < l4.indexOf(`fulfill:${pendente}:FULFILLED`)
+      && ((await naNuvem()) || {}).coins === depois + 5000, l4.join(' '));
+    // Build novo: a origem muda e o localStorage do jogo some; a nuvem devolve
+    // o progresso e as compras, e nada credita de novo.
+    const antesDoBuild = await moedas();
+    await js("Object.keys(localStorage).filter((k) => k.startsWith('hexadrop.')).forEach((k) => localStorage.removeItem(k)); true");
+    await send('Page.reload', {}, sessionId);
+    const novo = await carregou();
+    await sleep(800);
+    const l5 = await log();
+    confere('build novo: a nuvem devolve as moedas e as compras', novo && (await moedas()) === antesDoBuild
+      && (await compras()).includes(pid) && (await compras()).includes(pendente), `${antesDoBuild} -> ${await moedas()} | ${l5.join(' ')}`);
+    confere('build novo: nenhum credito nem fulfill de novo', !l5.some((x) => x.startsWith('fulfill:')), l5.join(' '));
     // O SDK sem as funcoes pagas: a loja nao oferece nada.
     await js("localStorage.setItem('__wdSemPago', '1'); true");
     await send('Page.reload', {}, sessionId);
@@ -497,7 +542,9 @@ for (const portal of ALVOS) {
     confere('SDK sem as funcoes pagas: a loja abre sem os pacotes', semPago
       && (await js("document.querySelectorAll('#shopList .pacotes').length")) === 0
       && (await js("document.querySelectorAll('#shopList .item').length")) > 5);
-    await js("localStorage.removeItem('__wdSemPago'); localStorage.removeItem('__wdServidor'); true");
+    confere('SDK sem o Remote Storage: so o localStorage', (await js('window.__plataforma.nuvem.estado')) === 'ausente'
+      && (await moedas()) === antesDoBuild);
+    await js("localStorage.removeItem('__wdSemPago'); localStorage.removeItem('__wdServidor'); localStorage.removeItem('__wdNuvem'); true");
   }
   confere('sem erro no console', erros.length === 0, erros.slice(0, 2).join(' | '));
   ouvintes.delete('Fetch.requestPaused');

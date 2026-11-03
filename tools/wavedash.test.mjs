@@ -20,12 +20,22 @@
  * passa pela lista de pendentes, NOT_FOUND, pacote desconhecido, respostas sem
  * o envelope `{success, data}`, checkout sem evento, o init sem esperar nada
  * disso, e o SDK sem as funcoes pagas.
+ *
+ * E o save na nuvem (src/portais/wavedash-nuvem.js): um Remote Storage falso
+ * cuja "nuvem" sobrevive a uma origem nova (o build novo da Wavedash, que zera
+ * o localStorage). Nuvem mais nova, local mais novo, local orfao, nuvem sem
+ * arquivo, download que nao responde ou falha (e a leitura que chega tarde),
+ * envio que falha, que nao responde e que bate no limite, a ordem credito ->
+ * save -> nuvem -> fulfill, a compra com a nuvem fora, a pagina escondida e o
+ * SDK sem o Remote Storage.
  */
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
 // --------------------------------------------------- navegador minimo
-mock.timers.enable({ apis: ['setTimeout'] });
+// O Date anda junto com os temporizadores: a janela do limite de envios e as
+// pausas da nuvem contam pelo Date.now().
+mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1790000000000 });
 const g = /** @type {*} */ (globalThis);
 g.window = globalThis;
 /** O localStorage: o save dura entre uma "abertura" e outra. O ultimo teste o quebra. */
@@ -67,7 +77,8 @@ const { getLang } = await import('../src/core/i18n.js');
 const { PRAZO_SDK_MS, ESPERA_EVENTO_MS } = await import('../src/portais/wavedash-pacotes.js');
 const { creditaCompra, estornaCompra, zeraGuardandoCompras, PACOTES } = await import('../src/game/pacotes.js');
 const { Progress } = await import('../src/game/progress.js');
-const { load, remove, isPersistent } = await import('../src/core/storage.js');
+const { load, save, remove, isPersistent, entradasLocais, definirEspelho, PREFIXO } = await import('../src/core/storage.js');
+const N = await import('../src/portais/wavedash-nuvem.js');
 
 /**
  * O SDK falso: so registra.
@@ -286,8 +297,8 @@ test('SDK que lanca excecao nao derruba o jogo', async () => {
 // ------------------------------------------------------ pacotes de moedas
 
 /** Deixa as promessas andarem (o setImmediate nao e o temporizador falso). */
-async function sossega() {
-  for (let i = 0; i < 30; i++) await new Promise((r) => setImmediate(r));
+async function sossega(n = 30) {
+  for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r));
 }
 
 let nCompra = 0;
@@ -403,6 +414,8 @@ const conta = (sdk, nome) => sdk.chamadas.filter((/** @type {*} */ c) => c[0] ==
 async function abre(sdk, o = {}) {
   g.Wavedash = sdk;
   const p = new PortalWavedash();
+  await p.preparar();
+  // O Progress nasce com main.js, depois do preparar (e da nuvem).
   const progress = new Progress();
   /** @type {string[]} purchaseIds que viraram moeda nesta abertura (o toast) */
   const avisos = [];
@@ -417,7 +430,6 @@ async function abre(sdk, o = {}) {
         estornaCompra(progress, c.purchaseId, c.id);
       },
     );
-  await p.preparar();
   if (o.ligaAntes !== false) liga();
   await p.init();
   p.gameLoadingFinished();
@@ -425,9 +437,18 @@ async function abre(sdk, o = {}) {
   return { p, progress, avisos, liga };
 }
 
+/**
+ * Uma origem nova, como a de um build novo na Wavedash: nada no localStorage
+ * (nem a marca da nuvem) e nenhum espelho ligado.
+ */
+function novaOrigem() {
+  definirEspelho(null);
+  for (const k of Object.keys(entradasLocais())) remove(k.slice(PREFIXO.length));
+}
+
 /** Save zerado e nenhum SDK: cada teste comeca de um jogador novo. */
 function zera() {
-  remove('save');
+  novaOrigem();
   delete g.Wavedash;
 }
 
@@ -774,6 +795,486 @@ test('apagar o progresso guarda a lista: a compra sem fulfill nao credita de nov
   } finally {
     zera();
   }
+});
+
+// ------------------------------------------------------ save na nuvem
+
+/**
+ * A nuvem da Wavedash: os arquivos por caminho, que sobrevivem a qualquer
+ * build, e o instante de cada envio que chegou ao servidor.
+ */
+function nuvemFalsa() {
+  return { arquivos: /** @type {Map<string, Uint8Array>} */ (new Map()), tentativas: /** @type {number[]} */ ([]), envios: 0 };
+}
+
+/**
+ * O Remote Storage por cima de outro SDK falso. O arquivo local (o IndexedDB
+ * do SDK de verdade) e da origem: some num build novo.
+ * @param {*} base
+ * @param {ReturnType<typeof nuvemFalsa>} nuvem
+ * @param {{baixa?: *, sobe?: (n: number) => *}} [o] baixa: 'ok' | 'erro' | 'pendura' | Promise | (n) => um desses;
+ *   sobe: (n) => '' (deu certo), uma mensagem de erro, ou 'pendura'
+ */
+function comNuvem(base, nuvem, o = {}) {
+  const idb = new Map();
+  const ch = base.chamadas;
+  let nBaixa = 0;
+  let nSobe = 0;
+  const copia = (/** @type {string} */ p) => {
+    if (!nuvem.arquivos.has(p)) return { success: false, data: null, message: '404 (Not Found)' };
+    idb.set(p, new Uint8Array(/** @type {*} */ (nuvem.arquivos.get(p))));
+    return { success: true, data: p };
+  };
+  return Object.assign(base, {
+    writeLocalFile: async (/** @type {string} */ p, /** @type {Uint8Array} */ b) => {
+      ch.push(['escreve', p]);
+      idb.set(p, new Uint8Array(b));
+      return true;
+    },
+    readLocalFile: async (/** @type {string} */ p) => {
+      ch.push(['le', p]);
+      return idb.has(p) ? new Uint8Array(idb.get(p)) : null;
+    },
+    downloadRemoteFile: (/** @type {string} */ p) => {
+      ch.push(['baixa', p]);
+      nBaixa++;
+      const modo = typeof o.baixa === 'function' ? o.baixa(nBaixa) : o.baixa || 'ok';
+      if (modo === 'pendura') return new Promise(() => {});
+      if (modo instanceof Promise) return modo.then(() => copia(p));
+      if (modo === 'erro') return Promise.resolve({ success: false, data: null, message: '503 (Service Unavailable)' });
+      return Promise.resolve(copia(p));
+    },
+    remoteFileExists: async (/** @type {string} */ p) => {
+      ch.push(['existe', p]);
+      const modo = typeof o.baixa === 'function' ? o.baixa(nBaixa) : o.baixa;
+      if (modo === 'erro') return { success: false, data: null, message: '503 (Service Unavailable)' };
+      return { success: true, data: nuvem.arquivos.has(p) };
+    },
+    uploadRemoteFile: (/** @type {string} */ p) => {
+      ch.push(['sobe', p]);
+      nSobe++;
+      nuvem.tentativas.push(Date.now());
+      const falha = o.sobe ? o.sobe(nSobe) : '';
+      if (falha === 'pendura') return new Promise(() => {});
+      if (falha) return Promise.resolve({ success: false, data: null, message: falha });
+      nuvem.arquivos.set(p, new Uint8Array(idb.get(p)));
+      nuvem.envios++;
+      return Promise.resolve({ success: true, data: p });
+    },
+  });
+}
+
+/** O que a nuvem guarda: chave completa -> texto cru. @param {ReturnType<typeof nuvemFalsa>} nuvem */
+const naNuvem = (nuvem) => {
+  const b = nuvem.arquivos.get(N.ARQUIVO);
+  return b ? JSON.parse(new TextDecoder().decode(b)).chaves : null;
+};
+/** O save que a nuvem guarda. @param {ReturnType<typeof nuvemFalsa>} nuvem */
+const saveNaNuvem = (nuvem) => {
+  const c = naNuvem(nuvem);
+  return c && c[PREFIXO + 'save'] ? JSON.parse(c[PREFIXO + 'save']) : null;
+};
+/**
+ * Poe um arquivo na nuvem, como um build anterior teria subido.
+ * @param {ReturnType<typeof nuvemFalsa>} nuvem
+ * @param {Record<string, *>} chaves sem o prefixo; o valor vira texto cru (JSON)
+ */
+function poeNaNuvem(nuvem, chaves) {
+  /** @type {Record<string, string>} */
+  const cru = {};
+  for (const [k, v] of Object.entries(chaves)) cru[PREFIXO + k] = JSON.stringify(v);
+  nuvem.arquivos.set(N.ARQUIVO, new TextEncoder().encode(JSON.stringify({ v: 1, chaves: cru })));
+}
+/** Um save da versao 3 com o que o teste precisa. @param {*} extra */
+// Com `prizes` e `perfeitas`, o construtor do Progress nao migra (nem grava) nada.
+const umSave = (extra) => ({ v: 3, unlocked: 1, stars: {}, coins: 0, xp: 0, skin: 'classic', skins: ['classic'], upgrades: {}, prizes: [], perfeitas: [], ...extra });
+/** Os temporizadores andam ate o envio sair e as promessas assentarem. @param {number} ms */
+async function anda(ms) {
+  mock.timers.tick(ms);
+  await sossega();
+}
+const indice = (/** @type {*} */ sdk, /** @type {string} */ nome) => sdk.chamadas.findIndex((/** @type {*} */ c) => c[0] === nome);
+
+test('nuvem: build nova - o save, o idioma e o som voltam antes de main.js', async () => {
+  zera();
+  const nuvem = nuvemFalsa();
+  poeNaNuvem(nuvem, { save: umSave({ unlocked: 12, coins: 777, rev: 40, compras: ['k97x'] }), lang: 'pt', sfxOn: false });
+  const sdk = comNuvem(sdkPago(servidorFalso()), nuvem);
+  try {
+    const { p, progress } = await abre(sdk);
+    assert.equal(p.nuvem.estado, 'ligada');
+    assert.equal(progress.data.coins, 777, 'o save da nuvem, no construtor do Progress');
+    assert.deepEqual(progress.data.compras, ['k97x'], 'e a lista das compras');
+    assert.equal(getLang(), 'pt', 'o idioma escolhido nos ajustes vence o da Wavedash (en)');
+    assert.equal(load('sfxOn', true), false);
+    assert.equal(load(N.MARCA, 0), 1, 'a marca: este localStorage leu a nuvem');
+    assert.ok(indice(sdk, 'baixa') < indice(sdk, 'init'), 'leu antes do init');
+    assert.equal(inits(sdk), 1);
+    assert.deepEqual(progresso(sdk).slice(0, 4), [CARGA.modulo, CARGA.sdk, CARGA.nuvem, CARGA.preparado]);
+    await anda(N.INTERVALO_MS * 2);
+    assert.equal(conta(sdk, 'sobe'), 0, 'nada mudou: nada sobe');
+    assert.equal(naNuvem(nuvem)[PREFIXO + N.MARCA], undefined, 'a marca nunca sobe');
+  } finally {
+    zera();
+  }
+});
+
+test('nuvem: a mais nova vence; local mais novo fica e sobe; local orfao perde', async () => {
+  try {
+    // A nuvem mais nova (outro aparelho, ou o build anterior).
+    zera();
+    save('save', umSave({ coins: 10, rev: 5 }));
+    save(N.MARCA, 1);
+    const n1 = nuvemFalsa();
+    poeNaNuvem(n1, { save: umSave({ coins: 99, rev: 9 }) });
+    const a = await abre(comNuvem(sdkPago(servidorFalso()), n1));
+    assert.equal(a.progress.data.coins, 99);
+    // O local mais novo: o envio da sessao anterior nao chegou.
+    zera();
+    save('save', umSave({ coins: 50, rev: 12 }));
+    save(N.MARCA, 1);
+    const n2 = nuvemFalsa();
+    poeNaNuvem(n2, { save: umSave({ coins: 99, rev: 9 }) });
+    const s2 = comNuvem(sdkPago(servidorFalso()), n2);
+    const b = await abre(s2);
+    assert.equal(b.progress.data.coins, 50);
+    assert.equal(conta(s2, 'sobe'), 0, 'nao sobe antes da espera');
+    await anda(N.ESPERA_MS);
+    assert.equal(conta(s2, 'sobe'), 1);
+    assert.equal(saveNaNuvem(n2).coins, 50);
+    assert.equal(saveNaNuvem(n2).rev, 12);
+    // Orfao: um save local que nunca leu a nuvem (o primeiro carregamento de
+    // um build novo com a rede fora) perde mesmo com o rev maior.
+    zera();
+    save('save', umSave({ coins: 5, rev: 50 }));
+    const n3 = nuvemFalsa();
+    poeNaNuvem(n3, { save: umSave({ coins: 99, rev: 9 }) });
+    const c = await abre(comNuvem(sdkPago(servidorFalso()), n3));
+    assert.equal(c.progress.data.coins, 99);
+  } finally {
+    zera();
+  }
+});
+
+test('nuvem sem arquivo (jogador novo): o espelho liga e a primeira gravacao cria o arquivo', async () => {
+  zera();
+  const nuvem = nuvemFalsa();
+  const sdk = comNuvem(sdkPago(servidorFalso()), nuvem);
+  try {
+    const { p, progress } = await abre(sdk);
+    assert.equal(p.nuvem.estado, 'ligada');
+    assert.equal(conta(sdk, 'existe'), 1, 'o HEAD separa "nao existe" de "nao deu"');
+    progress.addCoins(5);
+    progress.addCoins(5);
+    await anda(N.ESPERA_MS - 1);
+    assert.equal(conta(sdk, 'sobe'), 0);
+    await anda(1);
+    assert.equal(conta(sdk, 'sobe'), 1, 'as duas gravacoes num envio so');
+    assert.equal(saveNaNuvem(nuvem).coins, 10);
+    // Os ajustes tambem sobem (o som, o idioma, a qualidade).
+    save('quality', 'low');
+    await anda(N.INTERVALO_MS);
+    assert.equal(naNuvem(nuvem)[PREFIXO + 'quality'], '"low"');
+  } finally {
+    zera();
+  }
+});
+
+test('download que nao responde: o jogo abre no prazo so com o localStorage, e a nuvem liga quando chega', async () => {
+  for (const nuvemTem of [false, true]) {
+    zera();
+    const nuvem = nuvemFalsa();
+    if (nuvemTem) poeNaNuvem(nuvem, { save: umSave({ coins: 99, rev: 9 }) });
+    let solta = () => {};
+    const atrasado = new Promise((r) => (solta = () => r(undefined)));
+    const sdk = comNuvem(sdkPago(servidorFalso()), nuvem, { baixa: (/** @type {number} */ n) => (n === 1 ? atrasado : 'ok') });
+    g.Wavedash = sdk;
+    try {
+      const p = new PortalWavedash();
+      const prep = p.preparar();
+      await sossega();
+      assert.equal(p.nuvem.estado, 'lendo');
+      await anda(N.PRAZO_LEITURA_MS);
+      await prep;
+      assert.equal(p.nuvem.estado, 'desligada', 'sem a nuvem, sem espelho');
+      const progress = new Progress();
+      p.pacotes.liga((c) => creditaCompra(progress, c.purchaseId, c.id), () => {});
+      await p.init();
+      p.gameLoadingFinished();
+      assert.equal(inits(sdk), 1, 'o init nao esperou a nuvem');
+      progress.addCoins(3);
+      await anda(N.INTERVALO_MS);
+      assert.equal(conta(sdk, 'sobe'), 0, 'nada sobe por cima de um arquivo que nao foi lido');
+      solta();
+      await sossega();
+      if (nuvemTem) {
+        // A nuvem tem um save, e este (orfao, rev 1) nao pode trocar de lugar
+        // com ele no meio da sessao: fica para a proxima abertura.
+        assert.equal(p.nuvem.estado, 'desligada');
+        assert.equal(load(N.MARCA, 0), 0, 'sem a marca, a nuvem vence na proxima');
+        await anda(N.INTERVALO_MS);
+        assert.equal(conta(sdk, 'sobe'), 0);
+        assert.equal(saveNaNuvem(nuvem).coins, 99, 'a nuvem ficou intacta');
+      } else {
+        assert.equal(p.nuvem.estado, 'ligada', 'nuvem vazia: o local passa a ser ela');
+        await anda(N.ESPERA_MS);
+        assert.equal(saveNaNuvem(nuvem).coins, 3);
+      }
+    } finally {
+      zera();
+    }
+  }
+});
+
+test('download com erro: so o localStorage, e a releitura no fundo liga a nuvem', async () => {
+  zera();
+  const nuvem = nuvemFalsa();
+  const sdk = comNuvem(sdkPago(servidorFalso()), nuvem, { baixa: (/** @type {number} */ n) => (n === 1 ? 'erro' : 'ok') });
+  try {
+    const { p, progress } = await abre(sdk);
+    assert.equal(p.nuvem.estado, 'desligada');
+    progress.addCoins(4);
+    await anda(N.RELEITURAS_MS[0]);
+    assert.equal(conta(sdk, 'baixa'), 2);
+    assert.equal(p.nuvem.estado, 'ligada');
+    await anda(N.ESPERA_MS);
+    assert.equal(saveNaNuvem(nuvem).coins, 4);
+  } finally {
+    zera();
+  }
+});
+
+test('compra: credito, save local, envio para a nuvem e so entao o fulfill', async () => {
+  zera();
+  const srv = servidorFalso();
+  const nuvem = nuvemFalsa();
+  const sdk = comNuvem(sdkPago(srv), nuvem);
+  try {
+    const { p, progress, avisos } = await abre(sdk);
+    assert.equal(await p.pacotes.comprar('coins-1500'), 'ok');
+    await anda(0);
+    const [pid] = avisos;
+    assert.equal(progress.data.coins, 1500);
+    assert.ok(indice(sdk, 'sobe') >= 0 && indice(sdk, 'sobe') < indice(sdk, 'fulfill'), 'sobe antes do fulfill');
+    assert.deepEqual(saveNaNuvem(nuvem).compras, [pid], 'o purchaseId foi junto');
+    assert.equal(saveNaNuvem(nuvem).coins, 1500);
+    assert.equal(srv.compras.get(pid).fulfilled, true);
+  } finally {
+    zera();
+  }
+});
+
+test('compra com o envio barrado pelo limite: o fulfill espera o envio que passa', async () => {
+  zera();
+  const srv = servidorFalso();
+  const nuvem = nuvemFalsa();
+  const sdk = comNuvem(sdkPago(srv), nuvem, { sobe: (n) => (n === 1 ? 'Upload rate limited; try again in 40s. Upload less often.' : '') });
+  try {
+    const { p, progress, avisos } = await abre(sdk);
+    await p.pacotes.comprar('coins-5000');
+    await anda(0);
+    const [pid] = avisos;
+    assert.equal(progress.data.coins, 5000, 'a moeda ja vale na sessao');
+    assert.equal(conta(sdk, 'sobe'), 1);
+    assert.equal(fulfills(sdk).length, 0, 'sem a moeda na nuvem, sem fulfill');
+    await anda(39000);
+    assert.equal(conta(sdk, 'sobe'), 1, 'esperou o que o SDK pediu');
+    await anda(2000);
+    assert.equal(conta(sdk, 'sobe'), 2);
+    assert.equal(fulfills(sdk).length, 1);
+    assert.equal(srv.compras.get(pid).fulfilled, true);
+    assert.deepEqual(saveNaNuvem(nuvem).compras, [pid]);
+  } finally {
+    zera();
+  }
+});
+
+test('envio que nao responde estoura o prazo, e a falha so atrasa o envio seguinte', async () => {
+  zera();
+  const nuvem = nuvemFalsa();
+  const sdk = comNuvem(sdkPago(servidorFalso()), nuvem, { sobe: (n) => (n === 1 ? 'pendura' : n === 2 ? 'Failed to upload file' : '') });
+  try {
+    const { p, progress } = await abre(sdk);
+    progress.addCoins(1);
+    await anda(N.ESPERA_MS);
+    assert.equal(p.nuvem.enviando, true);
+    await anda(N.PRAZO_ENVIO_MS);
+    assert.equal(p.nuvem.enviando, false);
+    assert.equal(p.nuvem.falhas, 1);
+    await anda(N.PAUSA_FALHA_MS);
+    assert.equal(conta(sdk, 'sobe'), 2);
+    assert.equal(p.nuvem.falhas, 2);
+    await anda(N.PAUSA_FALHA_MS * 2);
+    assert.equal(conta(sdk, 'sobe'), 3);
+    assert.equal(p.nuvem.falhas, 0);
+    assert.equal(saveNaNuvem(nuvem).coins, 1);
+  } finally {
+    zera();
+  }
+});
+
+test('nuvem fora na compra: sem fulfill; na abertura seguinte a compra credita uma vez e recebe o fulfill', async () => {
+  zera();
+  const srv = servidorFalso();
+  const nuvem = nuvemFalsa();
+  try {
+    // Sessao 1: a nuvem nao responde.
+    const s1 = comNuvem(sdkPago(srv), nuvem, { baixa: 'pendura' });
+    g.Wavedash = s1;
+    const p = new PortalWavedash();
+    const prep = p.preparar();
+    await sossega();
+    await anda(N.PRAZO_LEITURA_MS);
+    await prep;
+    const progress = new Progress();
+    p.pacotes.liga((c) => creditaCompra(progress, c.purchaseId, c.id), () => {});
+    await p.init();
+    p.gameLoadingFinished();
+    await p.pacotes.comprar('coins-1500');
+    await sossega();
+    assert.equal(progress.data.coins, 1500);
+    await anda(N.PRAZO_GARANTIA_MS);
+    assert.equal(fulfills(s1).length, 0, 'a moeda nao chegou a nuvem: sem fulfill');
+    // Sessao 2, num build novo: a Wavedash entrega de novo, e a moeda entra no
+    // save que a nuvem devolveu.
+    novaOrigem();
+    const s2 = comNuvem(sdkPago(srv), nuvem);
+    const b = await abre(s2);
+    await anda(0);
+    assert.equal(b.progress.data.coins, 1500, 'uma vez');
+    assert.equal(fulfills(s2).length, 1);
+    assert.equal([...srv.compras.values()][0].fulfilled, true);
+    // Sessao 3, outro build: a moeda volta da nuvem, e nada credita de novo.
+    novaOrigem();
+    const c = await abre(comNuvem(sdkPago(srv), nuvem));
+    assert.equal(c.progress.data.coins, 1500);
+    assert.equal(c.avisos.length, 0);
+  } finally {
+    zera();
+  }
+});
+
+test('build nova depois da compra: a reentrega so recebe o fulfill', async () => {
+  zera();
+  const srv = servidorFalso();
+  const nuvem = nuvemFalsa();
+  try {
+    const a = await abre(comNuvem(sdkPago(srv, { falhasNoFulfill: 1 }), nuvem));
+    await a.p.pacotes.comprar('coins-1500');
+    await anda(0);
+    const [pid] = a.avisos;
+    assert.equal(srv.compras.get(pid).fulfilled, false, 'o fulfill falhou');
+    assert.deepEqual(saveNaNuvem(nuvem).compras, [pid]);
+    novaOrigem();
+    const s2 = comNuvem(sdkPago(srv), nuvem);
+    const b = await abre(s2);
+    await anda(0);
+    assert.equal(b.progress.data.coins, 1500, 'veio da nuvem, sem credito novo');
+    assert.equal(b.avisos.length, 0);
+    assert.equal(srv.compras.get(pid).fulfilled, true);
+    assert.equal(conta(s2, 'sobe'), 0, 'ja estava na nuvem: nada a subir');
+  } finally {
+    zera();
+  }
+});
+
+test('limite: no pior caso, nunca acima de 25 envios por minuto nem de 280 por hora', async () => {
+  zera();
+  const nuvem = nuvemFalsa();
+  const sdk = comNuvem(sdkPago(servidorFalso()), nuvem);
+  try {
+    const { p, progress } = await abre(sdk);
+    // 10 min de gravacoes a cada segundo: no maximo um envio a cada INTERVALO_MS.
+    for (let s = 0; s < 600; s++) {
+      progress.addCoins(1);
+      mock.timers.tick(1000);
+      await sossega(3);
+    }
+    const t = nuvem.tentativas;
+    const intervalos = t.slice(1).map((x, i) => x - t[i]);
+    assert.ok(t.length >= 30 && t.length <= 600 / (N.INTERVALO_MS / 1000) + 1, `envios em 10 min: ${t.length}`);
+    assert.ok(Math.min(...intervalos) >= N.INTERVALO_MS, `menor intervalo ${Math.min(...intervalos)} ms`);
+    // E uma compra por segundo por 2 h (o pior caso que a janela segura).
+    for (let s = 0; s < 7200; s++) {
+      progress.addCoins(1);
+      p.nuvem.garante();
+      mock.timers.tick(1000);
+      await sossega(3);
+    }
+    const todos = nuvem.tentativas;
+    let maxMin = 0;
+    let maxHora = 0;
+    for (let i = 0; i < todos.length; i++) {
+      maxMin = Math.max(maxMin, todos.filter((x) => x >= todos[i] && x - todos[i] < 60000).length);
+      maxHora = Math.max(maxHora, todos.filter((x) => x >= todos[i] && x - todos[i] < 3600000).length);
+    }
+    assert.ok(maxMin <= N.LIMITE_MINUTO, `pico por minuto: ${maxMin}`);
+    assert.ok(maxHora <= N.LIMITE_HORA, `pico por hora: ${maxHora}`);
+    assert.ok(maxHora >= N.LIMITE_HORA - 5, 'e a janela deixou o maximo passar');
+    await anda(N.PRAZO_GARANTIA_MS);
+  } finally {
+    zera();
+  }
+});
+
+test('pagina escondida: o que mudou sobe na hora', async () => {
+  zera();
+  const nuvem = nuvemFalsa();
+  const sdk = comNuvem(sdkPago(servidorFalso()), nuvem);
+  try {
+    const { progress } = await abre(sdk);
+    progress.addCoins(7);
+    aba(true);
+    for (const f of ouvintes.visibilitychange || []) f();
+    await anda(0);
+    assert.equal(conta(sdk, 'sobe'), 1, 'sem esperar os 4 s');
+    assert.equal(saveNaNuvem(nuvem).coins, 7);
+  } finally {
+    aba(false);
+    zera();
+  }
+});
+
+test('sem o Remote Storage (ou com ele pela metade): so o localStorage, e a compra recebe o fulfill como na 1.0.20', async () => {
+  zera();
+  try {
+    const srv = servidorFalso();
+    const sdk = sdkPago(srv);
+    const { p, progress } = await abre(sdk);
+    assert.equal(p.nuvem.estado, 'ausente');
+    assert.equal(conta(sdk, 'baixa'), 0);
+    await p.pacotes.comprar('coins-1500');
+    await sossega();
+    assert.equal(progress.data.coins, 1500);
+    assert.equal(fulfills(sdk).length, 1);
+    zera();
+    const meio = comNuvem(sdkPago(servidorFalso()), nuvemFalsa());
+    delete (/** @type {*} */ (meio)).uploadRemoteFile;
+    const b = await abre(meio);
+    assert.equal(b.p.nuvem.estado, 'ausente');
+    assert.equal(conta(meio, 'baixa'), 0);
+    // O SDK da prova do zip responde {success:false} a tudo o que nao conhece.
+    zera();
+    const prova = comNuvem(sdkPago(servidorFalso()), nuvemFalsa(), { baixa: 'erro' });
+    const c = await abre(prova);
+    assert.equal(c.p.nuvem.estado, 'desligada');
+    c.progress.addCoins(2);
+    assert.equal(load('save', null).coins, 2, 'o localStorage continua gravando');
+    assert.equal(inits(prova), 1);
+  } finally {
+    zera();
+  }
+});
+
+test('oQueVolta: so o que falta, e o save pelo rev ou pela marca', () => {
+  const s = (/** @type {number} */ rev) => JSON.stringify({ v: 3, rev });
+  const S = PREFIXO + 'save';
+  const L = PREFIXO + 'lang';
+  assert.deepEqual(N.oQueVolta({}, { [S]: s(3), [L]: '"pt"' }, false), { [S]: s(3), [L]: '"pt"' });
+  assert.deepEqual(N.oQueVolta({ [S]: s(5), [L]: '"en"' }, { [S]: s(3), [L]: '"pt"' }, true), {}, 'local mais novo e idioma do aparelho ficam');
+  assert.deepEqual(N.oQueVolta({ [S]: s(5) }, { [S]: s(9) }, true), { [S]: s(9) });
+  assert.deepEqual(N.oQueVolta({ [S]: s(50) }, { [S]: s(9) }, false), { [S]: s(9) }, 'orfao perde');
+  assert.deepEqual(N.oQueVolta({}, { [PREFIXO + N.MARCA]: '1', [PREFIXO + 'outra']: 'x' }, false), {}, 'chave fora de CHAVES nao volta');
 });
 
 // Por ultimo: quebra o localStorage do modulo de storage para o resto do arquivo.

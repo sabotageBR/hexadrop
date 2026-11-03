@@ -48,7 +48,7 @@ node tools/thumbnail.mjs --perfil y8 --largura 1920 --altura 1080 --vista 960x54
 npm run build:wavedash       # dist-wavedash/ (Wavedash: o SDK e injetado por ela, sem anuncio)
 npm run preview:wavedash     # serve dist-wavedash em 127.0.0.1:4177 (sem window.Wavedash, como fora dela)
 npm run verify:wavedash      # conformidade da Wavedash (precisa do preview:wavedash no ar)
-npm run test:wavedash        # teste de unidade do adaptador e dos pacotes de moedas (node --test, Node puro)
+npm run test:wavedash        # teste de unidade do adaptador, dos pacotes de moedas e da nuvem (node --test, Node puro)
 npm run portais -- --portal=wavedash --so=builds   # o zip, em dist-portais/hexa-drop-wavedash-<versao>.zip
 npm run portais -- --portal=wavedash --so=builds --versao=1.0.20   # outro rotulo so no nome do zip
 node tools/thumbnail.mjs --perfil wavedash         # o video de previa 16:9 (~22 s) em marketing/portais/wavedash/
@@ -1814,6 +1814,40 @@ no HTML e nenhuma URL de fora, porque o jogo roda isolado (COEP `require-corp`).
     repetida, a reentrega na abertura e o SDK sem as funções pagas.
   - O zip leva o rótulo de `--versao`, e o `package.json` continua em 1.0.19, porque a versão dele entra no
     bundle do app.
+- **Save na nuvem** (Remote Storage, zip 1.0.21, `src/portais/wavedash-nuvem.js`). **Cada build da Wavedash
+  roda noutra origem** (`<id>-c21ee9ed-<build>.builds.wavedashcdn.com`; medido no playtest da 1.0.20, o build #1
+  e o #2 tinham o último trecho diferente, e o #1 abriu com 0 moedas quando o #2 tinha 1.500): o localStorage
+  de um build não aparece no seguinte, e cada atualização publicada zeraria o progresso de todo jogador, moedas
+  compradas inclusive. O jogo continua gravando só pelo `core/storage.js`, com o padrão hidratar + espelho da
+  CrazyGames e da Playgama (`src/portais/save.js` não foi reaproveitado: mexer nele mudaria a Playgama e a GamePix).
+  - **Antes de `main.js`** (`_preparar` do adaptador), com prazo de `PRAZO_LEITURA_MS` (3 s): baixa
+    `hexadrop-save.json` (um JSON de chave → texto cru das `CHAVES`), e devolve ao localStorage o que falta nele
+    e o `save` quando o da nuvem tem `rev` maior. O idioma vem depois, porque a nuvem pode trazer o que o
+    jogador escolheu nos ajustes (o i18n leu o storage antes dela). O `Wavedash.init()` não espera nada disso
+    além do prazo, e a reserva de 8 s continua armada desde a avaliação do módulo.
+  - **Sem ler a nuvem não há espelho.** Download que não responde no prazo, ou que falha sem ser "não existe"
+    (o `remoteFileExists` separa os dois, porque o download só diz "404" na mensagem), deixa a sessão no
+    localStorage: gravar por cima de um arquivo não lido apagaria o progresso. A leitura segue no fundo (e tenta
+    de novo aos 10 e 30 s); se chegar e a nuvem não for mais nova, o espelho liga ali.
+  - **`nuvemLida`** (só no localStorage, nunca sobe) marca que este localStorage já leu a nuvem. Save local sem a
+    marca nasceu numa sessão que não a leu (o primeiro carregamento de um build novo com a rede fora) e perde para
+    a nuvem mesmo com `rev` maior. Se a leitura tardia encontrar a nuvem mais nova, a marca sai.
+  - **Envio só nos pontos que contam:** o jogo grava no fim de fase, no fim de mundo, na loja, nos ajustes e na
+    compra; cada gravação marca o mapa como sujo, e o envio sai `ESPERA_MS` (4 s) depois da primeira mudança e
+    no mínimo `INTERVALO_MS` (15 s) depois do anterior (no pior caso 4 por minuto, 240 por hora). A compra e a
+    página escondida (`visibilitychange`, `pagehide`; o SDK manda arquivo pequeno com `keepalive`) sobem na
+    hora. Uma janela deslizante segura tudo em 25 por minuto e 280 por hora, abaixo dos 30 e 300 da Wavedash.
+    Envio que falha volta depois de 30 s, dobrando até 5 min, ou do tempo que o SDK mandou esperar.
+  - **A ordem da compra: crédito → gravação local → envio imediato → `fulfillPurchase` só com o envio
+    confirmado** (`garante`, ligado em `pacotes.duravel`). Se a nuvem não confirmar em 3 min (fora do ar, limite,
+    página fechando), não há fulfill: a Wavedash entrega a compra de novo na abertura seguinte, e o save que a
+    nuvem devolver ali ou já tem o `purchaseId` (só recebe o fulfill) ou não tem (credita de novo, porque o save
+    que tinha a moeda nunca chegou à nuvem). Na ordem contrária, um fulfill antes de a moeda subir perderia a
+    compra no build seguinte. `compras` vai na nuvem junto com o save, e o dedupe sobrevive aos builds.
+  - Sem as funções de Remote Storage no SDK, a nuvem fica `ausente` e vale o localStorage, como na 1.0.20.
+  - Conferido por `npm run test:wavedash` (36 casos, com uma nuvem falsa que sobrevive a uma origem nova) e pelo
+    `portaischeck` da Wavedash (a compra sobe antes do fulfill; "build novo" com as `hexadrop.*` apagadas devolve
+    moedas e compras sem crédito duplo; SDK sem Remote Storage fica no localStorage).
 
 `tools/portaischeck.mjs` monta cada portal com ids de teste em `.tmp/portaischeck/` e serve o SDK falso
 pela mesma URL do de verdade (o da Wavedash entra antes dos scripts da página, como ela faz): confere carregamento, idioma, intervalo com som calado, prêmio, pausa do

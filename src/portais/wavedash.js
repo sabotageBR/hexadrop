@@ -24,7 +24,12 @@
  *   video recompensado responde "sem video" sem nunca pagar; os botoes de
  *   video somem e o caminho gratuito da versao lisa fica no lugar
  *   (`COM_ANUNCIOS` falso em core/platform.js).
- * - o save continua no localStorage (core/storage.js), na origem do build.
+ * - **o save vai tambem para a nuvem da Wavedash** (Remote Storage, `nuvem`,
+ *   src/portais/wavedash-nuvem.js): cada build roda noutra origem, e o
+ *   localStorage de um nao aparece no seguinte. A leitura sai no `_preparar`,
+ *   antes de main.js ler o storage e com prazo curto; sem resposta, a sessao
+ *   segue so no localStorage. O idioma vem depois dela, porque a nuvem pode
+ *   trazer o que o jogador escolheu nos ajustes.
  * - **pacotes de moedas** (Paid Content consumivel, `pacotes`,
  *   src/portais/wavedash-pacotes.js): o ouvinte do PURCHASE_COMPLETED nasce
  *   aqui, antes do init, e a lista de compras sem fulfill e pedida uma vez
@@ -34,17 +39,19 @@
 
 import { Portal } from './base.js';
 import { PacotesWavedash } from './wavedash-pacotes.js';
+import { NuvemWavedash } from './wavedash-nuvem.js';
 import { LANGS, idiomaDaPlataforma } from '../core/i18n.js';
+import { load } from '../core/storage.js';
 
 /** Sem init ate aqui (ms desde a avaliacao deste modulo), ele sai assim mesmo. */
 export const RESERVA_MS = 8000;
 
 /**
  * As etapas do carregamento na barra da Wavedash: o modulo avaliado, o SDK
- * visto, o idioma pronto (dai vem o main.js, o pedaco grande), o jogo montado
- * (main.js chama `init`) e o fim.
+ * visto, a nuvem lida (ou desistida), o idioma pronto (dai vem o main.js, o
+ * pedaco grande), o jogo montado (main.js chama `init`) e o fim.
  */
-export const CARGA = { modulo: 0.1, sdk: 0.2, preparado: 0.35, montado: 0.8, pronto: 1 };
+export const CARGA = { modulo: 0.1, sdk: 0.2, nuvem: 0.3, preparado: 0.35, montado: 0.8, pronto: 1 };
 
 /**
  * O SDK que a Wavedash injeta, ou null fora dela.
@@ -77,6 +84,11 @@ export class PortalWavedash extends Portal {
      * compras sem fulfill chegam dentro dele.
      */
     this.pacotes = new PacotesWavedash(sdk);
+    /** O save na nuvem. Sem Remote Storage no SDK, fica `ausente`. */
+    this.nuvem = new NuvemWavedash(sdk);
+    // O fulfill de uma compra so sai com a moeda na nuvem (ou, sem nuvem, no
+    // localStorage): ver `garante`.
+    this.pacotes.duravel = () => this.nuvem.garante();
     this._botoesDeVideo();
     this._progresso01(CARGA.modulo);
     this._reserva = window.setTimeout(() => this.revelar('reserva'), opcoes.reservaMs ?? RESERVA_MS);
@@ -114,10 +126,18 @@ export class PortalWavedash extends Portal {
 
   async _preparar() {
     if (!sdk()) return;
+    // A nuvem antes de tudo o que le o storage (o idioma aqui, o som e o save
+    // em main.js). Tem prazo proprio e nunca rejeita; o init nao espera por
+    // ela alem disso, e a reserva de 8 s continua armada desde a avaliacao.
+    await this.nuvem.hidrata();
+    if (this.nuvem.estado !== 'ausente') this._progresso01(CARGA.nuvem);
     const lang = this._chama(() => /** @type {*} */ (window).Wavedash.getUserLanguage());
-    if (typeof lang === 'string' && LANGS.includes(lang.toLowerCase().split(/[-_]/)[0])) {
-      idiomaDaPlataforma(lang);
-    }
+    const daWavedash = typeof lang === 'string' && LANGS.includes(lang.toLowerCase().split(/[-_]/)[0]) ? lang : '';
+    // O i18n leu o storage antes da nuvem: o idioma escolhido nos ajustes, que
+    // pode ter acabado de chegar dela, vence o da Wavedash (idiomaDaPlataforma
+    // le o storage primeiro).
+    const salvo = this._chama(() => load('lang', null));
+    if (daWavedash || (typeof salvo === 'string' && LANGS.includes(salvo))) idiomaDaPlataforma(daWavedash || salvo);
     this._progresso01(CARGA.preparado);
   }
 

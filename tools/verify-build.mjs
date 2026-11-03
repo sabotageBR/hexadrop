@@ -223,6 +223,11 @@ if (PORTAL) {
     const pago = ['"coins-1500"', '"coins-5000"', 'PurchaseCompleted', '.triggerPaywall(', '.fulfillPurchase(', '.getUnfulfilledPurchases('];
     const faltam = pago.filter((s) => !allJs.includes(s));
     check('wavedash: pacotes de moedas (coins-1500, coins-5000, checkout e fulfill)', faltam.length === 0, faltam.join(' '));
+    // O save na nuvem (Remote Storage): cada build da Wavedash e outra origem,
+    // e sem a nuvem o localStorage zera a cada atualizacao.
+    const nuvem = ['"hexadrop-save.json"', '.downloadRemoteFile(', '.readLocalFile(', '.writeLocalFile(', '.uploadRemoteFile(', '.remoteFileExists('];
+    const semNuvem = nuvem.filter((s) => !allJs.includes(s));
+    check('wavedash: save na nuvem (download, leitura, escrita e upload)', semNuvem.length === 0, semNuvem.join(' '));
   }
 } else if (COM_PLATAFORMA) {
   check('script do Poki SDK v2 presente', true);

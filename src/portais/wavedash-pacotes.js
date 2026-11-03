@@ -12,10 +12,12 @@
  *   (src/portais/wavedash.js), na avaliacao do modulo. Ate main.js ligar o
  *   credito (`liga`), as compras esperam numa fila;
  * - **credito antes do fulfill**: o jogo credita e grava, e so depois sai o
- *   `fulfillPurchase`. Se a pagina fechar no meio, a compra volta na proxima
- *   abertura e o `purchaseId` gravado impede o segundo credito. Sem save que
- *   dure (localStorage bloqueado), a compra vale para a sessao e nao recebe o
- *   fulfill: na proxima abertura ela volta, em vez de sumir com o save;
+ *   `fulfillPurchase`, e so se o credito durar alem desta pagina (`duravel`):
+ *   com a nuvem da Wavedash, depois de o save com o `purchaseId` subir
+ *   (src/portais/wavedash-nuvem.js, `garante`); sem ela, com o localStorage
+ *   gravando. Se a pagina fechar no meio, ou a nuvem nao confirmar, a compra
+ *   volta na proxima abertura e o `purchaseId` do save que voltar decide: ja
+ *   creditada, so recebe o fulfill; senao, credita ali;
  * - **a mesma compra pode chegar mais de uma vez** (evento e lista, duas
  *   abas, a reentrega): a que ja esta sendo tratada nao comeca de novo, e o
  *   save diz se ela ja virou moeda;
@@ -57,13 +59,13 @@ export const ESPERA_EVENTO_MS = 6000;
  */
 
 /**
- * `{success, data}` ou o valor puro.
+ * `{success, data, message}` ou o valor puro.
  * @param {*} r
- * @returns {{ok: boolean, valor: *}}
+ * @returns {{ok: boolean, valor: *, message?: string}}
  */
-function resposta(r) {
-  if (r && typeof r === 'object' && typeof r.success === 'boolean' && !Array.isArray(r)) {
-    return { ok: r.success, valor: r.success ? r.data : undefined };
+export function resposta(r) {
+  if (r && typeof r === 'object' && typeof r.success === 'boolean' && !Array.isArray(r) && !ArrayBuffer.isView(r)) {
+    return { ok: r.success, valor: r.success ? r.data : undefined, message: r.success ? '' : String(r.message || '') };
   }
   return { ok: r !== undefined && r !== null, valor: r };
 }
@@ -86,6 +88,14 @@ export class PacotesWavedash {
     this._estorna = null;
     /** Creditos desde a abertura (o checkout confirmado espera o seu). */
     this.creditos = 0;
+    /**
+     * O credito ja gravado dura alem desta pagina? So entao sai o fulfill. Sem
+     * nuvem, e o localStorage; o adaptador troca pela nuvem da Wavedash
+     * (src/portais/wavedash-nuvem.js, `garante`), que so confirma depois de a
+     * moeda subir.
+     * @type {() => Promise<boolean>}
+     */
+    this.duravel = () => Promise.resolve(isPersistent());
     this._ouve();
   }
 
@@ -172,7 +182,13 @@ export class PacotesWavedash {
     }
     if (r !== 'novo' && r !== 'repetido') return;
     if (r === 'novo') this.creditos++;
-    if (!isPersistent()) return;
+    let duravel = false;
+    try {
+      duravel = (await this.duravel()) === true;
+    } catch {
+      duravel = false;
+    }
+    if (!duravel) return;
     const status = await this._entregue(c.purchaseId);
     if (status === 'NOT_FOUND' && r === 'novo' && this._estorna) {
       try {
