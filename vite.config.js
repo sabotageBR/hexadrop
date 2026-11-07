@@ -8,7 +8,7 @@ const root = import.meta.dirname;
 // `lisa` = sem plataforma nenhuma, em dist-lisa/. `app` = o jogo empacotado pelo
 // Capacitor (Android/iOS), em dist-app/, que e o `webDir` de capacitor.config.json.
 // `crazy` = a CrazyGames, em dist-crazy/. Os portais de distribuicao (PORTAIS,
-// src/portais/), a Wavedash entre eles, saem em dist-<portal>/.
+// src/portais/), a Wavedash e a itch.io entre eles, saem em dist-<portal>/.
 // A Poki continua em dist/ - e o que as ferramentas de tools/ conferem por padrao.
 // A mesma lista mora em src/core/platform.js; valor desconhecido vira `poki`.
 const ALVO = process.env.VITE_PLATAFORMA;
@@ -57,12 +57,14 @@ function semPlataforma() {
       if (PLATAFORMA === 'crazy') {
         troca = `\n<!-- Unico script externo permitido pela CrazyGames. -->\n<script src="${SDK_CRAZY}"></script>`;
       } else if (NUM_PORTAL) {
-        const { nome, html: sdk, injetado } = PORTAIS[PLATAFORMA];
+        const { nome, html: sdk, injetado, semSdk } = PORTAIS[PLATAFORMA];
         troca = sdk
           ? `\n<!-- ${nome}: o SDK do portal, unico script de fora. -->\n${sdk}`
           : injetado
             ? `\n<!-- ${nome}: o portal injeta o SDK antes dos scripts do jogo; nada de fora aqui. -->`
-            : `\n<!-- ${nome}: o SDK entra por src/portais/${PLATAFORMA}.js, depois das opcoes que ele le. -->`;
+            : semSdk
+              ? `\n<!-- ${nome}: sem SDK nenhum; nada de fora aqui. -->`
+              : `\n<!-- ${nome}: o SDK entra por src/portais/${PLATAFORMA}.js, depois das opcoes que ele le. -->`;
       }
       const novo = html.replace(
         /\n?[^\n]*<!--[^>]*Poki[^>]*-->\s*\n?[^\n]*<script src="https:\/\/game-cdn\.poki\.com[^>]*><\/script>/,
@@ -110,7 +112,7 @@ function entradaDoApp() {
 
 /**
  * No build do portal que pede o pacote sem citar ninguem (`semMarcas` em
- * tools/portais-sdk.mjs, a Wavedash), tira da folha de estilo os seletores das
+ * tools/portais-sdk.mjs, a Wavedash e a itch.io), tira da folha de estilo os seletores das
  * outras plataformas (`html[data-plataforma='playgama'] ...`). Neste build eles
  * nunca valem, e eram o nome de outro portal dentro do zip. Comentario sai
  * antes, porque o minificador o tiraria de qualquer jeito e uma virgula dentro

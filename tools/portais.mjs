@@ -1,6 +1,6 @@
 /**
  * Os pacotes e o material grafico dos portais de distribuicao (Y8, Playgama,
- * Yandex Games, GameMonetize, GameDistribution, GamePix e Wavedash).
+ * Yandex Games, GameMonetize, GameDistribution, GamePix, Wavedash e itch.io).
  *
  *   node tools/portais.mjs                    # builds e material de todos
  *   node tools/portais.mjs --so=builds        # so os zips
@@ -9,6 +9,11 @@
  *   node tools/portais.mjs --portal=wavedash --so=builds --versao=1.0.20
  *                                             # outro rotulo no nome do zip; o package.json
  *                                             # fica (a versao dele entra no bundle do app)
+ *   node tools/portais.mjs --portal=itch --so=builds --versao=1.0.21 --destino=<pasta>
+ *                                             # e mais uma copia do zip em <pasta>, com o
+ *                                             # mesmo zip extraido ao lado (<pasta>/<nome>/)
+ *   --porta-http=4195 --porta-previa=4196 --porta-cdp=9112
+ *                                             # as portas da arte (padrao: estas)
  *
  * **Builds**: `VITE_PLATAFORMA=<portal> vite build` (src/portais/, SDK de
  * tools/portais-sdk.mjs, ids de marketing/portais/ids.json) e o zip com o
@@ -24,7 +29,9 @@
  * - icones: o icone do app (assets/icon-only.png), sem texto;
  * - telas: o jogo de verdade no Chrome, em ingles, numa fase de cada mundo,
  *   um toque na peca da dica um instante antes da foto (a peca estourando,
- *   e nao a torre parada); HUD do jogo incluido, que os portais aceitam;
+ *   e nao a torre parada); HUD do jogo incluido, que os portais aceitam. As
+ *   da itch.io (`doBuild`) saem do proprio build dela (dist-itch/, servido
+ *   pelo `vite preview`), sem botao de video nem pacote de moedas;
  * - videos: o de 1920x1080 da CrazyGames (marketing/crazygames/videos/); na Y8,
  *   que recusa montagem ("a continuous gameplay clip with no cuts"), um trecho
  *   so de uma fase, gravado por `node tools/thumbnail.mjs --perfil y8` (VIDEO_Y8,
@@ -36,7 +43,9 @@
  *   envio).
  * JPG que passa do peso maximo do portal desce de qualidade ate caber.
  *
- * Sobe o Vite na porta 4195 e o Chrome com depuracao na 9112.
+ * Sobe o Vite na porta 4195 (o `vite preview` do build, para as telas
+ * `doBuild`, na 4196) e o Chrome com depuracao na 9112; `--porta-http`,
+ * `--porta-previa` e `--porta-cdp` trocam as tres.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -49,8 +58,12 @@ import { PORTAIS } from './portais-sdk.mjs';
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const VERSAO = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8')).version;
 const JOGO = 'hexa-drop';
-const PORTA_HTTP = 4195;
-const PORTA_CDP = 9112;
+const argv = process.argv.slice(2);
+const opcao = (/** @type {string} */ nome) => (argv.find((a) => a.startsWith(`--${nome}=`)) || '').split('=')[1] || '';
+const PORTA_HTTP = Number(opcao('porta-http')) || 4195;
+/** O `vite preview` do build do portal, para as telas `doBuild`. */
+const PORTA_PREVIA = Number(opcao('porta-previa')) || 4196;
+const PORTA_CDP = Number(opcao('porta-cdp')) || 9112;
 const VIDEO_CRAZY = join(RAIZ, 'marketing/crazygames/videos/hexadrop-video-1920x1080.mp4');
 /** O trecho continuo da Y8, de `tools/thumbnail.mjs --perfil y8` (ROTEIRO_Y8). */
 const VIDEO_Y8 = join(RAIZ, 'marketing/portais/y8/hexa-drop-video-continuo-1920x1080.mp4');
@@ -85,6 +98,8 @@ const CENAS = {
  * @property {string} [cena]   tela: chave de CENAS
  * @property {boolean} [continuo]  video: o trecho sem corte da Y8 (VIDEO_Y8)
  * @property {boolean} [previa]    video: o da Wavedash (VIDEO_WAVEDASH), gravado ja no lugar
+ * @property {boolean} [doBuild]   tela: do build do portal (dist-<portal>/), e nao do servidor
+ *                                 de desenvolvimento (que e o da Poki)
  */
 
 /** O que cada portal pede. @type {Record<string, Item[]>} */
@@ -148,11 +163,21 @@ const ITENS = {
     // Jogo desde o primeiro quadro, sem audio: ela guarda so os 10 primeiros segundos.
     { arq: 'video-1920x1080', tipo: 'video', previa: true },
   ],
+  itch: [
+    // Capa 315:250 (a itch mostra em 315x250; entregue no dobro), so com o titulo.
+    { arq: 'capa-630x500', tipo: 'capa', w: 630, h: 500, fmt: 'png' },
+    // 3 a 5 telas de qualquer tamanho, do proprio build da itch: a vista de 960x600 do
+    // embed recomendado (no dobro) e uma de celular em pe.
+    { arq: 'tela-1920x1200-1', tipo: 'tela', w: 1920, h: 1200, cena: 'gelo', fmt: 'png', doBuild: true },
+    { arq: 'tela-1920x1200-2', tipo: 'tela', w: 1920, h: 1200, cena: 'doce', fmt: 'png', doBuild: true },
+    { arq: 'tela-1920x1200-3', tipo: 'tela', w: 1920, h: 1200, cena: 'neon', fmt: 'png', doBuild: true },
+    { arq: 'tela-1080x1920-4', tipo: 'tela', w: 1080, h: 1920, cena: 'puzzle', fmt: 'png', doBuild: true },
+  ],
 };
 
-const argv = process.argv.slice(2);
-const opcao = (/** @type {string} */ nome) => (argv.find((a) => a.startsWith(`--${nome}=`)) || '').split('=')[1] || '';
 const SO = opcao('so');
+/** `--destino=<pasta>`: onde mais deixar o zip, com ele extraido ao lado (`entrega`). */
+const destino = opcao('destino') ? resolve(opcao('destino')) : '';
 const ESCOLHIDOS = opcao('portal') ? opcao('portal').split(',') : Object.keys(PORTAIS);
 for (const p of ESCOLHIDOS) {
   if (!PORTAIS[p]) {
@@ -196,7 +221,30 @@ function builds() {
     writeFileSync(join(saida, `${nome}.sha256`), `${sha}  ${nome}.zip\n`);
     const aviso = faltam.length ? `  (SEM ${faltam.join(' e ')}: so para teste)` : '';
     console.log(`dist-portais/${nome}.zip  ${(statSync(zip).size / 1024).toFixed(0)} KB, ${lista.length} arquivos${aviso}`);
+    if (destino) entrega(zip, nome);
   }
+}
+
+/**
+ * `--destino=<pasta>`: uma copia do zip la, e o mesmo zip extraido ao lado, em
+ * <pasta>/<nome>/ (o painel que aceita pasta, e para conferir sem abrir o zip).
+ * A pasta extraida sai do zip, nunca do dist-<portal>: as duas sao iguais por
+ * construcao.
+ * @param {string} zip
+ * @param {string} nome
+ */
+function entrega(zip, nome) {
+  mkdirSync(destino, { recursive: true });
+  const copia = join(destino, `${nome}.zip`);
+  const pasta = join(destino, nome);
+  copyFileSync(zip, copia);
+  rmSync(pasta, { recursive: true, force: true });
+  const u = spawnSync('unzip', ['-q', copia, '-d', pasta], { encoding: 'utf8' });
+  if (u.status !== 0) {
+    console.error(`unzip ${copia} falhou: ${u.stderr}`);
+    process.exit(1);
+  }
+  console.log(`  -> ${copia} e ${pasta}/`);
 }
 
 // ------------------------------------------------------------------ arte
@@ -207,11 +255,36 @@ async function arte() {
   });
   const chrome = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${PORTA_CDP}`, '--no-sandbox',
     '--disable-gpu', '--hide-scrollbars', '--mute-audio', 'about:blank'], { stdio: 'ignore' });
+  /** O `vite preview` de cada build cujas telas saem dele (`doBuild`). @type {Map<string, *>} */
+  const previas = new Map();
   process.on('exit', () => {
     chrome.kill();
     vite.kill();
+    for (const p of previas.values()) p.kill();
   });
   const base = `http://127.0.0.1:${PORTA_HTTP}`;
+  const basePrevia = `http://127.0.0.1:${PORTA_PREVIA}`;
+  /**
+   * Serve dist-<portal>/ (gerado agora, se faltar) pelo `vite preview`, um
+   * portal por vez na mesma porta.
+   * @param {string} portal
+   */
+  async function previa(portal) {
+    if (previas.has(portal)) return;
+    for (const p of previas.values()) p.kill();
+    previas.clear();
+    if (!existsSync(join(RAIZ, `dist-${portal}`, 'index.html'))) {
+      const b = spawnSync('node', ['node_modules/vite/bin/vite.js', 'build', '--logLevel', 'error'], {
+        cwd: RAIZ, encoding: 'utf8', env: { ...process.env, VITE_PLATAFORMA: portal, IDS_PORTAL: '' },
+      });
+      if (b.status !== 0) throw new Error(`build ${portal} falhou:\n${b.stderr}`);
+    }
+    const p = spawn('node', ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(PORTA_PREVIA), '--strictPort'], {
+      cwd: RAIZ, stdio: 'ignore', env: { ...process.env, VITE_PLATAFORMA: portal },
+    });
+    previas.set(portal, p);
+    await espera(`${basePrevia}/index.html`);
+  }
   await espera(`${base}/marketing/portais/capa/`);
   const ws = (await (await espera(`http://127.0.0.1:${PORTA_CDP}/json/version`)).json()).webSocketDebuggerUrl;
   const sock = new WebSocket(ws);
@@ -257,11 +330,22 @@ async function arte() {
     const chave = `capa-${it.w}x${it.h}-${it.logo === false ? 'sem' : 'com'}`;
     if (feitos.has(chave)) return feitos.get(chave);
     const a = await aba(1200, 800, false);
-    await a.ir(`${base}/marketing/portais/capa/?w=${it.w}&h=${it.h}${it.logo === false ? '&logo=0' : ''}`);
+    // Com o servidor de desenvolvimento ainda frio, a capa ja saiu so com o ceu
+    // (sem as pecas nem a logo, que sao imagens): o ponto mais claro dela fica
+    // escuro. Entao confere e recarrega, ate tres vezes.
+    const claro = `(() => { const c = document.getElementById('capa'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let m = 0; for (let i = 0; i < d.length; i += 4 * 97) m = Math.max(m, d[i] + d[i + 1] + d[i + 2]); return m; })()`;
     let ok = false;
-    for (let i = 0; i < 80 && !ok; i++) {
-      await sleep(150);
-      ok = (await a.js('window.__capaPronta === true')) === true;
+    for (let vez = 0; vez < 3 && !ok; vez++) {
+      await a.ir(`${base}/marketing/portais/capa/?w=${it.w}&h=${it.h}${it.logo === false ? '&logo=0' : ''}`);
+      for (let i = 0; i < 80 && !ok; i++) {
+        await sleep(150);
+        ok = (await a.js('window.__capaPronta === true')) === true;
+      }
+      if (ok) {
+        await sleep(300);
+        ok = Number(await a.js(claro)) >= 400;
+      }
     }
     if (!ok) throw new Error(`a capa ${chave} nao ficou pronta`);
     const url = await a.js(`document.getElementById('capa').toDataURL('image/png')`);
@@ -285,18 +369,22 @@ async function arte() {
    * Uma tela do jogo: ingles, todas as fases abertas, a fase da cena e um
    * toque na peca da dica ~0,3 s antes da foto. A vista e a metade do pedido
    * (dpr 2); 760x570 e 1280x720 saem de uma vista do proprio tamanho, no
-   * dobro, reduzida - o HUD fica na proporcao de uma janela de verdade.
+   * dobro, reduzida - o HUD fica na proporcao de uma janela de verdade. Com
+   * `doBuild`, do build do portal servido pelo `vite preview` (`previa`).
+   * @param {Item} it
+   * @param {string} portal
    */
-  async function tela(/** @type {Item} */ it) {
+  async function tela(it, portal) {
     const w = /** @type {number} */ (it.w);
     const h = /** @type {number} */ (it.h);
-    const chave = `tela-${w}x${h}-${it.cena}`;
+    const chave = `tela-${w}x${h}-${it.cena}${it.doBuild ? `-${portal}` : ''}`;
     if (feitos.has(chave)) return feitos.get(chave);
     const retrato = h > w;
     const [vw, vh] = w >= 1920 || h >= 1920 ? [w / 2, h / 2] : [w, h];
     const pre = `try { localStorage.setItem('hexadrop.lang', '"en"'); } catch (e) {}`;
     const a = await aba(vw, vh, retrato, pre);
-    await a.ir(`${base}/index.html`);
+    if (it.doBuild) await previa(portal);
+    await a.ir(`${it.doBuild ? basePrevia : base}/index.html`);
     let ok = false;
     for (let i = 0; i < 80 && !ok; i++) {
       await sleep(150);
@@ -357,7 +445,7 @@ async function arte() {
         console.log(`  ${portal}/${JOGO}-${it.arq}.mp4  ${Number(dur).toFixed(1)} s, ${(statSync(mp4).size / 1048576).toFixed(1)} MB`);
         continue;
       }
-      const fonte = it.tipo === 'capa' ? await capa(it) : it.tipo === 'icone' ? icone(it) : await tela(it);
+      const fonte = it.tipo === 'capa' ? await capa(it) : it.tipo === 'icone' ? icone(it) : await tela(it, portal);
       const arq = join(pasta, `${JOGO}-${it.arq}.${it.fmt}`);
       const kb = gravar(fonte, arq, it);
       naFolha.push(arq);
@@ -368,6 +456,7 @@ async function arte() {
   sock.close();
   chrome.kill();
   vite.kill();
+  for (const p of previas.values()) p.kill();
 }
 
 /**

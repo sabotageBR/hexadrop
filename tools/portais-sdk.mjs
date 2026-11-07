@@ -15,8 +15,11 @@
  * @property {RegExp} dominios  o que o proprio SDK pode chamar em tempo de execucao
  * @property {Record<string, string>} [arquivos]  arquivos a mais na raiz do build
  * @property {boolean} [injetado]  o portal poe o SDK na pagina sozinho: nada no HTML
+ * @property {boolean} [semSdk]    o portal nao tem SDK nenhum (a itch.io): nada no HTML nem no JS
  * @property {boolean} [semMarcas] nem o CSS cita outra plataforma (vite.config.js), e o
  *                                 verify-build reprova qualquer nome de outro portal
+ * @property {RegExp} [marca]      como o nome do portal aparece no build de outro portal
+ *                                 que nao pode cita-lo (`semMarcas`)
  */
 
 /** @type {Record<string, SdkPortal>} */
@@ -77,5 +80,19 @@ export const PORTAIS = {
     dominios: /(^|\.)(wavedash\.com|wavedashcdn\.com)$/,
     injetado: true,
     semMarcas: true,
+    marca: /wavedash/i,
+  },
+  itch: {
+    nome: 'itch.io',
+    // Jogo HTML na itch nao tem SDK, anuncio nem compra no jogo (so doacao pela
+    // pagina): o build da Wavedash sem nada da Wavedash. Roda num iframe de
+    // html-classic.itch.zone/html/<upload>/, numa subpasta (caminho relativo), e
+    // essa origem e de todos os jogos HTML da itch (o storage so com o prefixo).
+    html: '',
+    hosts: [],
+    dominios: /^$/,
+    semSdk: true,
+    semMarcas: true,
+    marca: /itch\.io/i,
   },
 };

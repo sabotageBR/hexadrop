@@ -12,14 +12,19 @@
  * - na Playgama e na GamePix o save vai para o armazenamento do portal;
  * - na GameDistribution o pre-roll sai antes do jogo abrir;
  * - na Wavedash, que injeta o SDK (o falso entra antes dos scripts do jogo), o
- *   init uma vez so e o intervalo saindo na hora, sem anuncio.
+ *   init uma vez so e o intervalo saindo na hora, sem anuncio;
+ * - na itch.io, que nao tem SDK: nada da Wavedash na pagina, o idioma do
+ *   navegador (o Chrome fala `tr`), a loja sem pacotes de moedas e sem video, e
+ *   o localStorage dividido com os outros jogos da itch (chaves de "outro jogo"
+ *   semeadas antes continuam la, e o jogo so grava com o prefixo `hexadrop.`).
  *
  * Cada portal e montado em .tmp/portaischeck/<portal> com ids de teste (os de
  * marketing/portais/ids.json ficam para o build publicado) e servido por um
  * servidor estatico proprio na porta 4185; o Chrome usa a porta de depuracao
- * 9119. Rode sozinho, como as outras ferramentas de tools/.
+ * 9119 (`--porta-http=` e `--porta-cdp=` trocam as duas). Rode sozinho, como
+ * as outras ferramentas de tools/.
  *
- *   node tools/portaischeck.mjs              # todos (os seis e a Wavedash)
+ *   node tools/portaischeck.mjs              # todos (os seis, a Wavedash e a itch.io)
  *   node tools/portaischeck.mjs yandex y8    # so esses
  */
 import { spawn, spawnSync } from 'node:child_process';
@@ -31,8 +36,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { PORTAIS } from './portais-sdk.mjs';
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PORTA_HTTP = 4185;
-const PORTA_CDP = 9119;
+const porta = (/** @type {string} */ nome) => Number((process.argv.find((a) => a.startsWith(`--${nome}=`)) || '').split('=')[1]) || 0;
+const PORTA_HTTP = porta('porta-http') || 4185;
+const PORTA_CDP = porta('porta-cdp') || 9119;
 const pedidos = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const ALVOS = pedidos.length ? pedidos : Object.keys(PORTAIS);
 const IDS_TESTE = { appId: 'teste-app', gameId: 'teste-jogo' };
@@ -279,11 +285,25 @@ window.dispatchEvent(new Event('y8sdk.ready'));`,
   __sdkFalso.pendente = (id) => nova(id);
 })();`,
   },
+  // A itch nao tem SDK: so o registro comum, e chaves de "outros jogos" no
+  // localStorage, que a origem html-classic.itch.zone divide com todos eles.
+  itch: {
+    url: '',
+    js: `${COMUM}
+if (!localStorage.getItem('__itchSemente')) {
+  localStorage.setItem('save', '{"level":99}');
+  localStorage.setItem('lang', 'fr');
+  localStorage.setItem('outro-jogo.progresso', '{"v":3}');
+  localStorage.setItem('__itchSemente', '1');
+}
+window.__chavesAntes = Object.keys(localStorage);`,
+  },
 };
 
 /** O que cada portal tem e o banco confere. */
 const TEM = {
   wavedash: { idioma: true, pausa: false, premio: false, sinal: 'init', semAnuncio: true, umaVez: true, pacotes: true },
+  itch: { idioma: true, pausa: false, premio: false, sinal: '', semAnuncio: true, semSdk: true },
   yandex: { idioma: true, pausa: true, premio: true, sinal: 'pronto' },
   playgama: { idioma: true, pausa: true, premio: true, sinal: 'msg:game_ready', save: true },
   gamepix: { idioma: true, pausa: true, premio: true, sinal: 'pronto', save: true },
@@ -363,6 +383,11 @@ for (const portal of ALVOS) {
   await send('Page.enable', {}, sessionId);
   await send('Runtime.enable', {}, sessionId);
   await send('Emulation.setDeviceMetricsOverride', { width: 960, height: 540, deviceScaleFactor: 1, mobile: false }, sessionId);
+  if (tem.semSdk) {
+    // Sem SDK, o idioma e o do navegador: o Chrome passa a falar turco.
+    const { userAgent } = (await send('Browser.getVersion')).result;
+    await send('Emulation.setUserAgentOverride', { userAgent, acceptLanguage: 'tr-TR,tr' }, sessionId);
+  }
   if (falso.url) {
     // O SDK falso sai pela mesma URL que o build pede.
     await send('Fetch.enable', { patterns: [{ urlPattern: falso.url }] }, sessionId);
@@ -398,11 +423,15 @@ for (const portal of ALVOS) {
   }
   const log = async () => /** @type {string[]} */ (await js('JSON.stringify(window.__log)').then((v) => JSON.parse(v || '[]')));
   const l0 = await log();
-  confere('SDK pronto', (await js('window.__plataforma.ready')) === true);
-  confere('fim do carregamento avisado ao portal', l0.includes(tem.sinal), l0.join(' '));
+  if (tem.semSdk) {
+    confere('sem SDK nenhum (nem window.Wavedash)', (await js("window.__plataforma.ready === false && typeof window.Wavedash === 'undefined'")) === true);
+  } else {
+    confere('SDK pronto', (await js('window.__plataforma.ready')) === true);
+    confere('fim do carregamento avisado ao portal', l0.includes(tem.sinal), l0.join(' '));
+  }
   if (tem.umaVez) confere('aviso uma vez so', l0.filter((x) => x === tem.sinal).length === 1, l0.join(' '));
   if (tem.preroll) confere('pre-roll antes de o jogo abrir', l0.indexOf('midgame:preroll') >= 0, l0.join(' '));
-  if (tem.idioma) confere('idioma do portal', (await js('document.documentElement.lang')) === 'tr', await js('document.documentElement.lang'));
+  if (tem.idioma) confere(tem.semSdk ? 'idioma do navegador' : 'idioma do portal', (await js('document.documentElement.lang')) === 'tr', await js('document.documentElement.lang'));
 
   // Intervalo: com a carencia vencida. Na Y8 a passagem automatica nao pede.
   await js('window.__game.progress.data.unlocked = 30; true');
@@ -545,6 +574,29 @@ for (const portal of ALVOS) {
     confere('SDK sem o Remote Storage: so o localStorage', (await js('window.__plataforma.nuvem.estado')) === 'ausente'
       && (await moedas()) === antesDoBuild);
     await js("localStorage.removeItem('__wdSemPago'); localStorage.removeItem('__wdServidor'); localStorage.removeItem('__wdNuvem'); true");
+  }
+  if (tem.semSdk) {
+    // A loja sem os pacotes de moedas (so da Wavedash) e sem botao de video.
+    await js("window.__game.show('home'); window.__game.show('shop'); true");
+    for (const aba of ['tabSkins', 'tabUpgrades', 'tabBoosts']) {
+      await js(`document.getElementById('${aba}') && document.getElementById('${aba}').click(); true`);
+      const loja = await js(`JSON.stringify({ pacotes: document.querySelectorAll('#shopList .pacotes, #shopList [data-pacote]').length,
+        itens: document.querySelectorAll('#shopList .item').length,
+        video: [...document.querySelectorAll('#s-shop .btn.ad, #shopList .btn.ad')].filter((b) => getComputedStyle(b).display !== 'none').length })`);
+      const l = JSON.parse(loja || '{}');
+      confere(`loja (${aba}): sem pacotes de moedas nem video`, l.pacotes === 0 && l.video === 0 && l.itens > 0, loja);
+    }
+    // O localStorage e dividido com os outros jogos da itch: nada deles some nem muda, e o jogo so grava com o prefixo.
+    await js("window.__game.progress.data.coins += 3; window.__game.progress.flush(); true");
+    const ls = JSON.parse((await js('JSON.stringify(Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage[k]])))')) || '{}');
+    confere('localStorage: as chaves de outros jogos intactas', ls.save === '{"level":99}' && ls.lang === 'fr' && ls['outro-jogo.progresso'] === '{"v":3}',
+      JSON.stringify({ save: ls.save, lang: ls.lang }));
+    const antes = /** @type {string[]} */ (await js('window.__chavesAntes')) || [];
+    const fora = Object.keys(ls).filter((k) => !k.startsWith('hexadrop.') && !antes.includes(k));
+    confere('localStorage: o jogo so grava com o prefixo hexadrop.', fora.length === 0 && 'hexadrop.save' in ls, fora.join(' '));
+    await send('Page.reload', {}, sessionId);
+    confere('o save volta na abertura seguinte', (await carregou()) && (await js('window.__game.progress.data.coins')) === JSON.parse(ls['hexadrop.save'] || '{}').coins);
+    await js("['save', 'lang', 'outro-jogo.progresso', '__itchSemente'].forEach((k) => localStorage.removeItem(k)); true");
   }
   confere('sem erro no console', erros.length === 0, erros.slice(0, 2).join(' | '));
   ouvintes.delete('Fetch.requestPaused');

@@ -73,15 +73,21 @@ function warn(name, detail) {
 }
 
 /**
- * O build que nao pode citar ninguem (`semMarcas`, a Wavedash): nome de outro
- * portal em arquivo nenhum, import que nao resolve e caminho absoluto, que
- * quebra quando o portal serve o jogo numa subpasta.
+ * O build que nao pode citar ninguem (`semMarcas`, a Wavedash e a itch.io):
+ * nome de outro portal em arquivo nenhum, import que nao resolve e caminho
+ * absoluto, que quebra quando o portal serve o jogo numa subpasta. Os portais
+ * com `marca` (tools/portais-sdk.mjs) entram na lista dos outros: a Wavedash
+ * no build da itch, e a itch.io no da Wavedash.
  */
 function conferirSemMarcas() {
+  const outras = Object.entries(PORTAIS)
+    .filter(([id, p]) => id !== PORTAL_ID && p.marca)
+    .map(([, p]) => `|${/** @type {RegExp} */ (p.marca).source}`)
+    .join('');
   // No JS so o que nao pode ser nome curto de variavel minificada (o "y8" so
   // como propriedade, dominio ou texto).
-  const MARCAS_TEXTO = /poki|crazy ?games|playgama|yandex|yagames|gamemonetize|gamedistribution|gamepix|\by8\b/i;
-  const MARCAS_JS = /poki|crazy ?games|playgama|yandex|yagames|gamemonetize|gamedistribution|gamepix|y8\.com|y8sdk|\.y8\b|["'`]y8["'`]/i;
+  const MARCAS_TEXTO = new RegExp(`poki|crazy ?games|playgama|yandex|yagames|gamemonetize|gamedistribution|gamepix|\\by8\\b${outras}`, 'i');
+  const MARCAS_JS = new RegExp(`poki|crazy ?games|playgama|yandex|yagames|gamemonetize|gamedistribution|gamepix|y8\\.com|y8sdk|\\.y8\\b|["'\`]y8["'\`]${outras}`, 'i');
   /** @type {string[]} */
   const marcas = [];
   /** @type {string[]} */
@@ -200,7 +206,7 @@ if (PORTAL) {
   const scripts = indexHtml.match(/<script[^>]*src="(https?:)?\/[^"]*"/gi) || [];
   const esperado = PORTAL.html.match(/src="([^"]+)"/);
   check(`${PORTAL_ID}: SDK do portal no HTML`, esperado ? indexHtml.includes(esperado[0]) : true,
-    esperado ? esperado[1] : PORTAL.injetado ? 'injetado pelo portal' : 'carregado pelo JS');
+    esperado ? esperado[1] : PORTAL.injetado ? 'injetado pelo portal' : PORTAL.semSdk ? 'sem SDK' : 'carregado pelo JS');
   check(`${PORTAL_ID}: nenhum outro script de fora no HTML`, scripts.length === (esperado ? 1 : 0), scripts.join(' | '));
   check(`${PORTAL_ID}: nada da Poki no build`, !indexHtml.includes(POKI_HOST) && !allJs.includes(POKI_HOST) && !/PokiSDK/.test(allJs));
   check(`${PORTAL_ID}: nada da CrazyGames no build`, !/crazygames|CrazyGames/.test(allJs + indexHtml));
@@ -228,6 +234,16 @@ if (PORTAL) {
     const nuvem = ['"hexadrop-save.json"', '.downloadRemoteFile(', '.readLocalFile(', '.writeLocalFile(', '.uploadRemoteFile(', '.remoteFileExists('];
     const semNuvem = nuvem.filter((s) => !allJs.includes(s));
     check('wavedash: save na nuvem (download, leitura, escrita e upload)', semNuvem.length === 0, semNuvem.join(' '));
+  }
+  if (PORTAL_ID === 'itch') {
+    // Jogo HTML na itch nao tem SDK, anuncio nem compra no jogo: nada da Wavedash
+    // (init, pacotes de moedas, nuvem), e os botoes de video escondidos pelo adaptador.
+    const daWavedash = ['Wavedash', 'coins-1500', 'coins-5000', 'hexadrop-save.json', 'triggerPaywall', 'uploadRemoteFile', 'PurchaseCompleted'];
+    const achados = daWavedash.filter((x) => allJs.includes(x) || indexHtml.includes(x));
+    check('itch: nada da Wavedash (SDK, pacotes de moedas, nuvem)', achados.length === 0, achados.join(' '));
+    check('itch: botoes de video escondidos (.btn.ad)', allJs.includes('.btn.ad { display: none !important; }'));
+    // A origem dos jogos HTML da itch e uma so: limpar o storage apagaria o save de todos.
+    check('itch: nunca localStorage.clear()', !/localStorage\s*\.\s*clear\s*\(/.test(allJs));
   }
 } else if (COM_PLATAFORMA) {
   check('script do Poki SDK v2 presente', true);
@@ -271,7 +287,8 @@ const BLOQUEIO_PORTAIS = Object.values(PORTAIS).flatMap((p) => p.hosts.map((h) =
 
 // ------------------------------------------------------------------ browser
 console.log('\n=== Comportamento no navegador ===');
-const PORT = 9555;
+// CDP_PORT troca a porta de depuracao, para rodar ao lado de outra ferramenta.
+const PORT = Number(process.env.CDP_PORT) || 9555;
 const chrome = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${PORT}`,
   '--no-sandbox', '--disable-gpu', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
 process.on('exit', () => chrome.kill());

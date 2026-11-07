@@ -11,7 +11,9 @@
  * Os portais de distribuicao (`y8`, `playgama`, `yandex`, `gamemonetize`,
  * `gamedistribution`, `gamepix`, `wavedash`) tem cada um o SDK dele
  * (src/portais/). A Wavedash injeta o dela e nao tem anuncio: a partir da
- * versao lisa, com o `Wavedash.init()` e a barra de carregamento.
+ * versao lisa, com o `Wavedash.init()` e a barra de carregamento. A `itch`
+ * (itch.io) e o build da Wavedash sem SDK nenhum: sem anuncio, sem pacotes de
+ * moedas e sem nuvem.
  *
  * O valor entra por `VITE_PLATAFORMA` no build. O Vite troca a expressao por
  * uma constante literal, entao o ramo que nao vale para o alvo sai do bundle.
@@ -34,18 +36,20 @@ const PORTAL =
   ALVO === 'gamemonetize' ||
   ALVO === 'gamedistribution' ||
   ALVO === 'gamepix' ||
-  ALVO === 'wavedash';
+  ALVO === 'wavedash' ||
+  ALVO === 'itch';
 
 export const PLATAFORMA = ALVO === 'lisa' || ALVO === 'app' || ALVO === 'crazy' || PORTAL ? ALVO : 'poki';
 
 /**
- * Ha video recompensado? A versao lisa e a Wavedash nao tem anuncio nenhum, e
- * a GameMonetize so tem o intersticial: nas tres os botoes de video somem e o
- * caminho gratuito fica no lugar. A ordem importa: o Rollup deixa no bundle so
- * a ultima comparacao, e com a GameMonetize por ultimo os outros builds sairam
- * byte a byte iguais quando a Wavedash entrou.
+ * Ha video recompensado? A versao lisa, a Wavedash e a itch nao tem anuncio
+ * nenhum, e a GameMonetize so tem o intersticial: nas quatro os botoes de video
+ * somem e o caminho gratuito fica no lugar. A ordem importa: o Rollup deixa no
+ * bundle so a ultima comparacao, e com a GameMonetize por ultimo os outros
+ * builds sairam byte a byte iguais quando a Wavedash e a itch entraram.
  */
-export const COM_ANUNCIOS = PLATAFORMA !== 'lisa' && PLATAFORMA !== 'wavedash' && PLATAFORMA !== 'gamemonetize';
+export const COM_ANUNCIOS =
+  PLATAFORMA !== 'lisa' && PLATAFORMA !== 'wavedash' && PLATAFORMA !== 'itch' && PLATAFORMA !== 'gamemonetize';
 
 /** O jogo esta empacotado como app (Android/iOS)? */
 export const NO_APP = PLATAFORMA === 'app';

@@ -52,6 +52,15 @@ npm run test:wavedash        # teste de unidade do adaptador, dos pacotes de moe
 npm run portais -- --portal=wavedash --so=builds   # o zip, em dist-portais/hexa-drop-wavedash-<versao>.zip
 npm run portais -- --portal=wavedash --so=builds --versao=1.0.20   # outro rotulo so no nome do zip
 node tools/thumbnail.mjs --perfil wavedash         # o video de previa 16:9 (~22 s) em marketing/portais/wavedash/
+
+npm run build:itch           # dist-itch/ (itch.io: o build da Wavedash sem SDK nenhum, sem pacotes nem nuvem)
+npm run preview:itch         # serve dist-itch em 127.0.0.1:4178
+npm run verify:itch          # conformidade da itch.io (precisa do preview:itch no ar)
+npm run portais -- --portal=itch --so=builds --versao=1.0.21 --destino=<pasta>
+                             # o zip em dist-portais/hexa-drop-itch-1.0.21.zip, e uma copia dele em <pasta>,
+                             # com o mesmo zip extraido ao lado (<pasta>/hexa-drop-itch-1.0.21/)
+npm run portais -- --portal=itch --so=arte   # capa 630x500 e telas do proprio dist-itch em marketing/portais/itch/
+node tools/portaischeck.mjs itch             # a itch no banco dos portais (sem SDK, loja, localStorage dividido)
 ```
 
 O app pede **Node 22** (`~/programas/node-v22.*`, no PATH pelo `~/.bashrc`; o
@@ -1736,9 +1745,9 @@ como primeiro quadro (`--abertura`), que a CrazyGames pede; `tools/crazygames.mj
 
 ### Portais de distribuição
 
-Y8, Playgama, Yandex Games, GameMonetize, GameDistribution e GamePix (2026-10-20), e a Wavedash
-(2026-11-03, ver abaixo). Cada um é um
-`VITE_PLATAFORMA` (`y8`, `playgama`, `yandex`, `gamemonetize`, `gamedistribution`, `gamepix`, `wavedash`), sai em
+Y8, Playgama, Yandex Games, GameMonetize, GameDistribution e GamePix (2026-10-20), a Wavedash
+(2026-11-03) e a itch.io (2026-11-07), as duas abaixo. Cada um é um
+`VITE_PLATAFORMA` (`y8`, `playgama`, `yandex`, `gamemonetize`, `gamedistribution`, `gamepix`, `wavedash`, `itch`), sai em
 `dist-<portal>/` e tem a implementação de `@plataforma` em `src/portais/<portal>.js`, sobre
 `src/portais/base.js` (a interface de `poki.js`, os prazos, o prêmio só com o fim do vídeo e a pausa do
 portal). A entrada é `src/portais/inicio.js`, que inicia o SDK e prepara idioma e save antes de
@@ -1848,6 +1857,29 @@ no HTML e nenhuma URL de fora, porque o jogo roda isolado (COEP `require-corp`).
   - Conferido por `npm run test:wavedash` (36 casos, com uma nuvem falsa que sobrevive a uma origem nova) e pelo
     `portaischeck` da Wavedash (a compra sobe antes do fulfill; "build novo" com as `hexadrop.*` apagadas devolve
     moedas e compras sem crédito duplo; SDK sem Remote Storage fica no localStorage).
+
+**itch.io** (`src/portais/itch.js`, 2026-11-07): o build da Wavedash sem nada da Wavedash. Jogo HTML na itch não
+tem SDK, anúncio nem compra dentro do jogo (só doação pela página), então o adaptador é quase vazio
+(`semSdk` em `tools/portais-sdk.mjs`: nada no HTML):
+
+- **Sem anúncio, sem pacotes, sem nuvem:** `COM_ANUNCIOS` é falso (a `itch` entra antes da GameMonetize na
+  comparação de `core/platform.js`, e os outros builds saíram byte a byte iguais), os botões de vídeo somem pela
+  mesma regra que o adaptador da Wavedash põe na página, e fica o caminho gratuito da versão lisa: voltar uma
+  jogada de graça, pular fase depois de três derrotas e o bônus diário sem vídeo. `COM_PACOTES` só vale na
+  Wavedash: a loja não tem a seção de moedas. O save fica só no localStorage.
+- **O localStorage é dividido:** o iframe roda em `html-classic.itch.zone/html/<upload>/`, a mesma origem de todos
+  os jogos HTML da itch. O `core/storage.js` já grava tudo com o prefixo `hexadrop.` e nunca limpa nem varre o
+  storage; não mude isso. Em compensação essa origem não muda de um upload para outro, e o save passa de uma
+  versão para a seguinte (o contrário da Wavedash).
+- **Idioma:** o do navegador, como fora dos portais (não há API de idioma).
+- **Caminho relativo:** o jogo roda numa subpasta da CDN; caminho absoluto dá 404 (o `verify:itch` cobra).
+- **Nenhuma marca de outro portal** (`semMarcas`): a mesma guarda da Wavedash, com a Wavedash na lista (a
+  `marca` de cada portal em `tools/portais-sdk.mjs`; no build da Wavedash a lista ganha a itch.io).
+- **Material:** `npm run portais -- --portal=itch --so=arte` faz a capa 630x500 (a da capa comercial com a logo) e
+  quatro telas tiradas do próprio `dist-itch/` servido pelo `vite preview` (`doBuild`): três na vista de 960x600
+  do embed recomendado, no dobro, e uma de celular em pé. O pacote vai para `distribuicao/hexa-drop/itch/`,
+  fora deste repositório, com o `--destino`; a prova do zip é o `distribuicao/provar-itch.mjs`.
+- O zip leva o rótulo 1.0.21 (o mesmo código da Wavedash 1.0.21, menos o adaptador); o `package.json` fica.
 
 `tools/portaischeck.mjs` monta cada portal com ids de teste em `.tmp/portaischeck/` e serve o SDK falso
 pela mesma URL do de verdade (o da Wavedash entra antes dos scripts da página, como ela faz): confere carregamento, idioma, intervalo com som calado, prêmio, pausa do
@@ -1994,7 +2026,10 @@ da Poki, que nada do app nem da CrazyGames entrou. No da CrazyGames (`DIST_DIR=d
 reconhecido pelo SDK v3 no HTML), que o único script externo é o deles, sem nada da Poki
 nem do app, e no máximo 1.500 arquivos. No da Wavedash (`DIST_DIR=dist-wavedash`), também nome de
 outro portal em qualquer arquivo, import ou arquivo referenciado que falte, caminho absoluto, `index.html`
-fora da raiz e a falta de `Wavedash.init(` e de `updateLoadProgressZeroToOne` no JS.
+fora da raiz e a falta de `Wavedash.init(` e de `updateLoadProgressZeroToOne` no JS. No da itch.io
+(`DIST_DIR=dist-itch`), a mesma guarda de marcas (com a Wavedash na lista), nada da Wavedash (SDK, pacotes de
+moedas, nuvem), a regra que esconde os botões de vídeo e nenhum `localStorage.clear()`. `CDP_PORT` troca a porta
+de depuração (padrão 9555).
 
 `window.__game` e `window.__audio` são expostos no fim de `main.js` só para essa
 automação, e **só em `127.0.0.1`/`localhost`**: a Poki pede *"remove all development
