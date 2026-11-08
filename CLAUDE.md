@@ -61,6 +61,15 @@ npm run portais -- --portal=itch --so=builds --versao=1.0.21 --destino=<pasta>
                              # com o mesmo zip extraido ao lado (<pasta>/hexa-drop-itch-1.0.21/)
 npm run portais -- --portal=itch --so=arte   # capa 630x500 e telas do proprio dist-itch em marketing/portais/itch/
 node tools/portaischeck.mjs itch             # a itch no banco dos portais (sem SDK, loja, localStorage dividido)
+
+npm run build:gamepush       # dist-gamepush/ (GamePush: o build da itch com o SDK dela, anuncios e russo)
+npm run preview:gamepush     # serve dist-gamepush em 127.0.0.1:4179 (o SDK espera ate 8 s e segue sem ele)
+npm run verify:gamepush      # conformidade da GamePush (precisa do preview:gamepush no ar; barra os CDNs dela)
+npm run test:gamepush        # teste de unidade do adaptador, do russo e das regras do pacote (node --test)
+npm run portais -- --portal=gamepush --so=builds --versao=1.0.21 --destino=<pasta>
+                             # o zip, conferido por tools/gamepush-regras.mjs (sai com 1 se reprovar)
+npm run portais -- --portal=gamepush --so=arte --destino=<pasta>
+                             # icones, capas, fundo, 20 telas (en e ru/) e os dois videos de 20 s, tambem em <pasta>
 ```
 
 O app pede **Node 22** (`~/programas/node-v22.*`, no PATH pelo `~/.bashrc`; o
@@ -1880,6 +1889,43 @@ tem SDK, anúncio nem compra dentro do jogo (só doação pela página), então 
   do embed recomendado, no dobro, e uma de celular em pé. O pacote vai para `distribuicao/hexa-drop/itch/`,
   fora deste repositório, com o `--destino`; a prova do zip é o `distribuicao/provar-itch.mjs`.
 - O zip leva o rótulo 1.0.21 (o mesmo código da Wavedash 1.0.21, menos o adaptador); o `package.json` fica.
+
+**GamePush** (`src/portais/gamepush.js`, 2026-11-08): o build da itch com o SDK da GamePush, os anúncios dela e
+o russo. A GamePush publica o jogo em nome do dono na Yandex, VK, OK, GameDistribution e outras; o zip vai em Game
+Hosting. Regras:
+
+- **O SDK:** o carregador oficial do painel no `<head>` (`carregadorGamePush` em `tools/portais-sdk.mjs`, com o
+  projectId e o publicToken de `marketing/portais/ids.json`), e antes dele um script que guarda o `gp` em
+  `window.__gpPronto` pelo `onGPInit`: os módulos rodam depois do SDK. O adaptador espera no máximo `ESPERA_SDK_MS`
+  (8 s) desde a abertura, com a barra do `#loader` andando; sem SDK o jogo abre como o da itch. O SDK que chega
+  depois liga ali (gameStart, pausa, som, anúncios, e o idioma dele ao vivo).
+- **`gp.gameStart()`** uma vez por carga, no `gameLoadingFinished` (ou quando o SDK chega). Gameplay pelos pontos de
+  `base.js`.
+- **Intersticial:** só nos `pontos` de `base.js`, com a carência de `main.js`, com `isFullscreenAvailable` e 180 s
+  (`INTERVALO_MIN_S`) desde o gameStart e desde o anúncio anterior, premiado incluído. Sem preloader nem sticky.
+- **Vídeo premiado decidido na hora:** `VIDEO_NA_HORA` (`core/platform.js`, comparação única como `COM_PACOTES`).
+  Em `main.js` cada `COM_ANUNCIOS` de botão de vídeo virou `VIDEO_NA_HORA ? <na hora> : COM_ANUNCIOS`, e o que é só da
+  GamePush está em `if (VIDEO_NA_HORA)` e em funções de módulo (`videoAgora`, `rotuloDeVideo`, `dobrarNaHora`):
+  nos outros builds o Rollup tira tudo e eles saem byte a byte iguais. **Cuidado:** `!(VIDEO_NA_HORA ? a : COM_ANUNCIOS)`
+  mudou o bundle da Poki (o `!Ts` virou `!1` e os nomes minificados andaram); a forma que fica igual repete a
+  expressão antiga inteira no ramo de fora. O botão de vídeo só aparece com `plataforma.haVideo()` (SDK pronto e
+  `isRewardedAvailable`), perguntado a cada vez que ele é mostrado, e diz que é vídeo (`comVideo`, `verVideo`). Sem
+  vídeo fica o caminho grátis da itch. O clique vale o que o botão mostrou (`classList.contains('ad')`).
+- **Som e pausa:** `gp.on('pause'|'resume')` é a pausa do portal; `gp.sounds` é o mudo da plataforma (`mute` pelo de
+  `base.js`; `mute:sfx` e `mute:music` pelos barramentos de `audio.js`, sem tocar em `sfxOn`/`musicOn`).
+- **Russo:** só neste build (`src/portais/gamepush-textos.js`, por `acrescentaTextos` de `core/i18n.js`, que nos outros
+  builds o Rollup tira). Plural de verdade por `plural()`, um objeto com `replace` que o `t()` chama. A Fredoka não tem
+  cirílico: a Nunito Black cirílica (OFL, `src/ui/fontes/nunito-cyrillic-900-normal.woff2`) entra na família
+  'Fredoka' por `unicode-range`, só neste build, e o `LICENCAS.txt` dele ganha a licença dela.
+- **A logo num lugar só** (checklist): neste build saem a logo dos cartões de vitória e derrota e o título em texto do
+  `#loader` (um `<style>` no HTML, `MARCA_UMA_VEZ`).
+- **O empacotador reprova** (`tools/gamepush-regras.mjs`): carregador diferente do oficial ou com outros ids, `onGPInit`
+  depois dele, URL de fora dos quatro hosts, caminho absoluto, outro portal, `localStorage` fora de `core/storage.js`
+  ou sem o prefixo, `clear()`, `console.log`, `window.open`, `alert`, zip sem `index.html` ou acima de 200 MB, pasta
+  diferente do zip.
+- **Prova do zip:** `node distribuicao/provar-gamepush.mjs <zip> --porta <n> --projeto 32798 --token ... --prefixo
+  hexadrop.`, na raiz `em_tech/`. As telas e o `verify:gamepush` barram os CDNs da GamePush: nada daqui fala com o
+  projeto real.
 
 `tools/portaischeck.mjs` monta cada portal com ids de teste em `.tmp/portaischeck/` e serve o SDK falso
 pela mesma URL do de verdade (o da Wavedash entra antes dos scripts da página, como ela faz): confere carregamento, idioma, intervalo com som calado, prêmio, pausa do

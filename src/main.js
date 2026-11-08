@@ -32,7 +32,7 @@ import { paintHexModel, hexPath } from './render/hexmodels.js';
 import { material as getMaterial } from './physics/materials.js';
 import { audio } from './core/audio.js';
 import { plataforma } from '@plataforma';
-import { PLATAFORMA, COM_ANUNCIOS, NO_APP, COM_PACOTES } from './core/platform.js';
+import { PLATAFORMA, COM_ANUNCIOS, NO_APP, COM_PACOTES, VIDEO_NA_HORA } from './core/platform.js';
 import { t, getLang, setLang, LANGS, LANG_NAMES, onLangChange, textosDosPacotes } from './core/i18n.js';
 import { PACOTES, pacote, creditaCompra, estornaCompra, zeraGuardandoCompras } from './game/pacotes.js';
 import { load, save, isPersistent } from './core/storage.js';
@@ -762,7 +762,9 @@ class Game {
       /** @type {HTMLButtonElement} */ (daily).disabled = !p.dailyReady;
       // Na versao lisa o bonus diario continua existindo, sem video: como
       // `.btn.ad` some por CSS ali, manter a classe apagava o rodape do mapa.
-      daily.classList.toggle('ad', COM_ANUNCIOS);
+      // Na GamePush (VIDEO_NA_HORA) o video so existe com anuncio disponivel.
+      daily.classList.toggle('ad', VIDEO_NA_HORA ? p.dailyReady && videoAgora() : COM_ANUNCIOS);
+      if (VIDEO_NA_HORA) rotuloDeVideo(daily);
       if (this.screen === 'map' && p.dailyReady) this.ofertaVisivel('bonus-diario');
     }
     if (this.screen === 'home') {
@@ -1731,7 +1733,8 @@ class Game {
     const btn = /** @type {HTMLButtonElement} */ ($('loseRevive'));
     if (!session || !session.checkpoint) return;
     btn.disabled = true;
-    const ok = COM_ANUNCIOS ? await plataforma.rewardedBreak('medium') : true;
+    // Na GamePush vale o que o botao mostrou: video ou o caminho gratuito.
+    const ok = (VIDEO_NA_HORA ? btn.classList.contains('ad') : COM_ANUNCIOS) ? await plataforma.rewardedBreak('medium') : true;
     if (!ok || this.screen !== 'lose' || this.scene.session !== session) {
       btn.disabled = false;
       return;
@@ -2669,10 +2672,11 @@ class Game {
     $('winRetry').hidden = stars >= 3;
     /** @type {HTMLButtonElement} */ ($('winDouble')).disabled = false;
     $('winDouble').textContent = `${t('doubleReward')}`;
+    if (VIDEO_NA_HORA) dobrarNaHora($('winDouble'));
     this.show('win');
     // Depois do show, que e quem zera as ofertas contadas.
     this.ofertaVisivel('proxima');
-    if (COM_ANUNCIOS) this.ofertaVisivel('dobrar-premio');
+    if (VIDEO_NA_HORA ? !$('winDouble').hidden : COM_ANUNCIOS) this.ofertaVisivel('dobrar-premio');
     if (stars < 3) this.ofertaVisivel('repetir');
 
     // Estrelas e contadores animam depois que a tela aparece.
@@ -2773,20 +2777,26 @@ class Game {
     // Sem plataforma nao ha video, e a regra da Poki nao se aplica: ali o
     // pular vira botao comum, aberto depois de tres derrotas, para o jogador
     // nao ficar preso numa fase dura sem nenhuma saida.
-    skip.classList.toggle('ad', COM_ANUNCIOS);
+    // Na GamePush (VIDEO_NA_HORA) o video e conferido agora: sem anuncio, o
+    // caminho gratuito da itch.
+    skip.classList.toggle('ad', VIDEO_NA_HORA ? videoAgora() : COM_ANUNCIOS);
     // A 100 fecha a campanha e se vence; depois dela pular volta a existir.
-    skip.hidden = this.level === LEVEL_COUNT || (!COM_ANUNCIOS && this.lossStreak < 3);
+    skip.hidden =
+      this.level === LEVEL_COUNT ||
+      (VIDEO_NA_HORA ? !skip.classList.contains('ad') && this.lossStreak < 3 : !COM_ANUNCIOS && this.lossStreak < 3);
     skip.disabled = false;
     skip.textContent = t('skipLevel');
+    if (VIDEO_NA_HORA) rotuloDeVideo(skip);
     $('loseSkipNote').textContent = skip.hidden ? '' : t('skipNoStars');
     // Voltar uma jogada so existe quando houve jogada: sem ponto de volta ele
     // devolveria a fase do inicio, que e o "tentar de novo" gratuito ao lado.
     const revive = /** @type {HTMLButtonElement} */ ($('loseRevive'));
     const session = this.scene.session;
-    revive.classList.toggle('ad', COM_ANUNCIOS);
+    revive.classList.toggle('ad', VIDEO_NA_HORA ? videoAgora() : COM_ANUNCIOS);
     revive.hidden = !session || !session.checkpoint;
     revive.disabled = false;
     revive.textContent = t('revive');
+    if (VIDEO_NA_HORA) rotuloDeVideo(revive);
     this.show('lose');
     this.ofertaVisivel('repetir');
     if (!revive.hidden) this.ofertaVisivel('voltar-jogada');
@@ -2999,7 +3009,7 @@ class Game {
   async skipByAd() {
     const btn = /** @type {HTMLButtonElement} */ ($('loseSkip'));
     btn.disabled = true;
-    const ok = COM_ANUNCIOS ? await plataforma.rewardedBreak('medium') : true;
+    const ok = (VIDEO_NA_HORA ? btn.classList.contains('ad') : COM_ANUNCIOS) ? await plataforma.rewardedBreak('medium') : true;
     if (!ok) {
       btn.disabled = false;
       return;
@@ -3024,7 +3034,7 @@ class Game {
   async dailyByAd() {
     const btn = /** @type {HTMLButtonElement} */ ($('btnDaily'));
     btn.disabled = true;
-    const ok = COM_ANUNCIOS ? await plataforma.rewardedBreak('medium') : true;
+    const ok = (VIDEO_NA_HORA ? btn.classList.contains('ad') : COM_ANUNCIOS) ? await plataforma.rewardedBreak('medium') : true;
     if (ok) {
       const amount = 60 + this.progress.rank * 12;
       this.progress.addCoins(amount);
@@ -3802,7 +3812,7 @@ class Game {
         else if (entry.rankLocked) sub.textContent = t('unlockAt', s.rank);
         // Sem plataforma a rota do video nao existe: o subtitulo tem que dizer
         // o preco em moedas, que e o unico caminho que sobrou.
-        else if (s.rewarded && COM_ANUNCIOS) sub.textContent = t('watchAd');
+        else if (s.rewarded && (VIDEO_NA_HORA ? videoAgora() : COM_ANUNCIOS)) sub.textContent = VIDEO_NA_HORA ? t('verVideo') : t('watchAd');
         else sub.textContent = `${s.cost} ${t('coins')}`;
         info.appendChild(name);
         info.appendChild(sub);
@@ -3852,10 +3862,10 @@ class Game {
           pair.appendChild(buy);
           // Sem plataforma sobra so a rota das moedas - que ja existia, porque
           // a Poki nunca deixou o video ser o unico caminho.
-          if (COM_ANUNCIOS) {
+          if (VIDEO_NA_HORA ? videoAgora() : COM_ANUNCIOS) {
             const watch = document.createElement('button');
             watch.className = 'btn ad';
-            watch.textContent = t('watchAd');
+            watch.textContent = VIDEO_NA_HORA ? t('verVideo') : t('watchAd');
             watch.dataset.ev = 'skin-por-video';
             watch.onclick = () => this.unlockSkinByAd(s.id);
             this.ofertaVisivel('skin-por-video');
@@ -4228,6 +4238,39 @@ function secaoDePacotes(game, host) {
     secao.appendChild(item);
   }
   host.appendChild(secao);
+}
+
+// ------------------------------------------------ video premiado na hora
+//
+// So o build da GamePush (VIDEO_NA_HORA em core/platform.js) chama o que vem
+// abaixo, e pelo mesmo motivo dos pacotes sao funcoes de modulo: nos outros
+// builds o Rollup as tira, e eles saem byte a byte iguais. Quem decide e o
+// adaptador (src/portais/gamepush.js, `haVideo`): o SDK pronto e anuncio
+// premiado disponivel, perguntado cada vez que um botao de video e mostrado.
+
+/** Ha video premiado agora? */
+function videoAgora() {
+  const p = /** @type {*} */ (plataforma);
+  return typeof p.haVideo === 'function' && p.haVideo() === true;
+}
+
+/**
+ * O botao de video diz que e video, e nao so pelo icone (o checklist da
+ * GamePush pede que o jogador saiba que vai ver um anuncio). O caminho
+ * gratuito fica com o texto de sempre.
+ * @param {HTMLElement} btn
+ */
+function rotuloDeVideo(btn) {
+  if (btn.classList.contains('ad')) btn.textContent = t('comVideo', btn.textContent || '');
+}
+
+/**
+ * Dobrar o premio so existe como video: sem anuncio o botao some.
+ * @param {HTMLElement} btn
+ */
+function dobrarNaHora(btn) {
+  btn.hidden = !videoAgora();
+  rotuloDeVideo(btn);
 }
 
 const game = new Game();

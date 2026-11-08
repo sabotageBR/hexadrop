@@ -1,6 +1,7 @@
 /**
  * Os pacotes e o material grafico dos portais de distribuicao (Y8, Playgama,
- * Yandex Games, GameMonetize, GameDistribution, GamePix, Wavedash e itch.io).
+ * Yandex Games, GameMonetize, GameDistribution, GamePix, Wavedash, itch.io e
+ * GamePush).
  *
  *   node tools/portais.mjs                    # builds e material de todos
  *   node tools/portais.mjs --so=builds        # so os zips
@@ -12,6 +13,13 @@
  *   node tools/portais.mjs --portal=itch --so=builds --versao=1.0.21 --destino=<pasta>
  *                                             # e mais uma copia do zip em <pasta>, com o
  *                                             # mesmo zip extraido ao lado (<pasta>/<nome>/)
+ *   node tools/portais.mjs --portal=gamepush --so=builds --versao=1.0.21 --destino=<pasta>
+ *                                             # o da GamePush, conferido por tools/gamepush-regras.mjs
+ *                                             # (o carregador oficial, os ids, nada de fora...): reprovado,
+ *                                             # o empacotador sai com 1
+ *   node tools/portais.mjs --portal=gamepush --so=arte --destino=<pasta>
+ *                                             # capas, icones, fundo e os dois videos da GamePush,
+ *                                             # com os nomes do envio, tambem em <pasta>
  *   --porta-http=4195 --porta-previa=4196 --porta-cdp=9112
  *                                             # as portas da arte (padrao: estas)
  *
@@ -50,10 +58,11 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { PORTAIS } from './portais-sdk.mjs';
+import { conferirBuildGamePush } from './gamepush-regras.mjs';
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const VERSAO = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8')).version;
@@ -70,7 +79,17 @@ const VIDEO_Y8 = join(RAIZ, 'marketing/portais/y8/hexa-drop-video-continuo-1920x
 /** O video de previa da Wavedash, de `tools/thumbnail.mjs --perfil wavedash` (ROTEIRO_WAVEDASH). */
 const VIDEO_WAVEDASH = join(RAIZ, 'marketing/portais/wavedash/hexa-drop-video-1920x1080.mp4');
 /** Os portais que pedem id do painel, e quais. */
-const IDS_PEDIDOS = { y8: ['appId', 'gameId'], gamedistribution: ['gameId'], gamemonetize: ['gameId'] };
+const IDS_PEDIDOS = { y8: ['appId', 'gameId'], gamedistribution: ['gameId'], gamemonetize: ['gameId'], gamepush: ['projectId', 'publicToken'] };
+/**
+ * Os videos da GamePush (ate 20 s, sem audio, jogo desde o primeiro quadro): o
+ * deitado e o da Wavedash cortado; o em pe sai de `node tools/thumbnail.mjs
+ * --perfil wavedash --largura 1080 --altura 1920 --vista 540x960 --saida
+ * marketing/portais/gamepush --video hexa-drop-video-bruto-1080x1920.mp4
+ * --folha quadros-video-1080x1920.png` (o mesmo roteiro, em retrato).
+ */
+const VIDEO_GAMEPUSH_RETRATO = join(RAIZ, 'marketing/portais/gamepush/hexa-drop-video-bruto-1080x1920.mp4');
+/** O maximo de duracao dos videos da GamePush (s). */
+const GAMEPUSH_VIDEO_S = 20;
 
 /**
  * As cenas das telas: uma fase de cada mundo, com os pontos fortes do jogo
@@ -98,6 +117,9 @@ const CENAS = {
  * @property {string} [cena]   tela: chave de CENAS
  * @property {boolean} [continuo]  video: o trecho sem corte da Y8 (VIDEO_Y8)
  * @property {boolean} [previa]    video: o da Wavedash (VIDEO_WAVEDASH), gravado ja no lugar
+ * @property {string} [trecho]     video: os primeiros GAMEPUSH_VIDEO_S s desse mp4, sem audio
+ * @property {'en'|'ru'} [idioma] tela: o idioma do jogo na foto (padrao: ingles)
+ * @property {number[]} [vista]    tela: a vista em pixels CSS, foto no dobro (padrao: a do tamanho)
  * @property {boolean} [doBuild]   tela: do build do portal (dist-<portal>/), e nao do servidor
  *                                 de desenvolvimento (que e o da Poki)
  */
@@ -173,6 +195,34 @@ const ITENS = {
     { arq: 'tela-1920x1200-3', tipo: 'tela', w: 1920, h: 1200, cena: 'neon', fmt: 'png', doBuild: true },
     { arq: 'tela-1080x1920-4', tipo: 'tela', w: 1080, h: 1920, cena: 'puzzle', fmt: 'png', doBuild: true },
   ],
+  gamepush: [
+    // Promo Materials do painel e docs/distribution: PNG ate 6 MB, sem borda, sem fundo
+    // branco ou transparente. Icones sem texto; capas so com o titulo (a logo); o fundo e
+    // o cenario sem texto nem interface. Os videos ficam por ultimo (o em pe vem
+    // de tools/thumbnail.mjs: VIDEO_GAMEPUSH_RETRATO).
+    { arq: 'icon-1024x1024', tipo: 'icone', w: 1024, h: 1024, fmt: 'png', maxKB: 6144 },
+    { arq: 'icon-512x384', tipo: 'capa', w: 512, h: 384, fmt: 'png', maxKB: 6144, logo: false },
+    { arq: 'icon-800x1200', tipo: 'capa', w: 800, h: 1200, fmt: 'png', maxKB: 6144, logo: false },
+    { arq: 'cover-1920x1080', tipo: 'capa', w: 1920, h: 1080, fmt: 'png', maxKB: 6144 },
+    { arq: 'cover-portrait-1080x1920', tipo: 'capa', w: 1080, h: 1920, fmt: 'png', maxKB: 6144 },
+    { arq: 'background-1920x1080', tipo: 'capa', w: 1920, h: 1080, fmt: 'png', maxKB: 6144, logo: false },
+    // Telas do proprio build (dist-gamepush/, com os CDNs da GamePush barrados: sem SDK e
+    // sem anuncio), cinco mundos, em ingles e em russo (ru/). Deitadas na vista de
+    // 1280x720 (no dobro, reduzida); em pe num celular de 360x640, no dobro.
+    ...['puzzle', 'gelo', 'doce', 'neon', 'papel'].flatMap((cena, i) =>
+      ['en', 'ru'].flatMap((idioma) => {
+        const pasta = idioma === 'ru' ? 'ru/' : '';
+        return [
+          { arq: `${pasta}screenshot-landscape-${i + 1}-1280x720`, tipo: 'tela', w: 1280, h: 720, cena, fmt: 'png', maxKB: 6144,
+            doBuild: true, idioma },
+          { arq: `${pasta}screenshot-portrait-${i + 1}-720x1280`, tipo: 'tela', w: 720, h: 1280, cena, fmt: 'png', maxKB: 6144,
+            doBuild: true, idioma, vista: [360, 640] },
+        ];
+      }),
+    ),
+    { arq: 'video-landscape-1920x1080', tipo: 'video', trecho: VIDEO_WAVEDASH },
+    { arq: 'video-portrait-1080x1920', tipo: 'video', trecho: VIDEO_GAMEPUSH_RETRATO },
+  ],
 };
 
 const SO = opcao('so');
@@ -221,8 +271,27 @@ function builds() {
     writeFileSync(join(saida, `${nome}.sha256`), `${sha}  ${nome}.zip\n`);
     const aviso = faltam.length ? `  (SEM ${faltam.join(' e ')}: so para teste)` : '';
     console.log(`dist-portais/${nome}.zip  ${(statSync(zip).size / 1024).toFixed(0)} KB, ${lista.length} arquivos${aviso}`);
-    if (destino) entrega(zip, nome);
+    if (p === 'gamepush') reprova('dist-gamepush', conferirBuildGamePush({ pasta: join(RAIZ, 'dist-gamepush'), zip }));
+    if (destino) {
+      const pasta = entrega(zip, nome);
+      if (p === 'gamepush') reprova(pasta, conferirBuildGamePush({ pasta, zip: join(destino, `${nome}.zip`) }));
+    }
   }
+}
+
+/**
+ * O build que nao passa nas regras do portal derruba o empacotador.
+ * @param {string} onde
+ * @param {string[]} falhas
+ */
+function reprova(onde, falhas) {
+  if (!falhas.length) {
+    console.log(`  ${onde}: conferido (tools/gamepush-regras.mjs)`);
+    return;
+  }
+  console.error(`REPROVADO ${onde}:`);
+  for (const f of falhas) console.error(`  - ${f}`);
+  process.exit(1);
 }
 
 /**
@@ -232,6 +301,7 @@ function builds() {
  * construcao.
  * @param {string} zip
  * @param {string} nome
+ * @returns {string} a pasta extraida
  */
 function entrega(zip, nome) {
   mkdirSync(destino, { recursive: true });
@@ -245,6 +315,7 @@ function entrega(zip, nome) {
     process.exit(1);
   }
   console.log(`  -> ${copia} e ${pasta}/`);
+  return pasta;
 }
 
 // ------------------------------------------------------------------ arte
@@ -302,7 +373,8 @@ async function arte() {
   });
 
   /** Uma aba nova com a vista pedida. */
-  async function aba(/** @type {number} */ vw, /** @type {number} */ vh, /** @type {boolean} */ mobile, /** @type {string} */ pre = '') {
+  async function aba(/** @type {number} */ vw, /** @type {number} */ vh, /** @type {boolean} */ mobile, /** @type {string} */ pre = '',
+    /** @type {string[]} */ barrados = []) {
     const { targetId } = (await send('Target.createTarget', { url: 'about:blank' })).result;
     const { sessionId } = (await send('Target.attachToTarget', { targetId, flatten: true })).result;
     await send('Page.enable', {}, sessionId);
@@ -310,6 +382,10 @@ async function arte() {
     await send('Emulation.setDeviceMetricsOverride', { width: vw, height: vh, deviceScaleFactor: 2, mobile }, sessionId);
     if (mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId);
     if (pre) await send('Page.addScriptToEvaluateOnNewDocument', { source: pre }, sessionId);
+    if (barrados.length) {
+      await send('Network.enable', {}, sessionId);
+      await send('Network.setBlockedURLs', { urls: barrados }, sessionId);
+    }
     const js = async (/** @type {string} */ e) =>
       (await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, sessionId)).result?.result?.value;
     return {
@@ -377,12 +453,14 @@ async function arte() {
   async function tela(it, portal) {
     const w = /** @type {number} */ (it.w);
     const h = /** @type {number} */ (it.h);
-    const chave = `tela-${w}x${h}-${it.cena}${it.doBuild ? `-${portal}` : ''}`;
+    const chave = `tela-${w}x${h}-${it.cena}${it.doBuild ? `-${portal}` : ''}${it.idioma && it.idioma !== 'en' ? `-${it.idioma}` : ''}`;
     if (feitos.has(chave)) return feitos.get(chave);
     const retrato = h > w;
-    const [vw, vh] = w >= 1920 || h >= 1920 ? [w / 2, h / 2] : [w, h];
-    const pre = `try { localStorage.setItem('hexadrop.lang', '"en"'); } catch (e) {}`;
-    const a = await aba(vw, vh, retrato, pre);
+    const [vw, vh] = it.vista || (w >= 1920 || h >= 1920 ? [w / 2, h / 2] : [w, h]);
+    const pre = `try { localStorage.setItem('hexadrop.lang', '"${it.idioma || 'en'}"'); } catch (e) {}`;
+    // Na GamePush, sem o SDK de verdade (que falaria com o projeto real): os quatro CDNs barrados.
+    const barrados = portal === 'gamepush' ? ['*gs.eponesh.com*', '*gamepush.com*'] : [];
+    const a = await aba(vw, vh, retrato, pre, barrados);
     if (it.doBuild) await previa(portal);
     await a.ir(`${it.doBuild ? basePrevia : base}/index.html`);
     let ok = false;
@@ -430,7 +508,16 @@ async function arte() {
     for (const it of ITENS[portal]) {
       if (it.tipo === 'video') {
         const mp4 = join(pasta, `${JOGO}-${it.arq}.mp4`);
-        if (it.previa) {
+        if (it.trecho) {
+          if (!existsSync(it.trecho)) {
+            throw new Error(`falta ${relative(RAIZ, it.trecho)} (o comando esta em VIDEO_GAMEPUSH_RETRATO, no topo deste arquivo)`);
+          }
+          // Os primeiros 20 s, sem trilha de audio, H.264 yuv420p: o jogo ja no primeiro quadro.
+          ff(['-i', it.trecho, '-t', String(GAMEPUSH_VIDEO_S), '-an', '-map', '0:v:0',
+            '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
+            '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
+            '-movflags', '+faststart', mp4]);
+        } else if (it.previa) {
           if (!existsSync(VIDEO_WAVEDASH)) throw new Error('falta o video da Wavedash: node tools/thumbnail.mjs --perfil wavedash');
         } else if (it.continuo) {
           if (!existsSync(VIDEO_Y8)) {
@@ -443,13 +530,16 @@ async function arte() {
         }
         const dur = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }).stdout.trim();
         console.log(`  ${portal}/${JOGO}-${it.arq}.mp4  ${Number(dur).toFixed(1)} s, ${(statSync(mp4).size / 1048576).toFixed(1)} MB`);
+        if (destino && portal === 'gamepush') copiaParaEnvio(mp4, `${it.arq}.mp4`);
         continue;
       }
       const fonte = it.tipo === 'capa' ? await capa(it) : it.tipo === 'icone' ? icone(it) : await tela(it, portal);
-      const arq = join(pasta, `${JOGO}-${it.arq}.${it.fmt}`);
+      const arq = join(pasta, dirname(it.arq), `${JOGO}-${basename(it.arq)}.${it.fmt}`);
+      mkdirSync(dirname(arq), { recursive: true });
       const kb = gravar(fonte, arq, it);
       naFolha.push(arq);
-      console.log(`  ${portal}/${JOGO}-${it.arq}.${it.fmt}  ${it.w}x${it.h}, ${kb.toFixed(0)} KB${it.maxKB ? ` (max ${it.maxKB})` : ''}`);
+      if (destino && portal === 'gamepush') copiaParaEnvio(arq, `${it.arq}.${it.fmt}`);
+      console.log(`  ${portal}/${relative(pasta, arq)}  ${it.w}x${it.h}, ${kb.toFixed(0)} KB${it.maxKB ? ` (max ${it.maxKB})` : ''}`);
     }
     folha(naFolha, join(pasta, 'folha.jpg'));
   }
@@ -457,6 +547,18 @@ async function arte() {
   chrome.kill();
   vite.kill();
   for (const p of previas.values()) p.kill();
+}
+
+/**
+ * `--destino` na arte da GamePush: o arquivo vai tambem para a pasta do envio,
+ * com o nome que o roteiro do envio usa (sem o prefixo do jogo).
+ * @param {string} arq
+ * @param {string} nome
+ */
+function copiaParaEnvio(arq, nome) {
+  mkdirSync(dirname(join(destino, nome)), { recursive: true });
+  copyFileSync(arq, join(destino, nome));
+  console.log(`    -> ${join(destino, nome)}`);
 }
 
 /**

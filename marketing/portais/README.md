@@ -16,6 +16,7 @@ tudo de uma vez.
 | GamePix | `dist-portais/hexa-drop-gamepix-1.0.19.zip` | [`gamepix/`](gamepix/ficha.md) | pronto |
 | Wavedash | `dist-portais/hexa-drop-wavedash-1.0.19.zip` | [`wavedash/`](wavedash/) (capa e vídeo; os textos ficam em `distribuicao/hexa-drop/textos.md`) | pronto, nada enviado |
 | itch.io | `dist-portais/hexa-drop-itch-1.0.21.zip` (`--versao=1.0.21`) | [`itch/`](itch/) (capa 630x500 e quatro telas do próprio build; os textos ficam em `distribuicao/hexa-drop/textos.md`) | pronto, nada enviado |
+| GamePush | `dist-portais/hexa-drop-gamepush-1.0.21.zip` (`--versao=1.0.21`; o build da itch com o SDK da GamePush, anúncios e russo) | [`gamepush/`](gamepush/) (ícones, capas, fundo, 20 telas em inglês e russo e dois vídeos de 20 s; os textos ficam em `distribuicao/hexa-drop/textos.md`) | pronto, nada enviado |
 
 ## Os ids dos painéis
 

@@ -1534,6 +1534,28 @@ export function textosDosPacotes() {
 }
 
 /**
+ * Textos e idiomas que so um build tem: na GamePush, o russo e o rotulo dos
+ * botoes de video (src/portais/gamepush-textos.js). Ficam fora de STRINGS pelo
+ * mesmo motivo de TEXTOS_PACOTES: so o build que chama esta funcao os leva, e
+ * nos outros o Rollup a tira. Idioma novo entra em LANGS (o seletor dos
+ * ajustes e a deteccao) e em LANG_NAMES; idioma que ja existe so ganha as
+ * chaves. Quem chama refaz a escolha do idioma depois (`idiomaDaPlataforma`),
+ * porque a deteccao rodou na avaliacao deste modulo, sem o idioma novo.
+ * @param {string} lang
+ * @param {Record<string, *>} tabela
+ * @param {string} [nome] como o idioma aparece no seletor dos ajustes
+ */
+export function acrescentaTextos(lang, tabela, nome) {
+  const todas = /** @type {*} */ (STRINGS);
+  if (!todas[lang]) {
+    todas[lang] = {};
+    LANGS.push(lang);
+    if (nome) /** @type {*} */ (LANG_NAMES)[lang] = nome;
+  }
+  Object.assign(todas[lang], tabela);
+}
+
+/**
  * @param {string[]|null} [daPlataforma] as tags que a plataforma manda usar
  * @returns {string}
  */

@@ -40,7 +40,13 @@ const porta = (/** @type {string} */ nome) => Number((process.argv.find((a) => a
 const PORTA_HTTP = porta('porta-http') || 4185;
 const PORTA_CDP = porta('porta-cdp') || 9119;
 const pedidos = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-const ALVOS = pedidos.length ? pedidos : Object.keys(PORTAIS);
+// A GamePush tem a prova propria (o carregador oficial com quatro CDNs e o gp
+// entregue por callback): distribuicao/provar-gamepush.mjs e npm run test:gamepush.
+const ALVOS = pedidos.length ? pedidos : Object.keys(PORTAIS).filter((p) => p !== 'gamepush');
+if (ALVOS.includes('gamepush')) {
+  console.error('a GamePush nao passa por aqui: node distribuicao/provar-gamepush.mjs <zip> e npm run test:gamepush');
+  process.exit(2);
+}
 const IDS_TESTE = { appId: 'teste-app', gameId: 'teste-jogo' };
 
 /** O que o SDK falso guarda e o que a automacao manda nele. Vale para todos. */

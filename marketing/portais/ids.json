@@ -8,5 +8,9 @@
   },
   "gamemonetize": {
     "gameId": "vr3m0e78bpl3lqdwg5wusx30sdaovswr"
+  },
+  "gamepush": {
+    "projectId": "32798",
+    "publicToken": "Y7Md9spvDMWACe8ho7kkHi3rJuYWZl2L"
   }
 }

@@ -19,6 +19,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, basename } from 'node:path';
 import { PORTAIS } from './portais-sdk.mjs';
+import { conferirBuildGamePush } from './gamepush-regras.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Tres saidas de build: dist/ e a da Poki, dist-lisa/ e a versao sem
@@ -245,6 +246,14 @@ if (PORTAL) {
     // A origem dos jogos HTML da itch e uma so: limpar o storage apagaria o save de todos.
     check('itch: nunca localStorage.clear()', !/localStorage\s*\.\s*clear\s*\(/.test(allJs));
   }
+  if (PORTAL_ID === 'gamepush') {
+    // As regras do empacotador (o carregador oficial com os ids, o onGPInit antes,
+    // nada de fora, nenhum caminho absoluto, nenhum outro portal, o storage so com
+    // o prefixo, nada de console.log): tools/gamepush-regras.mjs.
+    const falhas = conferirBuildGamePush({ pasta: DIST });
+    check('gamepush: regras do pacote (tools/gamepush-regras.mjs)', falhas.length === 0, falhas.slice(0, 3).join(' | '));
+    check('gamepush: nada da Wavedash (pacotes de moedas, nuvem)', !/coins-1500|triggerPaywall|uploadRemoteFile|hexadrop-save\.json/.test(allJs));
+  }
 } else if (COM_PLATAFORMA) {
   check('script do Poki SDK v2 presente', true);
   check('nada do app no build da Poki', !/isNativePlatform|["']AdMob["']|Capacitor/.test(allJs));
@@ -284,6 +293,14 @@ check('localStorage sempre em try/catch', !/[^h]\s*localStorage\./.test(allJs) |
 
 /** O que um bloqueador de anuncios barra nos portais: o script de cada SDK. */
 const BLOQUEIO_PORTAIS = Object.values(PORTAIS).flatMap((p) => p.hosts.map((h) => `*${h}*`));
+/**
+ * Na GamePush o jogo espera o SDK ate 8 s desde a abertura (src/portais/gamepush.js),
+ * e o SDK de verdade nunca e chamado daqui (falaria com o projeto real): os CDNs
+ * do carregador ficam barrados em toda rodada, e a foto espera o prazo passar.
+ */
+const NA_GAMEPUSH = PORTAL_ID === 'gamepush';
+const ESPERA_CARGA_MS = NA_GAMEPUSH ? 9500 : 4200;
+const BARRADOS_SEMPRE = NA_GAMEPUSH ? PORTAIS.gamepush.hosts.map((h) => `*${h}*`) : [];
 
 // ------------------------------------------------------------------ browser
 console.log('\n=== Comportamento no navegador ===');
@@ -342,8 +359,9 @@ async function run(o) {
   await send('Page.enable', {}, sessionId);
   await send('Runtime.enable', {}, sessionId);
   await send('Network.enable', {}, sessionId);
-  if (o.block && o.block.length) {
-    await send('Network.setBlockedURLs', { urls: o.block }, sessionId);
+  const barrados = [...(o.block || []), ...BARRADOS_SEMPRE];
+  if (barrados.length) {
+    await send('Network.setBlockedURLs', { urls: barrados }, sessionId);
   }
   await send('Emulation.setDeviceMetricsOverride', { width: o.w, height: o.h, deviceScaleFactor: 1, mobile: false }, sessionId);
   if (o.noStorage) {
@@ -352,7 +370,7 @@ async function run(o) {
     }, sessionId);
   }
   await send('Page.navigate', { url: BASE + '/index.html' }, sessionId);
-  await sleep(4200);
+  await sleep(ESPERA_CARGA_MS);
   const state = (await send('Runtime.evaluate', {
     expression: `(() => { const g = window.__game;
       const c = document.getElementById('game');

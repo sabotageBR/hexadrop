@@ -13,7 +13,8 @@
  * (src/portais/). A Wavedash injeta o dela e nao tem anuncio: a partir da
  * versao lisa, com o `Wavedash.init()` e a barra de carregamento. A `itch`
  * (itch.io) e o build da Wavedash sem SDK nenhum: sem anuncio, sem pacotes de
- * moedas e sem nuvem.
+ * moedas e sem nuvem. A `gamepush` (GamePush) e o build da itch com o SDK da
+ * GamePush, os anuncios dela e o russo (src/portais/gamepush.js).
  *
  * O valor entra por `VITE_PLATAFORMA` no build. O Vite troca a expressao por
  * uma constante literal, entao o ramo que nao vale para o alvo sai do bundle.
@@ -37,7 +38,8 @@ const PORTAL =
   ALVO === 'gamedistribution' ||
   ALVO === 'gamepix' ||
   ALVO === 'wavedash' ||
-  ALVO === 'itch';
+  ALVO === 'itch' ||
+  ALVO === 'gamepush';
 
 export const PLATAFORMA = ALVO === 'lisa' || ALVO === 'app' || ALVO === 'crazy' || PORTAL ? ALVO : 'poki';
 
@@ -67,3 +69,13 @@ export const NUM_PORTAL = PORTAL;
  * do bundle, e eles continuam byte a byte iguais.
  */
 export const COM_PACOTES = PLATAFORMA === 'wavedash';
+
+/**
+ * O video premiado decidido na hora (a GamePush): o botao de video so aparece
+ * com o SDK pronto e anuncio disponivel, conferido cada vez que o botao e
+ * mostrado; sem isso fica o caminho gratuito da versao lisa, como na itch.
+ * Nos outros builds o video e fixo (`COM_ANUNCIOS`). Comparacao unica, como
+ * `COM_PACOTES`: fora da GamePush todo `VIDEO_NA_HORA ? ... : COM_ANUNCIOS` vira
+ * `COM_ANUNCIOS` no build, e eles saem byte a byte iguais.
+ */
+export const VIDEO_NA_HORA = PLATAFORMA === 'gamepush';
