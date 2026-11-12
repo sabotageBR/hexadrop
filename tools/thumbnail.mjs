@@ -102,6 +102,9 @@
  *                         quadro, sem abertura - ela guarda so os 10 primeiros
  *                         segundos (ROTEIRO_WAVEDASH); grava em
  *                         marketing/portais/wavedash/hexa-drop-video-1920x1080.mp4
+ *   --sem-parada <n>      com a tela parada ha n quadros, o proximo toque vem
+ *                         na hora (padrao 2 no perfil wavedash, 0 desliga; ver
+ *                         SEM_PARADA)
  *   --largura <px>        largura do video (padrao: --tamanho)
  *   --altura <px>         altura do video (padrao: --tamanho)
  *   --vista <LxA>         viewport em pixels CSS (padrao: --lado x --lado); a
@@ -183,6 +186,27 @@ const SO_CENAS = opcao('--cenas');
 const CANDIDATAS = opcao('--candidatas');
 const AVALIAR = opcao('--avaliar');
 const MEMORIA_MINIMA = Number(opcao('--memoria-minima', '3000'));
+/**
+ * Sem parada: a Y8 recusou um video por "sudden stops/pauses", e o da Wavedash
+ * tinha trechos de 0,2 a 0,65 s com a tela parada - a torre assentada antes do
+ * primeiro toque de cada cena, depois de um toque que so quebra a peca, no fim
+ * da explosao e depois da celebracao. Com SEM_PARADA > 0 a pagina mede o
+ * movimento de cada quadro (a diferenca media de luma para o anterior, a 480 px
+ * de largura, como o `signalstats` do ffmpeg) e, com a tela parada ha
+ * SEM_PARADA quadros, adianta o proximo toque marcado (acabados eles, toca a
+ * dica). A cena que ainda parar PARADA_MAX quadros seguidos e descartada, e a
+ * da vitoria acaba no ultimo quadro que mexe.
+ */
+const SEM_PARADA = Number(opcao('--sem-parada', WAVEDASH ? '2' : '0'));
+/**
+ * Abaixo desta diferenca de luma (0 a 219) o quadro conta como parado. A
+ * conferencia do video usa 0,05 no mp4; medido, o x264 (crf 18) so zerou
+ * quadros que ja vinham abaixo de 0,025, entao 0,08 deixa folga. Com 0,15 o
+ * toque vinha com o anel do anterior ainda visivel, e a cena virava metralhadora.
+ */
+const PARADO_DIF = 0.08;
+/** A conferencia acusa 5 quadros parados seguidos; a cena aceita ate 3. */
+const PARADA_MAX = 4;
 /** Quanto o Chrome headless desta captura ocupa, medido: ~0,5 GB, com folga. */
 const CHROME_MB = 700;
 
@@ -359,8 +383,10 @@ const ROTEIRO_Y8 = [
  * O video de previa da Wavedash (--perfil wavedash): 16:9, de 5 s a 5 min, sem
  * audio, e ela guarda so os 10 primeiros segundos - entao jogo desde o primeiro
  * quadro (nada de capa nem tela de titulo, ao contrario da CrazyGames) e o mais
- * vistoso no comeco: o mundo 1 com o primeiro toque logo aos 0,3 s, o gelo, a
+ * vistoso no comeco: o mundo 1 com o primeiro toque logo no comeco, o gelo, a
  * TNT e o doce cabem nos 10 s. Depois, mais tres cenarios e a vitoria, ~22 s.
+ * Sem tela parada (SEM_PARADA): os toques marcados sao o mais tarde que vem
+ * cada um.
  */
 const ROTEIRO_WAVEDASH = [
   {
@@ -564,12 +590,53 @@ function paginaRelogio(cfg) {
  * Ajudante instalado depois do boot: abre fases, escolhe pecas, toca, avanca o
  * relogio e le o canvas. Tudo o que decide um toque mora aqui, na pagina, para
  * as duas passadas da cena de vitoria rodarem literalmente o mesmo codigo.
- * @param {{marcaToque:boolean, fps:number}} opts
+ * @param {{marcaToque:boolean, fps:number, semParada:number, paradoDif:number}} opts
  */
 function paginaAjudante(opts) {
   const g = window.__game;
   const R = window.__relogio;
-  const H = { quadro: 0, ultimoToque: -1e9, marcas: [], cfg: {}, toques: [] };
+  const H = { quadro: 0, ultimoToque: -1e9, marcas: [], cfg: {}, toques: [], parado: 0, adiantados: new Set() };
+  // Movimento na tela (SEM_PARADA): o quadro reduzido a 480 px de largura e a
+  // diferenca media de luma BT.709 de faixa limitada para o quadro anterior.
+  const amostra = document.createElement('canvas');
+  let lumaAnterior = null;
+  function medirMovimento() {
+    const c = g.canvas;
+    const w = 480;
+    const h = Math.max(1, Math.round((w * c.height) / c.width));
+    if (amostra.width !== w || amostra.height !== h) {
+      amostra.width = w;
+      amostra.height = h;
+      lumaAnterior = null;
+    }
+    const ctx = amostra.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(c, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const luma = new Float32Array(w * h);
+    let soma = 0;
+    for (let i = 0, j = 0; j < luma.length; i += 4, j++) {
+      luma[j] = (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) * (219 / 255);
+      if (lumaAnterior) soma += Math.abs(luma[j] - lumaAnterior[j]);
+    }
+    const parado = !!lumaAnterior && soma / luma.length < opts.paradoDif;
+    lumaAnterior = luma;
+    return parado;
+  }
+  // O toque agora depende do quadro, e o quadro da camera. Um `resize` do boot
+  // pode deixar na fila um quadro que chama aplicaHud (main.js) e devolve as
+  // faixas da HUD por cima das da cena - as vezes no meio da primeira passada
+  // seca, nunca na captura. Depois de abrir a fase, valem as faixas da cena.
+  if (opts.semParada > 0) {
+    const aplicaHudDoJogo = g.aplicaHud.bind(g);
+    g.aplicaHud = () => {
+      aplicaHudDoJogo();
+      if (H.faixas) cena().setInsets(H.faixas[0], H.faixas[1], false);
+    };
+  }
+  /** A tela parada ha `semParada` quadros, contados do comeco da cena (`cfg.desde`). */
+  const parouDemais = () => opts.semParada > 0 && H.cfg.desde != null
+    && Math.min(H.parado, H.quadro - 1 - H.cfg.desde) >= opts.semParada;
   const cena = () => g.scene;
   const sessao = () => g.scene.session;
   const mundo = () => g.scene.session.world;
@@ -704,6 +771,7 @@ function paginaAjudante(opts) {
     // execucao.
     g.progress.data.skin = 'classic';
     g.progress.data.prizes = Array.from({ length: 400 }, (_, w) => w);
+    H.faixas = null;
     g.startLevel(fase, variante);
     const sc = cena();
     const s = sessao();
@@ -712,6 +780,7 @@ function paginaAjudante(opts) {
     s.hintPiece = null;
     // Sem HUD no video, as faixas que o jogo reserva para ela viram so fundo.
     sc.setInsets(H.cfg.topo ?? 24, H.cfg.base ?? 16, false);
+    H.faixas = [H.cfg.topo ?? 24, H.cfg.base ?? 16];
     aplicarZoom(H.cfg.zoom);
     sc.camera.trauma = 0;
     // O sorteio dos estilhacos (GameScene.rng) nasce uma vez por pagina e nao
@@ -731,6 +800,9 @@ function paginaAjudante(opts) {
     H.ultimoToque = -1e9;
     H.marcas = [];
     H.toques = [];
+    H.parado = 0;
+    H.adiantados = new Set();
+    lumaAnterior = null;
     const w = s.world;
     return {
       fase: g.level,
@@ -750,10 +822,19 @@ function paginaAjudante(opts) {
   function politica() {
     const s = sessao();
     const c = H.cfg;
-    for (const [q, sel] of c.toques || []) if (q === H.quadro) H.tocar(sel);
+    const marcados = c.toques || [];
+    marcados.forEach(([q, sel], i) => {
+      if (q === H.quadro && !H.adiantados.has(i)) H.tocar(sel);
+    });
+    if (!c.solucionar && !s.finished && !s.bonus && H.ultimoToque !== H.quadro && parouDemais()) {
+      // A tela parou: o proximo toque marcado vem agora; acabados eles, a dica.
+      const i = marcados.findIndex(([q], k) => q > H.quadro && !H.adiantados.has(k));
+      if (i >= 0) H.adiantados.add(i);
+      if (!(i >= 0 && H.tocar(marcados[i][1]))) H.tocar('dica');
+    }
     if (c.solucionar && !s.finished && !s.bonus) {
       const desde = H.quadro - H.ultimoToque;
-      if (desde >= c.minIntervalo && (desde >= c.maxIntervalo || s.world.everythingAtRest())) {
+      if ((desde >= c.minIntervalo && (desde >= c.maxIntervalo || s.world.everythingAtRest())) || parouDemais()) {
         // 'cavar' desce o hexagono em poco, tocando sempre a peca sob ele: o
         // resto da torre fica de pe e sobra muita peca para a celebracao.
         // Onde nao ha peca sob ele, quem decide e o solucionador.
@@ -761,6 +842,10 @@ function paginaAjudante(opts) {
         H.tocar(cavar ? 'sob-hex' : 'dica');
       }
     }
+    // A celebracao espera BONUS_DELAY (0,3 s, game/session.js) antes do
+    // primeiro estouro, e com o hexagono pousado sem nada no ar essa espera e
+    // tela parada. Sem parada, o primeiro estouro vem assim que ela para.
+    if (s.bonus && s.bonusDone === 0 && s.bonusTimer > 0 && parouDemais()) s.bonusTimer = 0;
   }
 
   const venceu = () => {
@@ -791,6 +876,7 @@ function paginaAjudante(opts) {
       particulas: cena().particles.count,
       vivas: w.alivePieces().length,
       camY: +cena().camera.y.toFixed(3),
+      parado: H.parado,
       erros: window.__errosThumb.length,
     };
   };
@@ -843,7 +929,14 @@ function paginaAjudante(opts) {
     }
     politica();
     R.quadro();
+    if (opts.semParada > 0 && H.cfg.desde != null && H.quadro >= H.cfg.desde) H.parado = medirMovimento() ? H.parado + 1 : 0;
     H.quadro++;
+  };
+
+  /** Avanca ate a tela ficar `n` quadros parada (ou `max` quadros) e devolve o ultimo quadro que mexeu. */
+  H.ultimoMovimento = (n, max) => {
+    for (let i = 0; i < max && H.parado < n; i++) H.passo();
+    return H.quadro - 1 - H.parado;
   };
 
   /** Avanca n quadros sem capturar; para antes se `ateVencer` e venceu. */
@@ -1372,7 +1465,7 @@ async function main() {
         if (!pronto) await avaliar('window.__relogio && window.__relogio.quadro()').catch(() => {});
       }
       if (!pronto) throw new Error('o jogo nao abriu (window.__game ausente? sirva em 127.0.0.1)');
-      await avaliar(`(${paginaAjudante.toString()})(${JSON.stringify({ marcaToque: MARCA_TOQUE, fps: FPS })})`);
+      await avaliar(`(${paginaAjudante.toString()})(${JSON.stringify({ marcaToque: MARCA_TOQUE, fps: FPS, semParada: SEM_PARADA, paradoDif: PARADO_DIF })})`);
       return avaliar;
     };
     let pagina = await novaPagina();
@@ -1519,8 +1612,10 @@ async function gravarVitoria(js, c, pasta, inicio) {
       if (info.variante !== variante % info.variantes) break;
       await js(`__thumb.avancar(${c.aquecer}, false)`);
       // O solucionador so entra depois do aquecimento.
-      const fim = await js(`(__thumb.cfg.solucionar = ${JSON.stringify(politica)}, __thumb.avancar(${c.vitoria.maxSegundos * FPS}, true))`);
+      const fim = await js(`(__thumb.cfg.solucionar = ${JSON.stringify(politica)}, __thumb.cfg.desde = ${c.aquecer}, __thumb.avancar(${c.vitoria.maxSegundos * FPS}, true))`);
       const nota = fim.venceu ? await js('__thumb.notaDaVitoria()') : { nota: -1 };
+      // Sem parada: o ultimo quadro que mexe depois da vitoria (o fim da celebracao).
+      if (SEM_PARADA && fim.venceu) fim.ultimoMovimento = await js(`__thumb.ultimoMovimento(30, ${10 * FPS})`);
       // Curta demais para o trecho caber entre o aquecimento e o fim da
       // celebracao (o video da Y8 nao pode ter corte): fica de fora.
       const curta = !!(fim.venceu && c.vitoria.minSegundos && fim.quadro - c.aquecer < Math.round(c.vitoria.minSegundos * FPS));
@@ -1542,12 +1637,17 @@ async function gravarVitoria(js, c, pasta, inicio) {
   const n = Math.round(c.vitoria.duracao * FPS);
   const pelaCascata = t.fim.quadro - (n - Math.round(c.vitoria.minCascata * FPS));
   const peloToque = t.nota.ultimoToque - Math.round(c.vitoria.antesDoToque * FPS);
-  const pular = Math.max(c.aquecer, pelaCascata, peloToque);
+  let pular = Math.max(c.aquecer, pelaCascata, peloToque);
+  // Sem parada, o trecho acaba ate dois quadros depois do ultimo que mexe, e
+  // anda para tras o que for preciso: mais jogo antes, e nada de tela parada no fim.
+  if (SEM_PARADA && t.fim.ultimoMovimento != null) pular = Math.max(c.aquecer, Math.min(pular, t.fim.ultimoMovimento + 3 - n));
   const antes = t.fim.quadro - pular;
   const info = await js(`__thumb.abrir(${t.fase}, ${t.variante}, ${JSON.stringify(cfgBase)})`);
   await js(`__thumb.avancar(${c.aquecer}, false)`);
-  await js(`(__thumb.cfg.solucionar = ${JSON.stringify(t.politica)}, __thumb.avancar(${pular - c.aquecer}, false))`);
+  await js(`(__thumb.cfg.solucionar = ${JSON.stringify(t.politica)}, __thumb.cfg.desde = ${c.aquecer}, __thumb.avancar(${pular - c.aquecer}, false))`);
   const r = await capturar(js, pasta, inicio, n, c.nome);
+  info.parada = maiorParada(r.estados);
+  if (SEM_PARADA && info.parada >= PARADA_MAX) console.log(`  AVISO: a cena ${c.nome} tem a tela parada ${info.parada} quadros seguidos`);
   // O quadro da vitoria e o de indice antes-1: cada captura avanca um.
   const confere = r.estados[antes - 1];
   info.politica = t.politica;
@@ -1585,7 +1685,7 @@ async function rodarCena(js, c, fase, variante, captura) {
   // Toques marcados no tempo: entram na politica pelo numero do quadro, contados
   // do fim do aquecimento (ou do preparo).
   const toques = (c.toques || []).map(([t, sel]) => [comeco + Math.round(t * FPS), sel]);
-  await js(`(__thumb.cfg.toques = ${JSON.stringify(toques)}, true)`);
+  await js(`(__thumb.cfg.toques = ${JSON.stringify(toques)}, __thumb.cfg.desde = ${comeco}, true)`);
   const n = captura && captura.n ? captura.n : Math.round(c.duracao * FPS);
   let estados;
   let fundo = [];
@@ -1608,10 +1708,17 @@ async function rodarCena(js, c, fase, variante, captura) {
     fundo = r.fundo;
   }
   info.toques = (await js('__thumb.toques')).filter((t) => t.quadro >= comeco);
-  // Cena de toque em que um toque nao pegou nao mostra a mecanica.
-  const ok = info.toques.length === toques.length && info.toques.every((t) => t.ok);
-  return { ok, motivo: ok ? '' : 'toque que nao pegou', info, estados, fundo, n };
+  // Cena de toque em que um toque nao pegou nao mostra a mecanica. Sem parada,
+  // os toques adiantados e as dicas depois deles somam aos marcados.
+  const pegaram = (SEM_PARADA ? info.toques.length >= toques.length : info.toques.length === toques.length)
+    && info.toques.every((t) => t.ok);
+  info.parada = maiorParada(estados);
+  const ok = pegaram && (!SEM_PARADA || info.parada < PARADA_MAX);
+  return { ok, motivo: ok ? '' : pegaram ? `tela parada ${info.parada} quadros` : 'toque que nao pegou', info, estados, fundo, n };
 }
+
+/** Maior sequencia de quadros parados da cena; o primeiro e um corte, e mexe. */
+const maiorParada = (estados) => Math.max(0, ...estados.map((e, i) => Math.min(e.parado || 0, i)));
 
 /** Nota de uma cena de video: queda do hexagono e pecas destruidas. */
 function notaDaCena(estados) {
